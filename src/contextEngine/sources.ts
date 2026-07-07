@@ -1,0 +1,90 @@
+// src/contextEngine/sources.ts
+import { readProjectFile } from '../api/tauri'
+import type { DataSource, ContextLoadContext } from './dataSource'
+import type { CognitionState, ForeshadowStore } from '../types/novel'
+
+const SNAPSHOT_DIR = 'memory/snapshots'
+const FORESHADOW_DIR = 'memory'
+const COGNITION_FILE = 'character-states.json'
+const FORESHADOW_FILE = 'foreshadows.json'
+
+// ─── Helpers ───────────────────────────────
+
+function cognitionToText(state: CognitionState): string {
+  const lines: string[] = []
+  for (const char of state.characters) {
+    if (char.knows.length > 0) lines.push(`${char.character}知道：${char.knows.join('、')}`)
+    if (char.doesNotKnow.length > 0) lines.push(`${char.character}不知道：${char.doesNotKnow.join('、')}`)
+  }
+  if (state.readerKnows.length > 0) lines.push(`读者知道但角色不知道：${state.readerKnows.join('、')}`)
+  return lines.join('\n')
+}
+
+function foreshadowToText(store: ForeshadowStore, currentChapter: number): string {
+  const unresolved = store.entries.filter((e) => e.status !== 'resolved' && e.status !== 'abandoned')
+  if (unresolved.length === 0) return ''
+  unresolved.sort((a, b) => a.plantedChapter - b.plantedChapter)
+  return unresolved.map((f) => {
+    const age = currentChapter - f.plantedChapter
+    const urgency = age > 30 ? '⚠️ 紧急' : age > 15 ? '⚡ 注意' : '·'
+    return `${urgency} [${f.status === 'advanced' ? '推进中' : '已埋设'}] ${f.name}：${f.description}（第${f.plantedChapter}章埋设）`
+  }).join('\n')
+}
+
+// ─── Data Sources ───────────────────────────
+
+export const cognitionDS: DataSource<string> = {
+  name: '角色认知',
+  priority: 7,
+  async load(ctx: ContextLoadContext): Promise<string> {
+    try {
+      const raw = await readProjectFile(ctx.projectId, FORESHADOW_DIR, COGNITION_FILE)
+      if (!raw.trim()) return ''
+      const state = JSON.parse(raw) as CognitionState
+      return cognitionToText(state)
+    } catch { return '' }
+  },
+}
+
+export const foreshadowDS: DataSource<string> = {
+  name: '未解伏笔',
+  priority: 8,
+  async load(ctx: ContextLoadContext): Promise<string> {
+    try {
+      const raw = await readProjectFile(ctx.projectId, FORESHADOW_DIR, FORESHADOW_FILE)
+      if (!raw.trim()) return ''
+      const store = JSON.parse(raw) as ForeshadowStore
+      return foreshadowToText(store, ctx.chapterNumber)
+    } catch { return '' }
+  },
+}
+
+export const styleDS: DataSource<string> = {
+  name: '文风设定',
+  priority: 11,
+  async load(ctx: ContextLoadContext): Promise<string> {
+    try {
+      return await readProjectFile(ctx.projectId, '', 'style.md')
+    } catch { return '' }
+  },
+}
+
+/** Recent chapter summaries (last 3) */
+export const recentSummaryDS: DataSource<string> = {
+  name: '最近剧情摘要',
+  priority: 6,
+  async load(ctx: ContextLoadContext): Promise<string> {
+    const summaries: string[] = []
+    for (let i = Math.max(1, ctx.chapterNumber - 3); i < ctx.chapterNumber; i++) {
+      const chId = `ch${String(i).padStart(3, '0')}`
+      try {
+        const raw = await readProjectFile(ctx.projectId, SNAPSHOT_DIR, `${chId}.snapshot.json`)
+        if (raw.trim()) {
+          const snap = JSON.parse(raw)
+          summaries.push(`第${i}章「${snap.chapterTitle || chId}」：${snap.summary || ''}`)
+        }
+      } catch { /* snapshot may not exist */ }
+    }
+    return summaries.join('\n')
+  },
+}
