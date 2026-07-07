@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 use uuid::Uuid;
 
+mod commands;
+
 // ─── Data types ───────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -451,6 +453,7 @@ pub fn run() {
             read_project_file,
             write_project_file,
             delete_project_file,
+            commands::search::search_project_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

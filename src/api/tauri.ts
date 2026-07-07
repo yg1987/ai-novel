@@ -71,3 +71,25 @@ export async function writeProjectFile(projectId: string, subdir: string, filena
 export async function deleteProjectFile(projectId: string, subdir: string, filename: string): Promise<null> {
   return invoke<null>('delete_project_file', { projectId, subdir, filename })
 }
+
+export interface SearchResult {
+  path: string
+  filename: string
+  snippet: string
+  score: number
+  source: string
+}
+
+export async function searchProjectFiles(
+  projectId: string,
+  query: string,
+  sources: string[],
+  maxResults?: number,
+): Promise<SearchResult[]> {
+  return invoke<SearchResult[]>('search_project_files', {
+    projectId,
+    query,
+    sources,
+    maxResults: maxResults ?? 20,
+  })
+}
