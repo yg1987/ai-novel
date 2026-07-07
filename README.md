@@ -1,5 +1,7 @@
 # AI Novel Writer
 
+> 🧪 个人练手项目，使用 [OpenCode](https://github.com/opencode-ai/opencode) + DeepSeek 开发，主要目的是熟悉 AI 辅助编程的工作流。代码质量仅供参考。
+
 AI 辅助网文写作桌面工具。Tauri 2 + React + TypeScript + TipTap，本地优先，支持多 AI Provider。
 
 > 参考项目：[character-arc](https://github.com/uu201/character-arc) · [QMAI](https://github.com/Mochocyang/QMAI) · [oh-story-claudecode](https://github.com/worldwonderer/oh-story-claudecode) · [MuMuAINovel](https://github.com/xiamuceer-j/MuMuAINovel)
