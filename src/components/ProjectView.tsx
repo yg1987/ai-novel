@@ -6,13 +6,15 @@ import WorldviewPanel from './WorldviewPanel'
 import OutlinePanel from './OutlinePanel'
 import NotesPanel from './NotesPanel'
 import ForeshadowPanel from './ForeshadowPanel'
+import SearchPanel from './SearchPanel'
+import StatisticsPanel from './StatisticsPanel'
 
 interface Props {
   project: ProjectMeta
   onBack: () => void
 }
 
-type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow'
+type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats'
 
 export default function ProjectView({ project, onBack }: Props) {
   const [tab, setTab] = useState<Tab>('writing')
@@ -38,6 +40,8 @@ export default function ProjectView({ project, onBack }: Props) {
         <button className={`tab-btn${tab === 'outline' ? ' active' : ''}`} onClick={() => { setTab('outline') }}>📋 大纲</button>
         <button className={`tab-btn${tab === 'notes' ? ' active' : ''}`} onClick={() => { setTab('notes') }}>📝 备注</button>
         <button className={`tab-btn${tab === 'foreshadow' ? ' active' : ''}`} onClick={() => { setTab('foreshadow') }}>🔍 伏笔</button>
+        <button className={`tab-btn${tab === 'search' ? ' active' : ''}`} onClick={() => { setTab('search') }}>🔎 搜索</button>
+        <button className={`tab-btn${tab === 'stats' ? ' active' : ''}`} onClick={() => { setTab('stats') }}>📊 统计</button>
       </div>
 
       <div className="project-tab-content">
@@ -47,6 +51,8 @@ export default function ProjectView({ project, onBack }: Props) {
         {tab === 'outline' && <OutlinePanel projectId={project.id} />}
         {tab === 'notes' && <NotesPanel projectId={project.id} />}
         {tab === 'foreshadow' && <ForeshadowPanel projectId={project.id} currentChapter={1} />}
+        {tab === 'search' && <SearchPanel projectId={project.id} />}
+        {tab === 'stats' && <StatisticsPanel projectId={project.id} targetWords={project.target_words} />}
       </div>
     </div>
   )
