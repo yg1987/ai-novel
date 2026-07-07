@@ -10,6 +10,9 @@ import { checkBannedWords, type CheckResult } from '../services/bannedWords'
 import { analyzeChapter } from '../services/chapterIngest'
 import { saveChapterSnapshot } from '../services/memorySync'
 import { logChapterSaved, logAIGenerated, logSessionStart } from '../services/stats'
+import { chunkMarkdown } from '../services/textChunker'
+import { embedChunks } from '../services/embeddings'
+import { vectorUpsertChunks } from '../api/tauri'
 
 interface Props {
   projectId: string
@@ -108,6 +111,27 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
           })
           .then(() => {
             logChapterSaved(projectId, chapterNumber, html)
+          })
+          .then(async () => {
+            try {
+              const text = html.replace(/<[^>]*>/g, '').trim()
+              if (text.length > 100) {
+                const chunks = chunkMarkdown(text, chapterId, { maxChunkChars: 1500 })
+                const results = await embedChunks(chunks)
+                if (results) {
+                  await vectorUpsertChunks(projectId, results.map((r) => ({
+                    chunk_id: r.chunk.chunkId,
+                    page_id: r.chunk.pageId,
+                    chunk_index: r.chunk.chunkIndex,
+                    heading_path: r.chunk.headingPath,
+                    chunk_text: r.chunk.content,
+                    embedding: Array.from(r.embedding),
+                  })))
+                }
+              }
+            } catch (e) {
+              console.error('Vector indexing failed:', e)
+            }
           })
           .catch((e: unknown) => { console.error('Manual save failed:', e) })
       }

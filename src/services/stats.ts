@@ -1,6 +1,8 @@
 import { appendStatEvent as apiAppend } from '../api/tauri'
 import type { StatEvent } from '../api/tauri'
 
+const lastChapterContent = new Map<string, number>()
+
 export function logChapterSaved(
   projectId: string,
   chapter: number,
@@ -8,12 +10,22 @@ export function logChapterSaved(
 ): void {
   const plainText = content.replace(/<[^>]*>/g, '')
   const charCount = plainText.length
+
+  // Compute delta: only count new chars since last save
+  const key = `${projectId}:${chapter}`
+  const lastCount = lastChapterContent.get(key) ?? 0
+  const delta = charCount - lastCount
+  lastChapterContent.set(key, charCount)
+
+  // Only log if there's a positive delta (or first save)
+  if (delta <= 0 && lastCount > 0) return
+
   const wordCount = estimateWordCount(plainText)
   const event: StatEvent = {
     timestamp: new Date().toISOString(),
     event_type: 'chapter_saved',
     chapter,
-    char_count: charCount,
+    char_count: Math.max(delta, charCount), // first save: log full, subsequent: log delta
     word_count: wordCount,
   }
   apiAppend(projectId, event).catch(console.error)

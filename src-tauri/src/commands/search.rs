@@ -36,9 +36,16 @@ fn extract_snippet(text: &str, query_lower: &str, max_len: usize) -> String {
     if let Some(pos) = text_lower.find(query_lower) {
         let raw_start = pos.saturating_sub(40);
         let raw_end = (pos + query_lower.len() + 40).min(text.len());
-        // Clamp to valid char boundaries to avoid panicking on CJK multi-byte text
-        let start = text[..raw_start].char_indices().next_back().map_or(0, |(i, _)| i);
-        let end = text[raw_end..].char_indices().next().map_or(text.len(), |(i, _)| raw_end + i);
+        // Find nearest char boundary before raw_start
+        let start = text.char_indices()
+            .take_while(|(i, _)| *i <= raw_start)
+            .last()
+            .map_or(0, |(i, _)| i);
+        // Find nearest char boundary at or after raw_end
+        let end = text.char_indices()
+            .skip_while(|(i, _)| *i < raw_end)
+            .next()
+            .map_or(text.len(), |(i, _)| i);
         text[start..end].to_string()
     } else {
         text.chars().take(max_len).collect()
