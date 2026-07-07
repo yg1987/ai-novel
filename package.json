@@ -1,0 +1,44 @@
+{
+  "name": "ai-novel",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "lint": "eslint src/",
+    "format": "prettier --write src/",
+    "format:check": "prettier --check src/"
+  },
+  "devDependencies": {
+    "@rolldown/binding-win32-x64-msvc": "^1.1.4",
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@typescript-eslint/eslint-plugin": "^8.63.0",
+    "@typescript-eslint/parser": "^8.63.0",
+    "@vitejs/plugin-react": "^6.0.3",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "prettier": "^3.9.4",
+    "sharp": "^0.35.3",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.63.0",
+    "vite": "^8.1.1"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tiptap/core": "^3.27.2",
+    "@tiptap/extension-placeholder": "^3.27.2",
+    "@tiptap/extension-underline": "^3.27.2",
+    "@tiptap/react": "^3.27.2",
+    "@tiptap/starter-kit": "^3.27.2",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  }
+}
