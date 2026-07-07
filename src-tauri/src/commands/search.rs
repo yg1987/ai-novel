@@ -34,8 +34,11 @@ fn score_match(text: &str, query_lower: &str) -> f64 {
 fn extract_snippet(text: &str, query_lower: &str, max_len: usize) -> String {
     let text_lower = text.to_lowercase();
     if let Some(pos) = text_lower.find(query_lower) {
-        let start = pos.saturating_sub(40);
-        let end = (pos + query_lower.len() + 40).min(text.len());
+        let raw_start = pos.saturating_sub(40);
+        let raw_end = (pos + query_lower.len() + 40).min(text.len());
+        // Clamp to valid char boundaries to avoid panicking on CJK multi-byte text
+        let start = text[..raw_start].char_indices().next_back().map_or(0, |(i, _)| i);
+        let end = text[raw_end..].char_indices().next().map_or(text.len(), |(i, _)| raw_end + i);
         text[start..end].to_string()
     } else {
         text.chars().take(max_len).collect()
