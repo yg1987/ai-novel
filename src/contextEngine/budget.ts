@@ -22,10 +22,23 @@ export function truncateToBudget(
       kept.push(r)
       total += tokens
     } else {
-      // Add a placeholder for truncated sources
+      // Truncate content using estimateTokens to find correct cut point
       const remaining = maxTokens - total
       if (remaining > 20) {
-        kept.push({ ...r, content: r.content.slice(0, Math.floor(remaining / 0.7)) })
+        // Iteratively find the longest prefix fitting within remaining tokens
+        let lo = 0
+        let hi = r.content.length
+        let best = 0
+        while (lo <= hi) {
+          const mid = Math.floor((lo + hi) / 2)
+          if (estimateTokens(r.content.slice(0, mid)) <= remaining) {
+            best = mid
+            lo = mid + 1
+          } else {
+            hi = mid - 1
+          }
+        }
+        kept.push({ ...r, content: r.content.slice(0, best) })
       }
       break
     }

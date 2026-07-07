@@ -53,7 +53,28 @@ pub async fn vector_upsert_chunks(
 
     for (page_id, page_chunks) in &page_map {
         let file_path = db_path.join(format!("{}.json", page_id));
-        let json = serde_json::to_string_pretty(page_chunks)
+
+        // Merge with existing chunks: read old, replace by chunk_id, write all
+        let mut merged: Vec<ChunkUpsertInput> = if file_path.exists() {
+            let existing = std::fs::read_to_string(&file_path)
+                .map_err(|e| format!("Failed to read: {e}"))?;
+            serde_json::from_str(&existing).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        for new_chunk in page_chunks.iter() {
+            if let Some(pos) = merged.iter().position(|c| c.chunk_id == new_chunk.chunk_id) {
+                merged[pos] = (*new_chunk).clone();
+            } else {
+                merged.push((*new_chunk).clone());
+            }
+        }
+
+        // Also add any chunks that are new (not in existing)
+        // (already handled by the else branch above)
+
+        let json = serde_json::to_string_pretty(&merged)
             .map_err(|e| format!("Failed to serialize: {e}"))?;
         std::fs::write(&file_path, &json)
             .map_err(|e| format!("Failed to write: {e}"))?;

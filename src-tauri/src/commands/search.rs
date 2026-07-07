@@ -54,6 +54,7 @@ fn extract_snippet(text: &str, query_lower: &str, max_len: usize) -> String {
 
 fn search_directory(
     dir: &PathBuf,
+    project_dir: &PathBuf,
     query: &str,
     subdir_label: &str,
     results: &mut Vec<SearchResult>,
@@ -73,8 +74,11 @@ fn search_directory(
             if let Ok(content) = fs::read_to_string(&path) {
                 let score = score_match(&content, &query_lower);
                 if score > 0.0 {
+                    // Return path relative to project directory
+                    let rel_path = path.strip_prefix(project_dir)
+                        .unwrap_or(&path);
                     results.push(SearchResult {
-                        path: path.to_string_lossy().to_string(),
+                        path: rel_path.to_string_lossy().to_string(),
                         filename: path.file_name().map_or(String::new(), |n| n.to_string_lossy().to_string()),
                         snippet: extract_snippet(&content, &query_lower, 120),
                         score,
@@ -114,7 +118,7 @@ pub fn search_project_files(
     let search_all = sources.is_empty();
     for (label, subdir) in &source_dirs {
         if search_all || sources.contains(&label.to_string()) {
-            search_directory(&dir.join(subdir), &query, label, &mut results, max);
+            search_directory(&dir.join(subdir), &dir, &query, label, &mut results, max);
         }
     }
 

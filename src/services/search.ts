@@ -45,8 +45,10 @@ export async function hybridSearch(
 ): Promise<HybridResult[]> {
   const { sources = [], topK = 20, includeVector = true } = options
 
-  // 1. Keyword search (always)
-  const keywordPromise = searchProjectFiles(projectId, query, sources as string[], topK)
+  // 1. Keyword search (always) — expand query with CJK bigrams
+  const expandedTokens = tokenizeQuery(query)
+  const keywordQuery = expandedTokens.length > 0 ? expandedTokens.join(' ') : query
+  const keywordPromise = searchProjectFiles(projectId, keywordQuery, sources as string[], topK)
 
   // 2. Vector search (optional)
   let vectorPromise: Promise<Array<{ path: string; score: number }> | null> = Promise.resolve(null)
