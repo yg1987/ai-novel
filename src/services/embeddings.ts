@@ -1,0 +1,71 @@
+// src/services/embeddings.ts
+import { loadProviderConfig } from '../api/tauri'
+import type { Chunk } from './textChunker'
+
+const MAX_RETRIES = 3
+const MAX_BATCH_SIZE = 20
+
+async function callEmbeddingAPI(
+  texts: string[],
+): Promise<number[][] | null> {
+  const config = await loadProviderConfig()
+  const provider = config.providers.find((p) => p.name === config.active_profile)
+  if (!provider || !provider.models.embedding) return null
+
+  const response = await fetch(`${provider.base_url}/embeddings`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${provider.api_key}`,
+    },
+    body: JSON.stringify({
+      model: provider.models.embedding,
+      input: texts,
+    }),
+  })
+
+  if (!response.ok) return null
+
+  const data = (await response.json()) as {
+    data: Array<{ embedding: number[] }>
+  }
+  return data.data.map((d) => d.embedding)
+}
+
+/** Embed a single text with auto-retry and halving for oversized inputs */
+export async function embedText(text: string): Promise<number[] | null> {
+  let current = text
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const result = await callEmbeddingAPI([current])
+    if (result && result[0]) return result[0]
+    // Halve and retry
+    if (current.length > 64) {
+      current = current.slice(0, Math.floor(current.length / 2))
+    } else {
+      return null
+    }
+  }
+  return null
+}
+
+export interface EmbeddingResult {
+  chunk: Chunk
+  embedding: number[]
+}
+
+/** Embed multiple chunks in batches */
+export async function embedChunks(
+  chunks: Chunk[],
+): Promise<EmbeddingResult[] | null> {
+  const results: EmbeddingResult[] = []
+  for (let i = 0; i < chunks.length; i += MAX_BATCH_SIZE) {
+    const batch = chunks.slice(i, i + MAX_BATCH_SIZE)
+    const texts = batch.map((c) => c.content)
+    const embeddings = await callEmbeddingAPI(texts)
+    if (!embeddings) return null
+    for (let j = 0; j < batch.length; j++) {
+      results.push({ chunk: batch[j]!, embedding: embeddings[j]! })
+    }
+  }
+  return results
+}
