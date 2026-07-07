@@ -1,8 +1,19 @@
 import { getChapterOutline, getChapterContent } from '../api/tauri'
+import { DataSourceRegistry } from './dataSource'
+import { cognitionDS, foreshadowDS, styleDS, recentSummaryDS } from './sources'
+import { estimateTokens, truncateToBudget, getDefaultSystemPrompt } from './budget'
+import type { ContextLoadContext } from './dataSource'
 
 export interface ContextPack {
   systemPrompt: string
   wordBudget: number
+  sources: string[]
+}
+
+const MAX_PROMPT_TOKENS = 4096
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
 }
 
 export async function buildContext(
@@ -10,50 +21,60 @@ export async function buildContext(
   chapterId: string,
   targetWords: number,
 ): Promise<ContextPack> {
+  const chapterNumber = Number(chapterId.replace('ch', ''))
+  const ctx: ContextLoadContext = { projectId, chapterId, chapterNumber, targetWords }
+
+  // 1. Load outline + previous ending (direct, these are always needed)
   const outline = await getChapterOutline(projectId, chapterId)
 
-  // Get previous chapter content (last ~500 chars as "ending")
-  const chapterNum = Number(chapterId.replace('ch', ''))
   let previousEnding = ''
-  if (chapterNum > 1) {
-    const prevId = `ch${String(chapterNum - 1).padStart(3, '0')}`
+  if (chapterNumber > 1) {
+    const prevId = `ch${String(chapterNumber - 1).padStart(3, '0')}`
     try {
       const prevContent = await getChapterContent(projectId, prevId)
-      // Strip HTML tags and get last 500 chars
       const text = stripHtml(prevContent)
       previousEnding = text.slice(-500)
-    } catch {
-      // Previous chapter might not exist
-    }
+    } catch { /* no previous chapter */ }
   }
 
-  const systemPrompt = buildSystemPrompt(outline, previousEnding, targetWords)
-  return { systemPrompt, wordBudget: targetWords }
-}
+  // 2. Load context sources via DataSourceRegistry
+  const registry = new DataSourceRegistry()
+  registry.registerAll([recentSummaryDS, cognitionDS, foreshadowDS, styleDS])
+  const loaded = await registry.loadAll(ctx)
+  const assembled = registry.assemble(loaded)
 
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
-}
+  // 3. Keep only the top outline/ending + as many sources as fit budget
+  const promptBase = getDefaultSystemPrompt()
+  let promptBudget = MAX_PROMPT_TOKENS - estimateTokens(promptBase)
 
-function buildSystemPrompt(outline: string, previousEnding: string, targetWords: number): string {
-  const parts: string[] = [
-    '你是一位优秀的网络小说作家。请根据以下要求续写小说正文。',
-    '',
-    '## 写作要求',
-    '- 只输出小说正文，不要添加任何解释、注释或元描述',
-    '- 保持连贯的叙事风格',
-    '- 注意章节之间的衔接',
-    `- 本章目标字数约 ${String(targetWords)} 字`,
-    '- 用自然段落分隔，段落之间用空行',
-  ]
+  // Outline gets 25% of budget
+  const outlineTokens = estimateTokens(outline)
+  const outlineActual = Math.min(outlineTokens, Math.floor(promptBudget * 0.25))
+  promptBudget -= outlineActual
 
-  if (outline) {
-    parts.push('', '## 本章细纲', outline)
+  // Previous ending gets 10%
+  const endingTokens = estimateTokens(previousEnding)
+  const endingActual = Math.min(endingTokens, Math.floor(promptBudget * 0.15))
+  promptBudget -= endingActual
+
+  // Remaining budget for sources (dropped lowest priority first)
+  const fitted = truncateToBudget(assembled, Math.max(0, promptBudget))
+
+  // 4. Assemble final prompt
+  const sections: string[] = [promptBase]
+
+  if (outline) sections.push('', '## 本章细纲', outline)
+  if (previousEnding) sections.push('', '## 上一章结尾', previousEnding)
+
+  for (const src of fitted) {
+    sections.push('', `## ${src.name}`, src.content)
   }
 
-  if (previousEnding) {
-    parts.push('', '## 上一章结尾', previousEnding)
-  }
+  sections.push('', `## 字数要求`, `本章目标字数约 ${String(targetWords)} 字`)
 
-  return parts.join('\n')
+  return {
+    systemPrompt: sections.join('\n'),
+    wordBudget: targetWords,
+    sources: assembled.map((s) => s.name),
+  }
 }

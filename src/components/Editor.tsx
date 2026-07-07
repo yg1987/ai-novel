@@ -24,6 +24,7 @@ const AUTOSAVE_DELAY = 3000
 export default function Editor({ projectId, chapterId, initialContent, targetWords = 1200, onContentChange, chapterNumber = 1 }: Props) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSaved = useRef(initialContent)
+  const generateStartTime = useRef(0)
   const [generating, setGenerating] = useState(false)
   const [bannedCheck, setBannedCheck] = useState<CheckResult | null>(null)
   const [showBannedDetail, setShowBannedDetail] = useState(false)
@@ -106,6 +107,7 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
   const handleGenerate = useCallback(async () => {
     if (!editor || generating) return
     setGenerating(true)
+    generateStartTime.current = Date.now()
     editor.commands.focus()
     try {
       const ctx = await buildContext(projectId, chapterId, targetWords)
@@ -115,6 +117,9 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
         onToken: (text) => { editor.commands.insertContentAt(editor.state.selection.from, text) },
         onDone: () => {
           setGenerating(false)
+          const elapsed = Date.now() - generateStartTime.current
+          // elapsed will be passed to stats logging later
+          void elapsed
           handleSaveNow()
         },
         onError: (err) => { console.error('Generation error:', err); setGenerating(false) },
