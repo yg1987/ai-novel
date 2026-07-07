@@ -237,17 +237,54 @@ AI 自动跑一轮检查，产出审查报告：
 
 ### 2.6 AI 上下文引擎（核心模块）
 
+#### 架构：DataSourceRegistry（可插拔数据源）
+
+每个上下文来源注册为一个 `DataSource` 对象，由注册中心按优先级并发加载：
+
+```
+DataSourceRegistry
+├── outlineDS (priority: 1)     ← 章节细纲
+├── styleDS (priority: 2)       ← 文风设定
+├── chapterGoalDS (priority: 3) ← 当前章节目标
+├── recentSummaryDS (p: 4)      ← 最近章节摘要
+├── prevEndingDS (priority: 5)  ← 上一章结尾
+├── characterStateDS (p: 6)     ← 角色当前状态
+├── cognitionDS (priority: 7)   ← 角色认知（知道/不知道）
+├── foreshadowDS (priority: 8)  ← 未解伏笔 + 紧迫度
+├── timelineDS (priority: 9)    ← 故事时间线
+├── searchDS (priority: 10)     ← 向量+关键词检索结果
+└── writingStyleDS (p: 11)      ← 写作风格约束
+```
+
+特性：
+- 每个数据源独立加载、独立错误处理（一个失败不影响其他）
+- 按 SECTION_PRIORITY 表排序拼入 prompt
+- CJK 感知 token 预算控制，超限时自动压缩低优先级数据源
+- 稳定前缀缓存：同一生成会话中，轮廓+上下文 block 保持字节不变以触发缓存命中
+
 | 功能 | 说明 |
 |---|---|
-| 上下文装配 | 按优先级组装写前 context pack |
+| 上下文装配 | DataSourceRegistry 并发加载各数据源，按优先级组装 |
 | 角色认知注入 | 防止角色信息泄露 |
-| 伏笔提醒注入 | 无人处理的伏笔自动追加到 prompt |
+| 伏笔提醒注入 | 未解伏笔按紧迫度排序追加到 prompt |
 | 知识检索注入 | 向量 + 关键词混合搜索相关设定 |
-| 上下文预算控制 | 超出 token 限制时自动压缩低优先级内容 |
+| 上下文预算控制 | CJK 感知 token 估算，超出时自动压缩低优先级 |
 | 流式生成 | SSE 协议流式输出 |
 | 中断/恢复 | 支持生成过程中断 |
 
 ### 2.7 记忆提取（Chapter Ingest）
+
+#### 后处理流水线
+
+章节保存后触发：
+
+```
+章节保存 → banned words 检测
+         → AI 分析结构化提取（ChapterSnapshot）
+         → 内存数据同步（伏笔/认知/时间线）
+         → 文本分块 + 向量嵌入索引更新
+         → 统计事件记录（字数/用时）
+```
 
 | 功能 | 说明 |
 |---|---|
@@ -257,8 +294,57 @@ AI 自动跑一轮检查，产出审查报告：
 | 伏笔识别 | 新埋伏笔和已解伏笔 |
 | 章节摘要生成 | 用于后续上下文组装 |
 | 认知更新 | 角色知识库自动更新 |
+| 向量索引更新 | Markdown 感知递归分块 → 调用 embedding API → upsert 到 LanceDB |
 
-### 2.8 审查系统
+### 2.8 搜索系统
+
+#### 混合搜索架构：RRF 融合
+
+```
+用户输入查询
+    ↓
+关键词分支（TS 端，2.5s 超时）
+  ├── CJK 感知分词（单字/双字/停用词过滤）
+  ├── 文件名精确匹配 bonus
+  └── 内容词频评分
+    ↓
+向量分支（Rust + LanceDB，2.5s 超时）
+  ├── Markdown 递归分块（headingPath 面包屑）
+  ├── 调用 embedding API
+  └── LanceDB ANN 搜索
+    ↓
+RRF 融合（Reciprocal Rank Fusion, K=60）
+    ↓
+可选 LLM 重排（top-N 以内）
+    ↓
+结构化搜索结果（带来源标注：keyword/vector/graph）
+```
+
+| 功能 | 说明 |
+|---|---|
+| 关键词搜索 | CJK 分词 + 文件名精确匹配 + 内容词频评分 |
+| 向量搜索 | Markdown 感知分块 → embedding → LanceDB ANN |
+| RRF 融合 | 基于排名的无偏融合，K=60 标准常数 |
+| 多源超时控制 | 每源 2.5s 超时，慢 API 不阻塞整体 |
+| 搜索范围 | characters / worldview / chapters / notes / memory / outline |
+| 增量索引 | 保存后自动分块 + upsert，无需全量重建 |
+| LLM 重排 | 可选：对 top-K 结果用 AI 进行相关性重排 |
+
+#### Markdown 文本分块策略
+
+- 按 heading 层级递归分割（`#` → `##` → `###` → 段落 → 行）
+- 每 chunk 携带 headingPath 面包屑（如 `## 力量体系 > ### 修仙境界`）
+- 不切割代码块和表格
+- chunk 大小 500-1000 tokens，相邻 chunk 50 token 重叠
+- 纯确定性算法，相同输入产生相同分块
+
+#### 向量存储：LanceDB（嵌入式）
+
+- 存储位置：`{project_dir}/.lancedb/` — 文件级，无需独立服务
+- 每次章节保存时增量 upsert（仅更新改动的 chunks）
+- Rust Tauri command 层：`vector_upsert_chunks` / `vector_search_chunks`
+
+### 2.9 审查系统
 
 | 功能 | 说明 |
 |---|---|
@@ -268,7 +354,7 @@ AI 自动跑一轮检查，产出审查报告：
 | 手动重审 | 修改后重新触发审查 |
 | 敏感词/违禁词检查 | 检测涉政、涉黄、暴力及各大平台自定义屏蔽词，标红提示 |
 
-### 2.9 辅助功能
+### 2.10 辅助功能
 
 | 功能 | 说明 |
 |---|---|
@@ -281,12 +367,32 @@ AI 自动跑一轮检查，产出审查报告：
 | 写作风格管理 | 自定义多套写作风格，按项目切换 |
 | 去 AI 味检查 | 9 种 AI 写作指纹检测 + 自动清理 |
 | 热门题材参考 | 热门标签/趋势统计，辅助开书决策 |
-| 写作统计看板 | 日更字数、写作速度趋势、连载进度、全勤倒计时等数据 |
+| 写作统计看板 | 日更字数、写作速度趋势、连载进度、全勤倒计时、伏笔债评分 |
 | 发布格式适配 | 一键复制为起点/番茄/晋江等平台适配格式（段落间距、缩进等） |
 | 数据导出 | 导出为 TXT / Markdown / epub |
 | 崩溃恢复与自动备份 | 循环备份策略，保留最近 N 个全项目快照，崩后一键恢复 |
 
-### 2.10 素材库（应用级，跨项目）
+#### 写作统计看板
+
+数据来源：`stats/YYYY-MM.jsonl` — 追加式 JSONL 日志，每个事件一行。
+
+| 追踪事件 | 触发时机 | 数据字段 |
+|---|---|---|
+| `chapter_saved` | 保存章节 | chapter, char_count, word_count, timestamp |
+| `ai_generated` | AI 生成完成 | prompt_tokens, output_tokens, duration_ms |
+| `session_start/end` | 进入/离开编辑器 | timestamp |
+
+展示指标（前端计算，不存储）：
+- 日更字数柱状图（7 天/30 天）
+- 写作速度趋势（字符/分钟）
+- 连载进度（当前章节 / 总计划）
+- AI 生成 vs 手动写作比例
+- 写作连续天数（Streak）
+- 伏笔债评分（来自 ForeshadowDebt 分析）
+
+统计面板 UI 遵循 `panel-layout` 约定（AGENTS.md），纯 CSS 可视化（无需额外图表库）。
+
+### 2.11 素材库（应用级，跨项目）
 
 | 功能 | 说明 |
 |---|---|
@@ -519,12 +625,12 @@ Post-process (去AI味 → 记忆提取 → 审查)
 - [ ] 注释/批注系统（写作备注、TODO 标注）
 
 ### v0.3 — 记忆系统
-- [ ] Chapter Ingest（章节自动分析）
-- [ ] 角色状态追踪
-- [ ] 上下文引擎完整版（角色认知注入 + 伏笔注入）
-- [ ] 关键词 + 向量混合搜索
-- [ ] 伏笔管理面板
-- [ ] 写作统计看板（日更字数 / 速度趋势 / 连载进度）
+- [x] Chapter Ingest（章节自动分析）
+- [x] 角色状态追踪
+- [x] 伏笔管理面板
+- [ ] 上下文引擎完整版 — DataSourceRegistry 架构 + 角色认知注入 + 伏笔注入 + 文风设定
+- [ ] 关键词 + 向量混合搜索 — CJK 分词 + RRF 融合 + LanceDB + 增量索引
+- [ ] 写作统计看板 — JSONL 事件日志 + 日更字数 / 趋势 / 连载进度 / 伏笔债评分
 
 ### v0.4 — 质量保障 + 素材库基础
 - [ ] 自动一致性审查（时间线 / 角色认知 / 伏笔 / 设定自洽）
