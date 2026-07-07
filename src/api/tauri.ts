@@ -93,3 +93,40 @@ export async function searchProjectFiles(
     maxResults: maxResults ?? 20,
   })
 }
+
+export interface ChunkUpsertInput {
+  chunk_id: string
+  page_id: string
+  chunk_index: number
+  heading_path: string
+  chunk_text: string
+  embedding: number[]
+}
+
+export interface ChunkSearchResult {
+  chunk_id: string
+  page_id: string
+  chunk_index: number
+  chunk_text: string
+  heading_path: string
+  score: number
+}
+
+export async function vectorUpsertChunks(
+  projectId: string,
+  chunks: ChunkUpsertInput[],
+): Promise<void> {
+  return invoke('vector_upsert_chunks', { projectId, chunks })
+}
+
+export async function vectorSearchChunks(
+  projectId: string,
+  queryEmbedding: number[],
+  topK: number,
+): Promise<ChunkSearchResult[]> {
+  return invoke<ChunkSearchResult[]>('vector_search_chunks', {
+    projectId,
+    queryEmbedding,
+    topK,
+  })
+}

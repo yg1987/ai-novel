@@ -454,6 +454,8 @@ pub fn run() {
             write_project_file,
             delete_project_file,
             commands::search::search_project_files,
+            commands::vectorstore::vector_upsert_chunks,
+            commands::vectorstore::vector_search_chunks,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
