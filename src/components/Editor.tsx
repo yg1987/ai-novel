@@ -9,6 +9,7 @@ import { generateChapter, stopGeneration } from '../services/aiProvider'
 import { checkBannedWords, type CheckResult } from '../services/bannedWords'
 import { analyzeChapter } from '../services/chapterIngest'
 import { saveChapterSnapshot } from '../services/memorySync'
+import { logChapterSaved, logAIGenerated, logSessionStart } from '../services/stats'
 
 interface Props {
   projectId: string
@@ -56,6 +57,12 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
     }
   }, [editor, initialContent, chapterId])
 
+  // Log session start on mount
+  useEffect(() => {
+    logSessionStart(projectId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
+
   // Save on unmount
   useEffect(() => {
     return () => {
@@ -99,6 +106,9 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
             runBannedCheck(html)
             void runIngest(html)
           })
+          .then(() => {
+            logChapterSaved(projectId, chapterNumber, html)
+          })
           .catch((e: unknown) => { console.error('Manual save failed:', e) })
       }
     }
@@ -118,8 +128,7 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
         onDone: () => {
           setGenerating(false)
           const elapsed = Date.now() - generateStartTime.current
-          // elapsed will be passed to stats logging later
-          void elapsed
+          logAIGenerated(projectId, chapterNumber, elapsed)
           handleSaveNow()
         },
         onError: (err) => { console.error('Generation error:', err); setGenerating(false) },
