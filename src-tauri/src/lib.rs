@@ -456,6 +456,8 @@ pub fn run() {
             commands::search::search_project_files,
             commands::vectorstore::vector_upsert_chunks,
             commands::vectorstore::vector_search_chunks,
+            commands::stats::append_stat_event,
+            commands::stats::compute_daily_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

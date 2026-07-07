@@ -130,3 +130,36 @@ export async function vectorSearchChunks(
     topK,
   })
 }
+
+export interface StatEvent {
+  timestamp: string
+  event_type: string
+  chapter?: number
+  char_count?: number
+  word_count?: number
+  duration_ms?: number
+  prompt_tokens?: number
+  output_tokens?: number
+}
+
+export interface DailyStats {
+  date: string
+  char_count: number
+  word_count: number
+  ai_generations: number
+  sessions: number
+}
+
+export async function appendStatEvent(
+  projectId: string,
+  event: StatEvent,
+): Promise<void> {
+  return invoke('append_stat_event', { projectId, event })
+}
+
+export async function computeDailyStats(
+  projectId: string,
+  days: number,
+): Promise<DailyStats[]> {
+  return invoke<DailyStats[]>('compute_daily_stats', { projectId, days })
+}
