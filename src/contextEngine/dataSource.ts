@@ -39,8 +39,12 @@ export class DataSourceRegistry {
           return { name: s.name, content: String(content), priority: s.priority }
         } catch (err) {
           if (s.fallback) {
-            const fallbackContent = s.fallback()
-            return { name: s.name, content: String(fallbackContent), priority: s.priority, error: String(err) }
+            try {
+              const fallbackContent = s.fallback()
+              return { name: s.name, content: String(fallbackContent), priority: s.priority, error: String(err) }
+            } catch (fallbackErr) {
+              return { name: s.name, content: '', priority: s.priority, error: String(fallbackErr) }
+            }
           }
           return { name: s.name, content: '', priority: s.priority, error: String(err) }
         }
@@ -49,10 +53,11 @@ export class DataSourceRegistry {
     return results
       .filter((r) => r.status === 'fulfilled')
       .map((r) => (r as PromiseFulfilledResult<DataSourceResult>).value)
+      // Note: filter above narrows to fulfilled; `as` cast is safe here
       .sort((a, b) => a.priority - b.priority)
   }
 
-  /** Reorder a loaded result set, deduplicate by name, filter empty */
+  /** Deduplicate by name, filter out empty results */
   assemble(results: DataSourceResult[]): DataSourceResult[] {
     const seen = new Set<string>()
     return results
