@@ -4,6 +4,7 @@ import { listChapters, getChapterContent, saveChapterContent } from '../api/taur
 import Editor, { type EditorHandle } from './Editor'
 import VersionHistoryPanel from './VersionHistoryPanel'
 import MaterialSidebar from './MaterialSidebar'
+import FocusModeOverlay from './FocusModeOverlay'
 
 interface Props {
   projectId: string
@@ -17,6 +18,7 @@ export default function ChapterManager({ projectId, targetWords = 1200 }: Props)
   const [loading, setLoading] = useState(true)
   const [showVersionHistory, setShowVersionHistory] = useState(false)
   const [showMaterial, setShowMaterial] = useState(false)
+  const [showFocus, setShowFocus] = useState(false)
   const editorRef = useRef<EditorHandle>(null)
 
   const refresh = useCallback(async () => {
@@ -86,6 +88,11 @@ export default function ChapterManager({ projectId, targetWords = 1200 }: Props)
           <button className="btn-small" onClick={() => setShowMaterial((v) => !v)} title="素材库">
             📦
           </button>
+          {activeChapterId && (
+            <button className="btn-small" onClick={() => setShowFocus(true)} title="专注模式">
+              🎯
+            </button>
+          )}
         </div>
         <div className="chapter-list">
           {chapters.map((ch) => (
@@ -139,6 +146,14 @@ export default function ChapterManager({ projectId, targetWords = 1200 }: Props)
           </div>
         )}
       </div>
+
+      {showFocus && activeChapterId && (
+        <FocusModeOverlay
+          wordCount={0}
+          targetWords={targetWords}
+          onExit={() => setShowFocus(false)}
+        />
+      )}
     </div>
   )
 }

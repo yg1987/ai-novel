@@ -1729,3 +1729,49 @@ body {
   font-size: 0.75rem; padding: 2px 8px; border-radius: 10px;
   background: var(--bg); color: var(--text-muted);
 }
+
+/* ─── Focus Mode ───────────────────────────────── */
+.focus-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+}
+.focus-panel {
+  background: var(--bg-card); border-radius: var(--radius);
+  padding: 32px; min-width: 360px; max-width: 420px;
+  box-shadow: var(--shadow-lg); text-align: center;
+}
+.focus-panel h2 { font-size: 1.3rem; margin-bottom: 20px; }
+.focus-config { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+.focus-config label {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.85rem; font-weight: 600;
+}
+.focus-config input {
+  width: 120px; padding: 6px 10px; border: 1px solid var(--border);
+  border-radius: var(--radius); font-size: 0.85rem; text-align: center;
+}
+.focus-actions { display: flex; gap: 12px; justify-content: center; margin-top: 16px; }
+.focus-active { padding: 48px 32px; }
+.focus-progress-bar {
+  height: 6px; background: var(--bg); border-radius: 3px;
+  overflow: hidden; margin-bottom: 24px;
+}
+.focus-progress-fill {
+  height: 100%; background: var(--accent); border-radius: 3px;
+  transition: width 0.5s ease;
+}
+.focus-timer {
+  font-size: 3rem; font-weight: 700; font-family: monospace;
+  color: var(--accent); margin-bottom: 4px;
+}
+.focus-target { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 24px; }
+.focus-stats {
+  display: flex; justify-content: center; gap: 24px; font-size: 0.85rem;
+  color: var(--text-secondary); margin-bottom: 24px;
+}
+.focus-completed { padding: 16px; }
+.focus-completed-icon { font-size: 3rem; margin-bottom: 12px; }
+.focus-completed h2 { margin-bottom: 12px; }
+.focus-completed p { font-size: 0.9rem; color: var(--text-secondary); margin: 4px 0; }
+.focus-completed-time { font-family: monospace; font-size: 1.1rem !important; color: var(--accent) !important; font-weight: 600; }
