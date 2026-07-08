@@ -11,6 +11,7 @@ import StatisticsPanel from './StatisticsPanel'
 import ReviewPanel from './ReviewPanel'
 import ResourcePanel from './ResourcePanel'
 import BrainstormPanel from './BrainstormPanel'
+import ExportDialog from './ExportDialog'
 
 interface Props {
   project: ProjectMeta
@@ -21,6 +22,7 @@ type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'fores
 
 export default function ProjectView({ project, onBack }: Props) {
   const [tab, setTab] = useState<Tab>('writing')
+  const [showExport, setShowExport] = useState(false)
 
   return (
     <div className="project-view">
@@ -28,7 +30,15 @@ export default function ProjectView({ project, onBack }: Props) {
         <button className="btn-text" onClick={() => { onBack() }}>← 返回书架</button>
         <h2>{project.name}</h2>
         <span className="project-status-badge">{project.status}</span>
+        <button className="btn-text" onClick={() => setShowExport(true)}>📤 导出</button>
       </div>
+      {showExport && (
+        <ExportDialog
+          projectId={project.id}
+          projectName={project.name}
+          onClose={() => setShowExport(false)}
+        />
+      )}
 
       <div className="project-info-bar">
         <span>{project.genre}</span>

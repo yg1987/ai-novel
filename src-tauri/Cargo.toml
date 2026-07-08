@@ -23,6 +23,8 @@ lancedb = "0.27"
 arrow-array = "57"
 arrow-schema = "57"
 futures = "0.3"
+tauri-plugin-dialog = "2.7.1"
+tauri-plugin-fs = "2.5.1"
 
 [profile.release]
 strip = true
