@@ -9,13 +9,14 @@ import ForeshadowPanel from './ForeshadowPanel'
 import SearchPanel from './SearchPanel'
 import StatisticsPanel from './StatisticsPanel'
 import ReviewPanel from './ReviewPanel'
+import ResourcePanel from './ResourcePanel'
 
 interface Props {
   project: ProjectMeta
   onBack: () => void
 }
 
-type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats' | 'review'
+type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats' | 'review' | 'resource'
 
 export default function ProjectView({ project, onBack }: Props) {
   const [tab, setTab] = useState<Tab>('writing')
@@ -44,6 +45,7 @@ export default function ProjectView({ project, onBack }: Props) {
         <button className={`tab-btn${tab === 'search' ? ' active' : ''}`} onClick={() => { setTab('search') }}>🔎 搜索</button>
         <button className={`tab-btn${tab === 'stats' ? ' active' : ''}`} onClick={() => { setTab('stats') }}>📊 统计</button>
         <button className={`tab-btn${tab === 'review' ? ' active' : ''}`} onClick={() => { setTab('review') }}>🔍 审查</button>
+        <button className={`tab-btn${tab === 'resource' ? ' active' : ''}`} onClick={() => { setTab('resource') }}>📦 素材</button>
       </div>
 
       <div className="project-tab-content">
@@ -56,6 +58,7 @@ export default function ProjectView({ project, onBack }: Props) {
         {tab === 'search' && <SearchPanel projectId={project.id} />}
         {tab === 'stats' && <StatisticsPanel projectId={project.id} targetWords={project.target_words} />}
         {tab === 'review' && <ReviewPanel projectId={project.id} currentChapterId={null} />}
+        {tab === 'resource' && <ResourcePanel />}
       </div>
     </div>
   )
