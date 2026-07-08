@@ -13,13 +13,14 @@ import ResourcePanel from './ResourcePanel'
 import BrainstormPanel from './BrainstormPanel'
 import ExportDialog from './ExportDialog'
 import RelationshipGraph from './RelationshipGraph'
+import TrendingPanel from './TrendingPanel'
 
 interface Props {
   project: ProjectMeta
   onBack: () => void
 }
 
-type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats' | 'review' | 'resource' | 'brainstorm' | 'graph'
+type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats' | 'review' | 'resource' | 'brainstorm' | 'graph' | 'trending'
 
 export default function ProjectView({ project, onBack }: Props) {
   const [tab, setTab] = useState<Tab>('writing')
@@ -60,6 +61,7 @@ export default function ProjectView({ project, onBack }: Props) {
         <button className={`tab-btn${tab === 'resource' ? ' active' : ''}`} onClick={() => { setTab('resource') }}>📦 素材</button>
         <button className={`tab-btn${tab === 'brainstorm' ? ' active' : ''}`} onClick={() => { setTab('brainstorm') }}>💡 灵感</button>
         <button className={`tab-btn${tab === 'graph' ? ' active' : ''}`} onClick={() => { setTab('graph') }}>🕸 关系图</button>
+        <button className={`tab-btn${tab === 'trending' ? ' active' : ''}`} onClick={() => { setTab('trending') }}>🔥 热门</button>
       </div>
 
       <div className="project-tab-content">
@@ -75,6 +77,7 @@ export default function ProjectView({ project, onBack }: Props) {
         {tab === 'resource' && <ResourcePanel projectId={project.id} />}
         {tab === 'brainstorm' && <BrainstormPanel projectId={project.id} />}
         {tab === 'graph' && <RelationshipGraph projectId={project.id} />}
+        {tab === 'trending' && <TrendingPanel />}
       </div>
     </div>
   )
