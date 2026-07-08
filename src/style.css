@@ -1105,6 +1105,14 @@ body {
   font-style: italic;
 }
 
+/* Light check indicator */
+.light-check-indicator {
+  font-size: 0.75rem; padding: 2px 8px; border-radius: 3px;
+  cursor: default;
+}
+.light-check-indicator.passed { color: #28a745; }
+.light-check-indicator.failed { color: #e67e22; }
+
 /* ─── Foreshadow panel ─────────────────────────── */
 
 .foreshadow-panel {

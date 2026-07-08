@@ -14,6 +14,7 @@ import { logChapterSaved, logAIGenerated, logSessionStart } from '../services/st
 import { chunkMarkdown } from '../services/textChunker'
 import { embedChunks } from '../services/embeddings'
 import { vectorUpsertChunks } from '../api/tauri'
+import { runAndSaveLightCheck } from '../services/reviewService'
 
 interface Props {
   projectId: string
@@ -39,6 +40,7 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
     beforeText: string
     afterText: string
   } | null>(null)
+  const [lastLightCheckResult, setLastLightCheckResult] = useState<{ passed: boolean; issues: number } | null>(null)
 
   const editor = useEditor({
     extensions: [StarterKit, Underline, Placeholder.configure({ placeholder: '开始写作…' })],
@@ -139,6 +141,17 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
               console.error('Vector indexing failed:', e)
             }
           })
+          .then(async () => {
+            const plainText = html.replace(/<[^>]*>/g, '').trim()
+            if (plainText.length > 50) {
+              try {
+                const result = await runAndSaveLightCheck(projectId, chapterId, html)
+                setLastLightCheckResult({ passed: result.passed, issues: result.checks.reduce((sum, c) => sum + c.issues.length, 0) })
+              } catch (e) {
+                console.error('Light check failed:', e)
+              }
+            }
+          })
           .catch((e: unknown) => { console.error('Manual save failed:', e) })
       }
     }
@@ -219,6 +232,16 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
             <span className={`banned-dot ${bannedCheck.level}`} />
             <span className="banned-score">{bannedCheck.score}</span>
           </div>
+        )}
+
+        {/* Light check indicator */}
+        {lastLightCheckResult && (
+          <span
+            className={`light-check-indicator ${lastLightCheckResult.passed ? 'passed' : 'failed'}`}
+            title={`轻量检查：${lastLightCheckResult.passed ? '通过' : `${lastLightCheckResult.issues} 个问题`}`}
+          >
+            {lastLightCheckResult.passed ? '✓' : '⚠'} 检查
+          </span>
         )}
 
         {generating ? (
