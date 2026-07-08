@@ -1636,6 +1636,23 @@ body {
   display: flex; justify-content: flex-end;
   padding: 12px 16px; border-top: 1px solid var(--border);
 }
+.export-divider {
+  height: 1px; background: var(--border); margin: 16px 0;
+}
+.export-preview {
+  margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden; background: var(--bg);
+}
+.export-preview-header {
+  padding: 6px 10px; font-size: 0.75rem; font-weight: 600;
+  color: var(--text-secondary); background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+}
+.export-preview-text {
+  padding: 8px 10px; font-size: 0.78rem; line-height: 1.5;
+  white-space: pre-wrap; max-height: 200px; overflow-y: auto;
+  color: var(--text-secondary);
+}
 
 /* ─── Relationship Graph ────────────────────────── */
 .graph-panel { height: 100%; }
