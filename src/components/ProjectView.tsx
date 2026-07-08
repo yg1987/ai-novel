@@ -10,13 +10,14 @@ import SearchPanel from './SearchPanel'
 import StatisticsPanel from './StatisticsPanel'
 import ReviewPanel from './ReviewPanel'
 import ResourcePanel from './ResourcePanel'
+import BrainstormPanel from './BrainstormPanel'
 
 interface Props {
   project: ProjectMeta
   onBack: () => void
 }
 
-type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats' | 'review' | 'resource'
+type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats' | 'review' | 'resource' | 'brainstorm'
 
 export default function ProjectView({ project, onBack }: Props) {
   const [tab, setTab] = useState<Tab>('writing')
@@ -46,6 +47,7 @@ export default function ProjectView({ project, onBack }: Props) {
         <button className={`tab-btn${tab === 'stats' ? ' active' : ''}`} onClick={() => { setTab('stats') }}>📊 统计</button>
         <button className={`tab-btn${tab === 'review' ? ' active' : ''}`} onClick={() => { setTab('review') }}>🔍 审查</button>
         <button className={`tab-btn${tab === 'resource' ? ' active' : ''}`} onClick={() => { setTab('resource') }}>📦 素材</button>
+        <button className={`tab-btn${tab === 'brainstorm' ? ' active' : ''}`} onClick={() => { setTab('brainstorm') }}>💡 灵感</button>
       </div>
 
       <div className="project-tab-content">
@@ -59,6 +61,7 @@ export default function ProjectView({ project, onBack }: Props) {
         {tab === 'stats' && <StatisticsPanel projectId={project.id} targetWords={project.target_words} />}
         {tab === 'review' && <ReviewPanel projectId={project.id} currentChapterId={null} />}
         {tab === 'resource' && <ResourcePanel projectId={project.id} />}
+        {tab === 'brainstorm' && <BrainstormPanel projectId={project.id} />}
       </div>
     </div>
   )
