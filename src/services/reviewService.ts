@@ -39,6 +39,21 @@ export async function runDeepReview(
     readProjectFile(projectId, '', 'style.md').catch(() => ''),
   ])
 
+  // Load worldview data for setting_consistency checks (设计文档 §4.3)
+  let worldviewText = ''
+  try {
+    const worldviewFiles = await listProjectFiles(projectId, 'worldview')
+    const snippets: string[] = []
+    for (const f of worldviewFiles.slice(0, 5)) {
+      const content = await readProjectFile(projectId, 'worldview', f.name).catch(() => '')
+      if (content) {
+        const text = content.replace(/^---[\s\S]*?---\n?/, '').replace(/<[^>]*>/g, '').trim()
+        if (text) snippets.push(`【${f.name.replace(/\.md$/i, '')}】\n${text.slice(0, 800)}`)
+      }
+    }
+    if (snippets.length > 0) worldviewText = '\n\n## 世界观设定\n' + snippets.join('\n\n')
+  } catch { /* worldview not available */ }
+
   const config = await loadProviderConfig()
   const provider = config.providers.find((p) => p.name === config.active_profile)
   if (!provider) throw new Error('No AI provider configured')
@@ -66,7 +81,7 @@ ${foreshadowRaw.slice(0, 1000) || '（无数据）'}
 ${timelineRaw.slice(0, 500) || '（无数据）'}
 
 ## 文风设定
-${styleRaw.slice(0, 500) || '（无数据）'}
+${styleRaw.slice(0, 500) || '（无数据）'}${worldviewText}
 
 ## 输出JSON格式
 {
@@ -76,8 +91,23 @@ ${styleRaw.slice(0, 500) || '（无数据）'}
       "name": "timeline",
       "score": 0-10,
       "issues": [
-        { "severity": "error|warning|hint", "desc": "问题描述", "location": null }
+        { "severity": "error|warning|hint", "desc": "问题描述", "location": null, "suggestion": "修改建议" }
       ]
+    },
+    {
+      "name": "character_cognition",
+      "score": 0-10,
+      "issues": []
+    },
+    {
+      "name": "foreshadow_health",
+      "score": 0-10,
+      "issues": []
+    },
+    {
+      "name": "setting_consistency",
+      "score": 0-10,
+      "issues": []
     }
   ],
   "suggestions": ["建议1"]
@@ -108,48 +138,75 @@ ${styleRaw.slice(0, 500) || '（无数据）'}
     choices?: Array<{ message?: { content?: string } }>
   }
   const raw = data.choices?.[0]?.message?.content ?? ''
-  const jsonMatch = raw.match(/\{[\s\S]*\}/)
-  const jsonStr = jsonMatch?.[0] ?? raw
+
+  // Multi-layer JSON extraction (设计文档 §4.3)
+  const extractJSON = (text: string): string | null => {
+    const trimmed = text.trim()
+    // 1. Direct parse
+    try { JSON.parse(trimmed); return trimmed } catch { /* try next */ }
+    // 2. ```json ... ``` block
+    const blockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)```/)
+    if (blockMatch) {
+      try { JSON.parse(blockMatch[1]!); return blockMatch[1]! } catch { /* try next */ }
+    }
+    // 3. { ... } object
+    const objMatch = trimmed.match(/\{[\s\S]*\}/)
+    if (objMatch) {
+      try { JSON.parse(objMatch[0]); return objMatch[0] } catch { /* give up */ }
+    }
+    return null
+  }
+
+  const jsonStr = extractJSON(raw)
 
   let result: DeepCheckResult
-  try {
-    const parsed = JSON.parse(jsonStr) as {
-      overall_score?: number
-      dimensions?: Array<{
-        name: string
-        score: number
-        issues: Array<{
-          severity: string
-          desc: string
-          location?: { line: number; offset: number } | null
-          suggestion?: string
-        }>
-      }>
-      suggestions?: string[]
-    }
-    result = {
-      overall_score: typeof parsed.overall_score === 'number' ? parsed.overall_score : 0,
-      dimensions: (parsed.dimensions ?? []).map((d): DeepCheckDimension => ({
-        name: d.name as DeepCheckDimension['name'],
-        score: typeof d.score === 'number' ? d.score : 0,
-        issues: d.issues.map((issue) => ({
-          severity: (issue.severity === 'error' || issue.severity === 'warning' || issue.severity === 'hint')
-            ? issue.severity
-            : 'hint',
-          desc: issue.desc,
-          location: issue.location ?? null,
-          suggestion: issue.suggestion,
-        })),
-      })),
-      suggestions: parsed.suggestions ?? [],
-      timestamp: new Date().toISOString(),
-    }
-  } catch {
+  if (!jsonStr) {
     result = {
       overall_score: 0,
       dimensions: [],
       suggestions: ['AI审查解析失败，请重试'],
       timestamp: new Date().toISOString(),
+    }
+  } else {
+    try {
+      const parsed = JSON.parse(jsonStr) as {
+        overall_score?: number
+        dimensions?: Array<{
+          name: string
+          score: number
+          issues: Array<{
+            severity: string
+            desc: string
+            location?: { line: number; offset: number } | null
+            suggestion?: string
+          }>
+        }>
+        suggestions?: string[]
+      }
+      result = {
+        overall_score: typeof parsed.overall_score === 'number' ? parsed.overall_score : 0,
+        dimensions: (parsed.dimensions ?? []).map((d): DeepCheckDimension => ({
+          name: d.name as DeepCheckDimension['name'],
+          score: typeof d.score === 'number' ? d.score : 0,
+          issues: d.issues.map((issue) => ({
+            severity: (issue.severity === 'error' || issue.severity === 'warning' || issue.severity === 'hint')
+              ? issue.severity
+              : 'hint',
+            desc: issue.desc,
+            location: issue.location ?? null,
+            suggestion: issue.suggestion,
+          })),
+        })),
+        suggestions: parsed.suggestions ?? [],
+        timestamp: new Date().toISOString(),
+      }
+    } catch {
+      result = {
+        overall_score: 0,
+        dimensions: [],
+        suggestions: ['AI审查结果格式异常，请重试'],
+        timestamp: new Date().toISOString(),
+      }
     }
   }
 
