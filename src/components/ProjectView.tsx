@@ -15,13 +15,14 @@ import ExportDialog from './ExportDialog'
 import RelationshipGraph from './RelationshipGraph'
 import TrendingPanel from './TrendingPanel'
 import ArchiveDialog from './ArchiveDialog'
+import ChapterGraph from './ChapterGraph'
 
 interface Props {
   project: ProjectMeta
   onBack: () => void
 }
 
-type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats' | 'review' | 'resource' | 'brainstorm' | 'graph' | 'trending'
+type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats' | 'review' | 'resource' | 'brainstorm' | 'graph' | 'trending' | 'chaptergraph'
 
 export default function ProjectView({ project, onBack }: Props) {
   const [tab, setTab] = useState<Tab>('writing')
@@ -72,6 +73,7 @@ export default function ProjectView({ project, onBack }: Props) {
         <button className={`tab-btn${tab === 'brainstorm' ? ' active' : ''}`} onClick={() => { setTab('brainstorm') }}>💡 灵感</button>
         <button className={`tab-btn${tab === 'graph' ? ' active' : ''}`} onClick={() => { setTab('graph') }}>🕸 关系图</button>
         <button className={`tab-btn${tab === 'trending' ? ' active' : ''}`} onClick={() => { setTab('trending') }}>🔥 热门</button>
+        <button className={`tab-btn${tab === 'chaptergraph' ? ' active' : ''}`} onClick={() => { setTab('chaptergraph') }}>📊 章节图</button>
       </div>
 
       <div className="project-tab-content">
@@ -88,6 +90,7 @@ export default function ProjectView({ project, onBack }: Props) {
         {tab === 'brainstorm' && <BrainstormPanel projectId={project.id} />}
         {tab === 'graph' && <RelationshipGraph projectId={project.id} />}
         {tab === 'trending' && <TrendingPanel />}
+        {tab === 'chaptergraph' && <ChapterGraph projectId={project.id} />}
       </div>
     </div>
   )
