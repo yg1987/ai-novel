@@ -16,9 +16,6 @@ dist-ssr
 src-tauri/target/
 src-tauri/gen/
 
-# OpenCode workspace
-.omo/
-
 # OS
 .DS_Store
 Thumbs.db

@@ -1,0 +1,62 @@
+# Review package: 780cf03..5f673dd
+
+## Commits
+5f673dd feat(context-engine): add CJK-aware token budget utility
+
+## Files changed
+ src/contextEngine/budget.ts | 46 +++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 46 insertions(+)
+
+## Diff
+diff --git a/src/contextEngine/budget.ts b/src/contextEngine/budget.ts
+new file mode 100644
+index 0000000..b940591
+--- /dev/null
++++ b/src/contextEngine/budget.ts
+@@ -0,0 +1,46 @@
++// src/contextEngine/budget.ts
++import type { DataSourceResult } from './dataSource'
++
++/** CJK-aware token estimation */
++export function estimateTokens(text: string): number {
++  const cjkCount = (text.match(/[\u3000-\u9fff\uff00-\uffef]/g) || []).length
++  const nonCjkCount = text.length - cjkCount
++  return Math.ceil(cjkCount * 0.7 + nonCjkCount * 0.25)
++}
++
++/** Truncate results to fit within maxTokens, dropping lowest priority first */
++export function truncateToBudget(
++  results: DataSourceResult[],
++  maxTokens: number,
++): DataSourceResult[] {
++  // results are already sorted by priority ascending
++  let total = 0
++  const kept: DataSourceResult[] = []
++  for (const r of results) {
++    const tokens = estimateTokens(r.content)
++    if (total + tokens <= maxTokens) {
++      kept.push(r)
++      total += tokens
++    } else {
++      // Add a placeholder for truncated sources
++      const remaining = maxTokens - total
++      if (remaining > 20) {
++        kept.push({ ...r, content: r.content.slice(0, Math.floor(remaining / 0.7)) })
++      }
++      break
++    }
++  }
++  return kept
++}
++
++const DEFAULT_SYSTEM_PROMPT = `你是一位优秀的网络小说作家。请根据以下要求续写小说正文。
++
++## 写作要求
++- 只输出小说正文，不要添加任何解释、注释或元描述
++- 保持连贯的叙事风格
++- 注意章节之间的衔接
++- 用自然段落分隔，段落之间用空行`
++
++export function getDefaultSystemPrompt(): string {
++  return DEFAULT_SYSTEM_PROMPT
++}

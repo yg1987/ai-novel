@@ -1,0 +1,190 @@
+# Review package: 5f673dd..514a91b
+
+## Commits
+514a91b feat(context-engine): rewrite buildContext with DataSourceRegistry pattern
+
+## Files changed
+ src/components/Editor.tsx  |  5 +++
+ src/contextEngine/index.ts | 87 ++++++++++++++++++++++++++++------------------
+ 2 files changed, 59 insertions(+), 33 deletions(-)
+
+## Diff
+diff --git a/src/components/Editor.tsx b/src/components/Editor.tsx
+index dd4789d..2d2097d 100644
+--- a/src/components/Editor.tsx
++++ b/src/components/Editor.tsx
+@@ -17,20 +17,21 @@ interface Props {
+   targetWords?: number
+   onContentChange?: (content: string) => void
+   chapterNumber?: number
+ }
+ 
+ const AUTOSAVE_DELAY = 3000
+ 
+ export default function Editor({ projectId, chapterId, initialContent, targetWords = 1200, onContentChange, chapterNumber = 1 }: Props) {
+   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+   const lastSaved = useRef(initialContent)
++  const generateStartTime = useRef(0)
+   const [generating, setGenerating] = useState(false)
+   const [bannedCheck, setBannedCheck] = useState<CheckResult | null>(null)
+   const [showBannedDetail, setShowBannedDetail] = useState(false)
+   const [ingesting, setIngesting] = useState(false)
+ 
+   const editor = useEditor({
+     extensions: [StarterKit, Underline, Placeholder.configure({ placeholder: '开始写作…' })],
+     content: initialContent,
+     editorProps: { attributes: { class: 'editor-content' } },
+     onUpdate: ({ editor: ed }) => {
+@@ -99,29 +100,33 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
+             void runIngest(html)
+           })
+           .catch((e: unknown) => { console.error('Manual save failed:', e) })
+       }
+     }
+   }, [editor, projectId, chapterId, runBannedCheck, runIngest])
+ 
+   const handleGenerate = useCallback(async () => {
+     if (!editor || generating) return
+     setGenerating(true)
++    generateStartTime.current = Date.now()
+     editor.commands.focus()
+     try {
+       const ctx = await buildContext(projectId, chapterId, targetWords)
+       const { from } = editor.state.selection
+       editor.commands.insertContentAt(from, '<p></p>')
+       await generateChapter(ctx.systemPrompt, {
+         onToken: (text) => { editor.commands.insertContentAt(editor.state.selection.from, text) },
+         onDone: () => {
+           setGenerating(false)
++          const elapsed = Date.now() - generateStartTime.current
++          // elapsed will be passed to stats logging later
++          void elapsed
+           handleSaveNow()
+         },
+         onError: (err) => { console.error('Generation error:', err); setGenerating(false) },
+       })
+     } catch (e) {
+       console.error('Generation failed:', e)
+       setGenerating(false)
+     }
+   }, [editor, generating, projectId, chapterId, targetWords, handleSaveNow])
+ 
+diff --git a/src/contextEngine/index.ts b/src/contextEngine/index.ts
+index 44db338..a251ad5 100644
+--- a/src/contextEngine/index.ts
++++ b/src/contextEngine/index.ts
+@@ -1,59 +1,80 @@
+ import { getChapterOutline, getChapterContent } from '../api/tauri'
++import { DataSourceRegistry } from './dataSource'
++import { cognitionDS, foreshadowDS, styleDS, recentSummaryDS } from './sources'
++import { estimateTokens, truncateToBudget, getDefaultSystemPrompt } from './budget'
++import type { ContextLoadContext } from './dataSource'
+ 
+ export interface ContextPack {
+   systemPrompt: string
+   wordBudget: number
++  sources: string[]
++}
++
++const MAX_PROMPT_TOKENS = 4096
++
++function stripHtml(html: string): string {
++  return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
+ }
+ 
+ export async function buildContext(
+   projectId: string,
+   chapterId: string,
+   targetWords: number,
+ ): Promise<ContextPack> {
++  const chapterNumber = Number(chapterId.replace('ch', ''))
++  const ctx: ContextLoadContext = { projectId, chapterId, chapterNumber, targetWords }
++
++  // 1. Load outline + previous ending (direct, these are always needed)
+   const outline = await getChapterOutline(projectId, chapterId)
+ 
+-  // Get previous chapter content (last ~500 chars as "ending")
+-  const chapterNum = Number(chapterId.replace('ch', ''))
+   let previousEnding = ''
+-  if (chapterNum > 1) {
+-    const prevId = `ch${String(chapterNum - 1).padStart(3, '0')}`
++  if (chapterNumber > 1) {
++    const prevId = `ch${String(chapterNumber - 1).padStart(3, '0')}`
+     try {
+       const prevContent = await getChapterContent(projectId, prevId)
+-      // Strip HTML tags and get last 500 chars
+       const text = stripHtml(prevContent)
+       previousEnding = text.slice(-500)
+-    } catch {
+-      // Previous chapter might not exist
+-    }
++    } catch { /* no previous chapter */ }
+   }
+ 
+-  const systemPrompt = buildSystemPrompt(outline, previousEnding, targetWords)
+-  return { systemPrompt, wordBudget: targetWords }
+-}
++  // 2. Load context sources via DataSourceRegistry
++  const registry = new DataSourceRegistry()
++  registry.registerAll([recentSummaryDS, cognitionDS, foreshadowDS, styleDS])
++  const loaded = await registry.loadAll(ctx)
++  const assembled = registry.assemble(loaded)
+ 
+-function stripHtml(html: string): string {
+-  return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
+-}
++  // 3. Keep only the top outline/ending + as many sources as fit budget
++  const promptBase = getDefaultSystemPrompt()
++  let promptBudget = MAX_PROMPT_TOKENS - estimateTokens(promptBase)
+ 
+-function buildSystemPrompt(outline: string, previousEnding: string, targetWords: number): string {
+-  const parts: string[] = [
+-    '你是一位优秀的网络小说作家。请根据以下要求续写小说正文。',
+-    '',
+-    '## 写作要求',
+-    '- 只输出小说正文，不要添加任何解释、注释或元描述',
+-    '- 保持连贯的叙事风格',
+-    '- 注意章节之间的衔接',
+-    `- 本章目标字数约 ${String(targetWords)} 字`,
+-    '- 用自然段落分隔，段落之间用空行',
+-  ]
+-
+-  if (outline) {
+-    parts.push('', '## 本章细纲', outline)
+-  }
++  // Outline gets 25% of budget
++  const outlineTokens = estimateTokens(outline)
++  const outlineActual = Math.min(outlineTokens, Math.floor(promptBudget * 0.25))
++  promptBudget -= outlineActual
++
++  // Previous ending gets 10%
++  const endingTokens = estimateTokens(previousEnding)
++  const endingActual = Math.min(endingTokens, Math.floor(promptBudget * 0.15))
++  promptBudget -= endingActual
++
++  // Remaining budget for sources (dropped lowest priority first)
++  const fitted = truncateToBudget(assembled, Math.max(0, promptBudget))
++
++  // 4. Assemble final prompt
++  const sections: string[] = [promptBase]
+ 
+-  if (previousEnding) {
+-    parts.push('', '## 上一章结尾', previousEnding)
++  if (outline) sections.push('', '## 本章细纲', outline)
++  if (previousEnding) sections.push('', '## 上一章结尾', previousEnding)
++
++  for (const src of fitted) {
++    sections.push('', `## ${src.name}`, src.content)
+   }
+ 
+-  return parts.join('\n')
+-}
++  sections.push('', `## 字数要求`, `本章目标字数约 ${String(targetWords)} 字`)
++
++  return {
++    systemPrompt: sections.join('\n'),
++    wordBudget: targetWords,
++    sources: assembled.map((s) => s.name),
++  }
++}
+\ No newline at end of file
