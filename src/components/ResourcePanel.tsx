@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { listResourceCategories, listResourceFiles, readResourceFile, writeResourceFile, deleteResourceFile } from '../api/tauri'
 import type { FileEntry } from '../api/tauri'
 import { indexResourceFile } from '../services/resourceIndexer'
+import { suggestCategory, expandResource } from '../services/resourceAI'
 
 interface Props {
   projectId?: string
@@ -20,6 +21,10 @@ export default function ResourcePanel({ projectId }: Props) {
   const [showNewFile, setShowNewFile] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [aiSuggesting, setAiSuggesting] = useState(false)
+  const [aiSuggestion, setAiSuggestion] = useState<import('../services/resourceAI').ClassificationResult | null>(null)
+  const [aiExpanding, setAiExpanding] = useState(false)
+  const [aiExpandedText, setAiExpandedText] = useState('')
 
   const refreshCategories = useCallback(async () => {
     try {
@@ -208,6 +213,23 @@ export default function ResourcePanel({ projectId }: Props) {
             <button className="btn-text" onClick={() => setError(null)}>✕</button>
           </div>
         )}
+        {aiSuggestion && (
+          <div style={{ margin: '8px', padding: '8px 12px', background: '#f0f8ff', border: '1px solid #b8d4fe', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem' }}>
+            建议分类：<strong>{aiSuggestion.suggested_category}</strong>
+            ，标签：{aiSuggestion.tags.map((t, i) => <code key={i} style={{ margin: '0 2px' }}>{t}</code>)}
+            <button className="btn-text" style={{ float: 'right' }} onClick={() => setAiSuggestion(null)}>✕</button>
+          </div>
+        )}
+        {aiExpandedText && (
+          <div style={{ margin: '8px', padding: 12, border: '1px solid var(--accent)', borderRadius: 'var(--radius-sm)', background: '#f0f8ff' }}>
+            <h5 style={{ marginBottom: 8 }}>AI 建议</h5>
+            <pre style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', lineHeight: 1.7, fontFamily: 'var(--font-sans)' }}>{aiExpandedText}</pre>
+            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+              <button className="btn-primary" onClick={() => { setEditContent(aiExpandedText); setAiExpandedText('') }}>✓ 接受</button>
+              <button className="btn-text" onClick={() => setAiExpandedText('')}>✕ 拒绝</button>
+            </div>
+          </div>
+        )}
         {selectedFile ? (
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div style={{
@@ -215,7 +237,61 @@ export default function ResourcePanel({ projectId }: Props) {
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             }}>
               <h4>{selectedFile}</h4>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                {!editing && fileContent && (
+                  <button
+                    className="btn-text"
+                    style={{ fontSize: '0.78rem' }}
+                    onClick={async () => {
+                      setAiSuggesting(true)
+                      setAiSuggestion(null)
+                      const result = await suggestCategory(fileContent)
+                      if (result) setAiSuggestion(result)
+                      setAiSuggesting(false)
+                    }}
+                    disabled={aiSuggesting}
+                  >
+                    {aiSuggesting ? '分析中…' : '🏷 AI 分类'}
+                  </button>
+                )}
+                {editing && editContent && (
+                  <>
+                    <button
+                      className="btn-text"
+                      style={{ fontSize: '0.78rem' }}
+                      onClick={() => {
+                        setAiExpanding(true)
+                        setAiExpandedText('')
+                        expandResource(
+                          editContent, 'expand',
+                          (t) => setAiExpandedText((p) => p + t),
+                          () => setAiExpanding(false),
+                          (e) => { console.error(e); setAiExpanding(false) },
+                        )
+                      }}
+                      disabled={aiExpanding}
+                    >
+                      {aiExpanding ? '扩写中…' : '📝 扩写'}
+                    </button>
+                    <button
+                      className="btn-text"
+                      style={{ fontSize: '0.78rem' }}
+                      onClick={() => {
+                        setAiExpanding(true)
+                        setAiExpandedText('')
+                        expandResource(
+                          editContent, 'polish',
+                          (t) => setAiExpandedText((p) => p + t),
+                          () => setAiExpanding(false),
+                          (e) => { console.error(e); setAiExpanding(false) },
+                        )
+                      }}
+                      disabled={aiExpanding}
+                    >
+                      {aiExpanding ? '润色中…' : '✨ 润色'}
+                    </button>
+                  </>
+                )}
                 {editing ? (
                   <>
                     <button className="btn-primary" onClick={handleSave} disabled={saving}>
