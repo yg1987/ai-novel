@@ -501,6 +501,11 @@ pub fn run() {
             commands::version::restore_chapter_version,
             commands::version::delete_chapter_version,
             commands::version::rename_chapter_version,
+            commands::resource::list_resource_categories,
+            commands::resource::list_resource_files,
+            commands::resource::read_resource_file,
+            commands::resource::write_resource_file,
+            commands::resource::delete_resource_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
