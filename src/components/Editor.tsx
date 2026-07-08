@@ -14,7 +14,7 @@ import { logChapterSaved, logAIGenerated, logSessionStart } from '../services/st
 import { chunkMarkdown } from '../services/textChunker'
 import { embedChunks } from '../services/embeddings'
 import { vectorUpsertChunks } from '../api/tauri'
-import { runAndSaveLightCheck } from '../services/reviewService'
+import { runAndSaveLightCheck, runDeepReview } from '../services/reviewService'
 
 interface Props {
   projectId: string
@@ -31,6 +31,10 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSaved = useRef(initialContent)
   const generateStartTime = useRef(0)
+  const deepReviewCount = useRef(0)
+  const lastDeepReviewTime = useRef(0)
+  const DEEP_REVIEW_INTERVAL_MS = 30 * 60 * 1000 // 30 min
+  const DEEP_REVIEW_SAVE_THRESHOLD = 5 // every 5 saves
   const [generating, setGenerating] = useState(false)
   const [bannedCheck, setBannedCheck] = useState<CheckResult | null>(null)
   const [showBannedDetail, setShowBannedDetail] = useState(false)
@@ -149,6 +153,26 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
                 setLastLightCheckResult({ passed: result.passed, issues: result.checks.reduce((sum, c) => sum + c.issues.length, 0) })
               } catch (e) {
                 console.error('Light check failed:', e)
+              }
+            }
+          })
+          .then(async () => {
+            // Auto-trigger deep review with throttle (设计文档 §四.6 Phase 2)
+            deepReviewCount.current++
+            const now = Date.now()
+            const timeSinceLast = now - lastDeepReviewTime.current
+            const text = html.replace(/<[^>]*>/g, '').trim()
+            if (
+              text.length > 200 &&
+              (deepReviewCount.current >= DEEP_REVIEW_SAVE_THRESHOLD || timeSinceLast >= DEEP_REVIEW_INTERVAL_MS) &&
+              !chapterId.startsWith('new-')
+            ) {
+              deepReviewCount.current = 0
+              lastDeepReviewTime.current = now
+              try {
+                await runDeepReview(projectId, chapterId, html)
+              } catch (e) {
+                console.error('Auto deep review failed:', e)
               }
             }
           })
