@@ -15,6 +15,7 @@ export default function ReviewPanel({ projectId, currentChapterId, chapterHtml =
   const [reportContent, setReportContent] = useState<string>('')
   const [runningReview, setRunningReview] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const noChapter = !currentChapterId
 
   const refresh = useCallback(async () => {
     const list = await listReviewReports(projectId)
@@ -73,22 +74,30 @@ export default function ReviewPanel({ projectId, currentChapterId, chapterHtml =
           <h3>审查报告</h3>
         </div>
         <div className="review-actions-panel">
-          <button
-            className="btn-primary"
-            onClick={handleRunLightCheck}
-            disabled={runningReview || !currentChapterId}
-            style={{ width: '100%', marginBottom: 8 }}
-          >
-            {runningReview ? '检查中…' : '⚡ 保存时轻量检查'}
-          </button>
-          <button
-            className="btn-primary"
-            onClick={handleRunDeepReview}
-            disabled={runningReview || !currentChapterId}
-            style={{ width: '100%' }}
-          >
-            {runningReview ? '审查中…' : '🔍 完整 AI 审查'}
-          </button>
+          {noChapter ? (
+            <p className="review-hint" style={{ fontSize: '0.82rem', padding: '8px 0', color: 'var(--text-muted)' }}>
+              切换到写作 tab 选择一个章节后，保存时会自动运行审查
+            </p>
+          ) : (
+            <>
+              <button
+                className="btn-primary"
+                onClick={handleRunLightCheck}
+                disabled={runningReview}
+                style={{ width: '100%', marginBottom: 8 }}
+              >
+                {runningReview ? '检查中…' : '⚡ 保存时轻量检查'}
+              </button>
+              <button
+                className="btn-primary"
+                onClick={handleRunDeepReview}
+                disabled={runningReview}
+                style={{ width: '100%' }}
+              >
+                {runningReview ? '审查中…' : '🔍 完整 AI 审查'}
+              </button>
+            </>
+          )}
         </div>
         {error && <div className="error-bar">{error}</div>}
         <div className="review-report-list">
