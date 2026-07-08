@@ -180,15 +180,19 @@ body {
 /* ─── Project view ────────────────────────────── */
 
 .project-view {
-  padding: 32px;
-  max-width: 800px;
+  width: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .project-view-header {
   display: flex;
   align-items: center;
   gap: 16px;
-  margin-bottom: 24px;
+  padding: 24px 24px 12px;
+  flex-shrink: 0;
 }
 
 .project-view-header h2 {
@@ -769,6 +773,8 @@ body {
 
 .project-tab-content {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -776,7 +782,7 @@ body {
 
 .panel-layout {
   display: flex;
-  height: 100%;
+  height: calc(100vh - 110px);
 }
 
 .panel-sidebar {
@@ -906,9 +912,7 @@ body {
 .notes-panel {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  max-width: 720px;
-  margin: 0 auto;
+  height: calc(100vh - 110px);
   width: 100%;
   padding: 24px;
 }
@@ -1106,9 +1110,7 @@ body {
 .foreshadow-panel {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  max-width: 720px;
-  margin: 0 auto;
+  height: calc(100vh - 110px);
   width: 100%;
   padding: 24px;
 }
