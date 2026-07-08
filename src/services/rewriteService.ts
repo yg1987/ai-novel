@@ -84,25 +84,29 @@ export async function rewriteText(
     const decoder = new TextDecoder()
     let buffer = ''
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() ?? ''
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed || !trimmed.startsWith('data: ')) continue
-        const data = trimmed.slice(6)
-        if (data === '[DONE]') { callbacks.onDone(); return }
-        try {
-          const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> }
-          const content = parsed.choices?.[0]?.delta?.content
-          if (content) callbacks.onToken(content)
-        } catch { /* skip malformed */ }
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || !trimmed.startsWith('data: ')) continue
+          const data = trimmed.slice(6)
+          if (data === '[DONE]') { callbacks.onDone(); return }
+          try {
+            const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> }
+            const content = parsed.choices?.[0]?.delta?.content
+            if (content) callbacks.onToken(content)
+          } catch { /* skip malformed */ }
+        }
       }
+      callbacks.onDone()
+    } finally {
+      reader.releaseLock()
     }
-    callbacks.onDone()
   } catch (e) {
     if ((e as Error).name === 'AbortError') { callbacks.onDone(); return }
     callbacks.onError(String(e))
