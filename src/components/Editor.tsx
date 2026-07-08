@@ -7,6 +7,7 @@ import { saveChapterContent } from '../api/tauri'
 import { buildContext } from '../contextEngine'
 import { generateChapter, stopGeneration } from '../services/aiProvider'
 import { checkBannedWords, type CheckResult } from '../services/bannedWords'
+import RewritePreview from './RewritePreview'
 import { analyzeChapter } from '../services/chapterIngest'
 import { saveChapterSnapshot } from '../services/memorySync'
 import { logChapterSaved, logAIGenerated, logSessionStart } from '../services/stats'
@@ -33,6 +34,11 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
   const [bannedCheck, setBannedCheck] = useState<CheckResult | null>(null)
   const [showBannedDetail, setShowBannedDetail] = useState(false)
   const [ingesting, setIngesting] = useState(false)
+  const [rewriteState, setRewriteState] = useState<{
+    selectedText: string
+    beforeText: string
+    afterText: string
+  } | null>(null)
 
   const editor = useEditor({
     extensions: [StarterKit, Underline, Placeholder.configure({ placeholder: '开始写作…' })],
@@ -165,6 +171,27 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
 
   const handleStop = useCallback(() => { stopGeneration(); setGenerating(false) }, [])
 
+  const handleRewrite = useCallback(() => {
+    if (!editor) return
+    const { from, to } = editor.state.selection
+    if (from === to) return // no selection
+    const selectedText = editor.state.doc.textBetween(from, to)
+    // Get context: 200 chars before and after
+    const fullText = editor.state.doc.textBetween(0, editor.state.doc.content.size)
+    const beforeText = fullText.slice(Math.max(0, from - 200), from)
+    const afterText = fullText.slice(to, Math.min(fullText.length, to + 200))
+    setRewriteState({ selectedText, beforeText, afterText })
+  }, [editor])
+
+  const handleRewriteAccept = useCallback((newText: string) => {
+    if (!editor) return
+    const { from, to } = editor.state.selection
+    editor.chain().focus().deleteRange({ from, to }).insertContent(newText).run()
+    setRewriteState(null)
+    // Trigger save
+    handleSaveNow()
+  }, [editor, handleSaveNow])
+
   if (!editor) return <div className="editor-loading">加载编辑器…</div>
 
   return (
@@ -180,6 +207,11 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
         <button className="toolbar-btn" onClick={() => { editor.chain().focus().toggleBulletList().run() }} data-active={editor.isActive('bulletList')} title="列表">≡</button>
         <button className="toolbar-btn" onClick={() => { editor.chain().focus().toggleBlockquote().run() }} data-active={editor.isActive('blockquote')} title="引用">"</button>
         <div className="toolbar-spacer" />
+
+        {/* Rewrite - only visible when text is selected */}
+        {editor.state.selection.from !== editor.state.selection.to && (
+          <button className="toolbar-btn" onClick={handleRewrite} title="AI 改写/扩写">✏️ 改写</button>
+        )}
 
         {/* Banned words indicator */}
         {bannedCheck && (
@@ -222,6 +254,16 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
       )}
 
       <EditorContent editor={editor} />
+
+      {rewriteState && (
+        <RewritePreview
+          selectedText={rewriteState.selectedText}
+          beforeText={rewriteState.beforeText}
+          afterText={rewriteState.afterText}
+          onAccept={handleRewriteAccept}
+          onReject={() => setRewriteState(null)}
+        />
+      )}
     </div>
   )
 }
