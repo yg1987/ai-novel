@@ -30,11 +30,11 @@ fn version_file_path(project_dir: &PathBuf, chapter_id: &str, version: u32) -> P
     history_dir(project_dir, chapter_id).join(format!("v{}.md", version))
 }
 
-fn count_chars(text: &str) -> u32 {
+pub fn count_chars(text: &str) -> u32 {
     text.chars().count() as u32
 }
 
-fn count_words(text: &str) -> u32 {
+pub fn count_words(text: &str) -> u32 {
     let chinese = text.chars().filter(|c| c >= & '\u{4e00}' && c <= & '\u{9fff}').count() as u32;
     let english = text.split_whitespace().filter(|w| w.chars().any(|c| c.is_ascii_alphabetic())).count() as u32;
     chinese + english
@@ -124,6 +124,15 @@ pub fn restore_chapter_version(
                 label: format!("恢复前 (v{})", version),
             });
             save_index(&idx_path, &index)?;
+            // Prune old versions
+            while index.versions.len() > index.max_versions as usize {
+                let oldest = index.versions.remove(0);
+                let old_path = version_file_path(&dir, &chapter_id, oldest.version);
+                if old_path.exists() {
+                    let _ = fs::remove_file(&old_path);
+                }
+            }
+            save_index(&idx_path, &index)?;
         }
     }
 
@@ -148,14 +157,15 @@ pub fn delete_chapter_version(
         return Err("Cannot delete the last version".to_string());
     }
 
-    index.versions.retain(|v| v.version != version);
-    save_index(&idx_path, &index)?;
-
-    // Delete the version file
+    // Delete the version file first
     let file_path = version_file_path(&dir, &chapter_id, version);
     if file_path.exists() {
         fs::remove_file(&file_path).map_err(|e| format!("Delete error: {}", e))?;
     }
+
+    index.versions.retain(|v| v.version != version);
+    save_index(&idx_path, &index)?;
+
     Ok(())
 }
 
@@ -174,5 +184,6 @@ pub fn rename_chapter_version(
     if let Some(v) = index.versions.iter_mut().find(|v| v.version == version) {
         v.label = label;
     }
-    save_index(&idx_path, &index)
+    save_index(&idx_path, &index)?;
+    Ok(())
 }

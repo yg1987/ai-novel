@@ -286,24 +286,15 @@ fn save_chapter_content(
                 let mut index = commands::version::load_index_for_save(&idx_path);
                 let next_ver = index.versions.iter().map(|v| v.version).max().unwrap_or(0) + 1;
                 let backup_path = idx_dir.join(format!("v{next_ver}.md"));
-                let stripped = current.replace(|c: char| c.is_ascii_control() && c != '\n', "");
-
-                fs::write(&backup_path, &stripped).map_err(|e| format!("Failed to write backup: {e}"))?;
+                fs::write(&backup_path, &current).map_err(|e| format!("Failed to write backup: {e}"))?;
                 index.versions.push(commands::version::VersionMeta {
                     version: next_ver,
                     created_at: timestamp(),
-                    word_count: 0, // will compute from stripped
-                    char_count: stripped.chars().count() as u32,
+                    word_count: commands::version::count_words(&current),
+                    char_count: commands::version::count_chars(&current),
                     source: "auto_save".to_string(),
                     label: String::new(),
                 });
-                // Update word counts
-                if let Some(v) = index.versions.last_mut() {
-                    let chinese = stripped.chars().filter(|c| *c >= '\u{4e00}' && *c <= '\u{9fff}').count() as u32;
-                    let english = stripped.split_whitespace()
-                        .filter(|w| w.chars().any(|c| c.is_ascii_alphabetic())).count() as u32;
-                    v.word_count = chinese + english;
-                }
                 // Prune old versions
                 while index.versions.len() > index.max_versions as usize {
                     let oldest = index.versions.remove(0);
