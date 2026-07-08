@@ -510,6 +510,8 @@ pub fn run() {
             commands::resource::delete_resource_file,
             commands::search::search_resource_files,
             commands::export::export_project_epub,
+            commands::archive::archive_project,
+            commands::archive::import_project,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -14,6 +14,7 @@ import BrainstormPanel from './BrainstormPanel'
 import ExportDialog from './ExportDialog'
 import RelationshipGraph from './RelationshipGraph'
 import TrendingPanel from './TrendingPanel'
+import ArchiveDialog from './ArchiveDialog'
 
 interface Props {
   project: ProjectMeta
@@ -25,6 +26,7 @@ type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'fores
 export default function ProjectView({ project, onBack }: Props) {
   const [tab, setTab] = useState<Tab>('writing')
   const [showExport, setShowExport] = useState(false)
+  const [showArchive, setShowArchive] = useState(false)
 
   return (
     <div className="project-view">
@@ -33,12 +35,20 @@ export default function ProjectView({ project, onBack }: Props) {
         <h2>{project.name}</h2>
         <span className="project-status-badge">{project.status}</span>
         <button className="btn-text" onClick={() => setShowExport(true)}>📤 导出</button>
+        <button className="btn-text" onClick={() => setShowArchive(true)}>💾 存档</button>
       </div>
       {showExport && (
         <ExportDialog
           projectId={project.id}
           projectName={project.name}
           onClose={() => setShowExport(false)}
+        />
+      )}
+      {showArchive && (
+        <ArchiveDialog
+          projectId={project.id}
+          projectName={project.name}
+          onClose={() => setShowArchive(false)}
         />
       )}
 

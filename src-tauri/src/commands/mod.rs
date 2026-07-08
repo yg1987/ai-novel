@@ -4,3 +4,4 @@ pub mod vectorstore;
 pub mod version;
 pub mod resource;
 pub mod export;
+pub mod archive;
