@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { ChapterMeta } from '../types/chapter'
 import { listChapters, getChapterContent, saveChapterContent } from '../api/tauri'
 import Editor from './Editor'
+import VersionHistoryPanel from './VersionHistoryPanel'
 
 interface Props {
   projectId: string
@@ -13,6 +14,7 @@ export default function ChapterManager({ projectId, targetWords = 1200 }: Props)
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null)
   const [chapterContent, setChapterContent] = useState('')
   const [loading, setLoading] = useState(true)
+  const [showVersionHistory, setShowVersionHistory] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -73,6 +75,11 @@ export default function ChapterManager({ projectId, targetWords = 1200 }: Props)
         <div className="chapter-sidebar-header">
           <h3>章节</h3>
           <button className="btn-small" onClick={handleCreateChapter}>+</button>
+          {activeChapterId && (
+            <button className="btn-small" onClick={() => setShowVersionHistory((v) => !v)} title="版本历史">
+              🕐
+            </button>
+          )}
         </div>
         <div className="chapter-list">
           {chapters.map((ch) => (
@@ -90,7 +97,20 @@ export default function ChapterManager({ projectId, targetWords = 1200 }: Props)
         </div>
       </div>
       <div className="chapter-editor-area">
-        {activeChapterId ? (
+        {showVersionHistory && activeChapterId ? (
+          <VersionHistoryPanel
+            projectId={projectId}
+            chapterId={activeChapterId}
+            onRestore={() => {
+              setShowVersionHistory(false)
+              if (activeChapterId) {
+                getChapterContent(projectId, activeChapterId)
+                  .then((content) => setChapterContent(content))
+                  .catch(console.error)
+              }
+            }}
+          />
+        ) : activeChapterId ? (
           <Editor
             key={activeChapterId}
             projectId={projectId}

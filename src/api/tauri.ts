@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import type { ProjectMeta, CreateProjectInput, UpdateProjectInput } from '../types/project'
 import type { ChapterMeta } from '../types/chapter'
 import type { ProviderConfig } from '../types/provider'
+import type { VersionMeta } from '../types/review'
 
 export async function createProject(input: CreateProjectInput): Promise<ProjectMeta> {
   return invoke<ProjectMeta>('create_project', {
@@ -162,4 +163,26 @@ export async function computeDailyStats(
   days: number,
 ): Promise<DailyStats[]> {
   return invoke<DailyStats[]>('compute_daily_stats', { projectId, days })
+}
+
+// ─── Version History ─────────────────────────────
+
+export async function listChapterVersions(projectId: string, chapterId: string): Promise<VersionMeta[]> {
+  return invoke<VersionMeta[]>('list_chapter_versions', { projectId, chapterId })
+}
+
+export async function getChapterVersion(projectId: string, chapterId: string, version: number): Promise<string> {
+  return invoke<string>('get_chapter_version', { projectId, chapterId, version })
+}
+
+export async function restoreChapterVersion(projectId: string, chapterId: string, version: number): Promise<void> {
+  return invoke<void>('restore_chapter_version', { projectId, chapterId, version })
+}
+
+export async function deleteChapterVersion(projectId: string, chapterId: string, version: number): Promise<void> {
+  return invoke<void>('delete_chapter_version', { projectId, chapterId, version })
+}
+
+export async function renameChapterVersion(projectId: string, chapterId: string, version: number, label: string): Promise<void> {
+  return invoke<void>('rename_chapter_version', { projectId, chapterId, version, label })
 }

@@ -47,3 +47,19 @@ export interface ReviewReportMeta {
   overall_score?: number
   chapterId: string
 }
+
+// ─── Version History ─────────────────────────────
+
+export interface VersionMeta {
+  version: number
+  created_at: string
+  word_count: number
+  char_count: number
+  source: 'auto_save' | 'manual_save' | 'ai_generated' | 'restore' | 'rewrite'
+  label: string
+}
+
+export interface VersionIndex {
+  versions: VersionMeta[]
+  max_versions: number
+}

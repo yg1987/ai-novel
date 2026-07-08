@@ -1,0 +1,167 @@
+import { useState, useEffect } from 'react'
+import type { VersionMeta } from '../types/review'
+import { listChapterVersions, getChapterVersion, restoreChapterVersion, deleteChapterVersion, renameChapterVersion } from '../api/tauri'
+
+interface Props {
+  projectId: string
+  chapterId: string | null
+  onRestore?: () => void
+}
+
+export default function VersionHistoryPanel({ projectId, chapterId, onRestore }: Props) {
+  const [versions, setVersions] = useState<VersionMeta[]>([])
+  const [loading, setLoading] = useState(false)
+  const [selectedVersion, setSelectedVersion] = useState<number | null>(null)
+  const [previewContent, setPreviewContent] = useState<string>('')
+  const [renamingVersion, setRenamingVersion] = useState<number | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [confirmRestore, setConfirmRestore] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!chapterId) return
+    setLoading(true)
+    listChapterVersions(projectId, chapterId)
+      .then(setVersions)
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [projectId, chapterId])
+
+  const handlePreview = async (version: number) => {
+    if (!chapterId) return
+    setSelectedVersion(version)
+    try {
+      const content = await getChapterVersion(projectId, chapterId, version)
+      setPreviewContent(content)
+    } catch (e) {
+      console.error('Failed to load version:', e)
+    }
+  }
+
+  const handleRestore = async (version: number) => {
+    if (!chapterId) return
+    try {
+      await restoreChapterVersion(projectId, chapterId, version)
+      setConfirmRestore(null)
+      onRestore?.()
+    } catch (e) {
+      console.error('Failed to restore:', e)
+    }
+  }
+
+  const handleDelete = async (version: number) => {
+    if (!chapterId) return
+    try {
+      await deleteChapterVersion(projectId, chapterId, version)
+      setVersions((prev) => prev.filter((v) => v.version !== version))
+    } catch (e) {
+      console.error('Failed to delete version:', e)
+    }
+  }
+
+  const handleRename = async (version: number) => {
+    if (!chapterId || !renameValue.trim()) return
+    try {
+      await renameChapterVersion(projectId, chapterId, version, renameValue.trim())
+      setVersions((prev) => prev.map((v) => v.version === version ? { ...v, label: renameValue.trim() } : v))
+      setRenamingVersion(null)
+      setRenameValue('')
+    } catch (e) {
+      console.error('Failed to rename:', e)
+    }
+  }
+
+  const sourceLabel = (source: string): string => {
+    const map: Record<string, string> = {
+      auto_save: '自动保存', manual_save: '手动保存',
+      ai_generated: 'AI 生成', restore: '恢复', rewrite: '改写',
+    }
+    return map[source] ?? source
+  }
+
+  if (!chapterId) return <div className="review-empty">请先选择一个章节</div>
+
+  return (
+    <div className="version-panel panel-layout">
+      <div className="version-sidebar panel-sidebar">
+        <div className="version-sidebar-header">
+          <h3>版本历史</h3>
+          <span className="version-count">{versions.length} 个版本</span>
+        </div>
+        <div className="version-list">
+          {versions.length === 0 && !loading && (
+            <p className="review-empty">暂无历史版本</p>
+          )}
+          {versions.map((v) => (
+            <div
+              key={v.version}
+              className={`version-item${selectedVersion === v.version ? ' active' : ''}`}
+              onClick={() => handlePreview(v.version)}
+            >
+              <div className="version-item-header">
+                <span className="version-number">v{v.version}</span>
+                <span className="version-source">{sourceLabel(v.source)}</span>
+              </div>
+              <div className="version-item-meta">
+                <span>{v.word_count} 字</span>
+                <span>{v.created_at.slice(0, 16).replace('T', ' ')}</span>
+              </div>
+              {v.label && <div className="version-label">{v.label}</div>}
+              <div className="version-actions">
+                {renamingVersion === v.version ? (
+                  <div className="version-rename-inline">
+                    <input
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleRename(v.version); if (e.key === 'Escape') setRenamingVersion(null) }}
+                      placeholder="版本标记…"
+                      autoFocus
+                    />
+                    <button className="btn-text" onClick={() => handleRename(v.version)}>✓</button>
+                    <button className="btn-text" onClick={() => setRenamingVersion(null)}>✕</button>
+                  </div>
+                ) : (
+                  <button className="btn-text" onClick={(e) => { e.stopPropagation(); setRenamingVersion(v.version); setRenameValue(v.label) }}>
+                    标记
+                  </button>
+                )}
+                <button className="btn-text" onClick={(e) => { e.stopPropagation(); setConfirmRestore(v.version) }}>
+                  回退
+                </button>
+                <button
+                  className="btn-text"
+                  style={{ color: 'var(--danger)' }}
+                  onClick={(e) => { e.stopPropagation(); handleDelete(v.version) }}
+                  disabled={versions.length <= 1}
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="version-preview panel-editor">
+        {selectedVersion ? (
+          <>
+            <div className="version-preview-header">
+              <h4>v{selectedVersion} 预览</h4>
+              {confirmRestore === selectedVersion ? (
+                <div className="version-confirm-restore">
+                  <span>确认恢复到 v{selectedVersion}？</span>
+                  <button className="btn-primary" onClick={() => handleRestore(selectedVersion)}>确认恢复</button>
+                  <button className="btn-text" onClick={() => setConfirmRestore(null)}>取消</button>
+                </div>
+              ) : null}
+            </div>
+            <pre className="version-preview-content">{previewContent.replace(/<[^>]*>/g, '').slice(0, 3000)}</pre>
+          </>
+        ) : (
+          <div className="review-empty">
+            <p>选择一个版本查看内容</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
