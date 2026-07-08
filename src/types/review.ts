@@ -63,3 +63,37 @@ export interface VersionIndex {
   versions: VersionMeta[]
   max_versions: number
 }
+
+// ─── Consistency Check (设计文档 §4.2) ────────────
+
+/** S1-S4 severity matching design doc severity system */
+export type ConsistencySeverity = 'S1' | 'S2' | 'S3' | 'S4'
+/** S1=硬伤, S2=破坏叙事, S3=细节差异, S4=优化建议 */
+
+export type ConsistencyCheckType =
+  | 'dormant_foreshadow'
+  | 'absent_character'
+  | 'timeline_order'
+  | 'overdue_foreshadow'
+
+export interface ConsistencyIssue {
+  id: string
+  type: ConsistencyCheckType
+  severity: ConsistencySeverity
+  chapter: number
+  description: string
+  suggestion?: string
+  detail?: string
+}
+
+export interface ConsistencyCheckResult {
+  issues: ConsistencyIssue[]
+  summary: {
+    S1: number
+    S2: number
+    S3: number
+    S4: number
+    total: number
+  }
+  checkedAt: string
+}

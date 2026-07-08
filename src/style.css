@@ -1414,3 +1414,64 @@ body {
 }
 .review-suggestions h4 { font-size: 0.9rem; margin-bottom: 8px; }
 .review-suggestions li { font-size: 0.85rem; margin: 4px 0; }
+
+/* ─── Consistency Check UI (设计文档 §五) ──────── */
+.review-section-separator {
+  height: 1px; background: var(--border); margin: 8px 0;
+}
+.consistency-quick-summary {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  padding: 6px 12px; font-size: 0.75rem;
+}
+.severity-badge-sm {
+  padding: 1px 5px; border-radius: 3px; font-weight: 600;
+}
+.consistency-section {
+  padding: 16px 24px;
+}
+.consistency-section-title {
+  font-size: 1rem; margin-bottom: 12px;
+}
+.consistency-summary-bar {
+  display: flex; gap: 12px; align-items: center;
+  padding: 8px 12px; background: var(--bg);
+  border-radius: var(--radius-sm); margin-bottom: 12px;
+  font-size: 0.85rem; flex-wrap: wrap;
+}
+.severity-count { font-weight: 600; }
+.severity-count.severity-s1 { color: #e74c3c; }
+.severity-count.severity-s2 { color: #e67e22; }
+.severity-count.severity-s3 { color: #f1c40f; }
+.severity-count.severity-s4 { color: #7f8c8d; }
+.consistency-time {
+  margin-left: auto; font-size: 0.75rem; color: var(--text-muted);
+}
+.consistency-issues-list {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.consistency-issue {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 10px; border-radius: var(--radius-sm);
+  font-size: 0.85rem; flex-wrap: wrap;
+}
+.consistency-issue.severity-s1 { background: #fdf0ef; border-left: 3px solid #e74c3c; }
+.consistency-issue.severity-s2 { background: #fef5e7; border-left: 3px solid #e67e22; }
+.consistency-issue.severity-s3 { background: #fef9e7; border-left: 3px solid #f1c40f; }
+.consistency-issue.severity-s4 { background: #f8f9fa; border-left: 3px solid #bdc3c7; }
+.consistency-issue .severity-badge {
+  font-weight: 700; font-size: 0.75rem;
+  padding: 1px 5px; border-radius: 3px; flex-shrink: 0;
+}
+.severity-s1 .severity-badge { background: #e74c3c; color: #fff; }
+.severity-s2 .severity-badge { background: #e67e22; color: #fff; }
+.severity-s3 .severity-badge { background: #f1c40f; color: #333; }
+.severity-s4 .severity-badge { background: #bdc3c7; color: #333; }
+.consistency-issue .issue-type {
+  font-family: monospace; font-size: 0.75rem;
+  color: var(--text-muted); flex-shrink: 0;
+}
+.consistency-issue .issue-desc { flex: 1; }
+.consistency-issue .issue-suggestion {
+  width: 100%; font-size: 0.8rem; color: var(--text-muted);
+  padding-left: 16px;
+}
