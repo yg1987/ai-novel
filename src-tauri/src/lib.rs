@@ -506,6 +506,7 @@ pub fn run() {
             commands::resource::read_resource_file,
             commands::resource::write_resource_file,
             commands::resource::delete_resource_file,
+            commands::search::search_resource_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
