@@ -81,3 +81,33 @@ export const BANNED_WORD_SEVERITY_LABEL: Record<number, string> = {
   4: '重度',
   5: '极重',
 }
+
+// ─── Relationship Graph (v0.5) ────────────────────
+
+export interface GraphNode {
+  id: string
+  label: string
+  group: string               // 'protagonist' | 'supporter' | 'antagonist' | 'neutral'
+  firstAppearance: number     // chapter number
+  lastAppearance: number
+  appearanceCount: number
+  tags: string[]              // from character card tags if available
+}
+
+export type RelationType = 'ally' | 'rival' | 'family' | 'mentor' | 'enemy' | 'friend' | 'love' | 'ambiguous'
+
+export interface RelationshipLink {
+  source: string              // character name
+  target: string              // character name
+  type: RelationType
+  strength: number            // 0.0 - 1.0, computed from co-occurrence count
+  firstMentioned: number      // chapter number
+  lastMentioned: number
+  mentions: number            // how many chapters mention this relationship
+  description?: string        // from relationshipChanges if available
+}
+
+export interface RelationshipGraph {
+  nodes: GraphNode[]
+  links: RelationshipLink[]
+}
