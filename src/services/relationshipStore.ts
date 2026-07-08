@@ -115,7 +115,7 @@ export async function loadRelationshipGraph(projectId: string): Promise<Relation
 
 function mapRelationType(type: string): RelationshipLink['type'] {
   const lower = type.toLowerCase()
-  if (lower.includes('盟友') || lower.includes('朋友') || lower.includes('同伴')) return 'ally'
+  if (lower.includes('盟友') || lower.includes('同伴')) return 'ally'
   if (lower.includes('敌人') || lower.includes('对手') || lower.includes('仇')) return 'enemy'
   if (lower.includes('家人') || lower.includes('兄弟') || lower.includes('父子') || lower.includes('母女')) return 'family'
   if (lower.includes('师徒') || lower.includes('老师') || lower.includes('弟子')) return 'mentor'
