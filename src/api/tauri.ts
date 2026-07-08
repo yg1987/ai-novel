@@ -186,3 +186,25 @@ export async function deleteChapterVersion(projectId: string, chapterId: string,
 export async function renameChapterVersion(projectId: string, chapterId: string, version: number, label: string): Promise<void> {
   return invoke<void>('rename_chapter_version', { projectId, chapterId, version, label })
 }
+
+// ─── Resource Library ─────────────────────────────
+
+export async function listResourceCategories(): Promise<string[]> {
+  return invoke<string[]>('list_resource_categories')
+}
+
+export async function listResourceFiles(category: string): Promise<FileEntry[]> {
+  return invoke<FileEntry[]>('list_resource_files', { category })
+}
+
+export async function readResourceFile(category: string, filename: string): Promise<string> {
+  return invoke<string>('read_resource_file', { category, filename })
+}
+
+export async function writeResourceFile(category: string, filename: string, content: string): Promise<void> {
+  return invoke<void>('write_resource_file', { category, filename, content })
+}
+
+export async function deleteResourceFile(category: string, filename: string): Promise<void> {
+  return invoke<void>('delete_resource_file', { category, filename })
+}
