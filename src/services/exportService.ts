@@ -3,8 +3,9 @@ import { listChapters, getChapterContent, readProjectFile } from '../api/tauri'
 import { htmlToPlainText, htmlToMarkdown } from '../utils/htmlToText'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
+import { invoke } from '@tauri-apps/api/core'
 
-export type ExportFormat = 'txt' | 'markdown'
+export type ExportFormat = 'txt' | 'markdown' | 'epub'
 
 export interface ExportProgress {
   current: number
@@ -84,4 +85,24 @@ export async function exportAsMarkdown(
   if (!filePath) return
 
   await writeTextFile(filePath, content)
+}
+
+/**
+ * Export project as EPUB. Delegates to Rust Tauri command for ebook generation.
+ */
+export async function exportAsEpub(
+  projectId: string,
+  projectName: string,
+  _onProgress?: (p: ExportProgress) => void,
+): Promise<void> {
+  const filePath = await save({
+    defaultPath: `${projectName}.epub`,
+    filters: [{ name: 'EPUB Files', extensions: ['epub'] }],
+  })
+  if (!filePath) return
+
+  await invoke<string>('export_project_epub', {
+    projectId,
+    outputPath: filePath,
+  })
 }

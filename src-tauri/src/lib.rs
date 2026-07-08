@@ -509,6 +509,7 @@ pub fn run() {
             commands::resource::write_resource_file,
             commands::resource::delete_resource_file,
             commands::search::search_resource_files,
+            commands::export::export_project_epub,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

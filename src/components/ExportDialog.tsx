@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { exportAsPlainText, exportAsMarkdown, type ExportFormat, type ExportProgress } from '../services/exportService'
+import { exportAsPlainText, exportAsMarkdown, exportAsEpub, type ExportFormat, type ExportProgress } from '../services/exportService'
 
 interface Props {
   projectId: string
@@ -23,6 +23,8 @@ export default function ExportDialog({ projectId, projectName, onClose }: Props)
         await exportAsPlainText(projectId, projectName, onProgress)
       } else if (format === 'markdown') {
         await exportAsMarkdown(projectId, projectName, onProgress)
+      } else if (format === 'epub') {
+        await exportAsEpub(projectId, projectName, onProgress)
       }
       setDone(true)
     } catch (e) {
@@ -35,6 +37,7 @@ export default function ExportDialog({ projectId, projectName, onClose }: Props)
   const formatLabels: Record<ExportFormat, string> = {
     txt: '纯文本 (.txt)',
     markdown: 'Markdown (.md)',
+    epub: 'EPUB (.epub)',
   }
 
   return (
