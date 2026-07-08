@@ -268,12 +268,59 @@ fn save_chapter_content(
     chapter_id: String,
     content: String,
 ) -> Result<(), String> {
-    let dir = project_dir(&app_handle, &project_id)?.join("chapters");
-    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create chapters dir: {e}"))?;
+    let dir = project_dir(&app_handle, &project_id)?;
+    let chapter_path = dir.join("chapters").join(format!("{chapter_id}.md"));
+    fs::create_dir_all(chapter_path.parent().unwrap())
+        .map_err(|e| format!("Failed to create dir: {e}"))?;
 
-    let path = dir.join(format!("{chapter_id}.md"));
-    fs::write(&path, &content).map_err(|e| format!("Failed to write chapter: {e}"))?;
+    // Backup existing content before overwriting
+    if chapter_path.exists() {
+        if let Ok(current) = fs::read_to_string(&chapter_path) {
+            let current_trimmed = current.trim();
+            let new_trimmed = content.trim();
+            if !current_trimmed.is_empty() && current_trimmed != new_trimmed {
+                let idx_path = dir.join("chapters/.history").join(&chapter_id).join("_index.json");
+                let idx_dir = idx_path.parent().unwrap();
+                fs::create_dir_all(idx_dir).map_err(|e| format!("Failed to create history dir: {e}"))?;
 
+                let mut index = commands::version::load_index_for_save(&idx_path);
+                let next_ver = index.versions.iter().map(|v| v.version).max().unwrap_or(0) + 1;
+                let backup_path = idx_dir.join(format!("v{next_ver}.md"));
+                let stripped = current.replace(|c: char| c.is_ascii_control() && c != '\n', "");
+
+                fs::write(&backup_path, &stripped).map_err(|e| format!("Failed to write backup: {e}"))?;
+                index.versions.push(commands::version::VersionMeta {
+                    version: next_ver,
+                    created_at: timestamp(),
+                    word_count: 0, // will compute from stripped
+                    char_count: stripped.chars().count() as u32,
+                    source: "auto_save".to_string(),
+                    label: String::new(),
+                });
+                // Update word counts
+                if let Some(v) = index.versions.last_mut() {
+                    let chinese = stripped.chars().filter(|c| *c >= '\u{4e00}' && *c <= '\u{9fff}').count() as u32;
+                    let english = stripped.split_whitespace()
+                        .filter(|w| w.chars().any(|c| c.is_ascii_alphabetic())).count() as u32;
+                    v.word_count = chinese + english;
+                }
+                // Prune old versions
+                while index.versions.len() > index.max_versions as usize {
+                    let oldest = index.versions.remove(0);
+                    let old_path = idx_dir.join(format!("v{}.md", oldest.version));
+                    if old_path.exists() {
+                        let _ = fs::remove_file(&old_path);
+                    }
+                }
+                let idx_json = serde_json::to_string_pretty(&index)
+                    .map_err(|e| format!("Serialize error: {e}"))?;
+                fs::write(&idx_path, &idx_json)
+                    .map_err(|e| format!("Failed to write index: {e}"))?;
+            }
+        }
+    }
+
+    fs::write(&chapter_path, &content).map_err(|e| format!("Failed to write chapter: {e}"))?;
     Ok(())
 }
 
@@ -458,6 +505,11 @@ pub fn run() {
             commands::vectorstore::vector_search_chunks,
             commands::stats::append_stat_event,
             commands::stats::compute_daily_stats,
+            commands::version::list_chapter_versions,
+            commands::version::get_chapter_version,
+            commands::version::restore_chapter_version,
+            commands::version::delete_chapter_version,
+            commands::version::rename_chapter_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
