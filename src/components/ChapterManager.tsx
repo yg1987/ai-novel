@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChapterMeta } from '../types/chapter'
 import { listChapters, getChapterContent, saveChapterContent } from '../api/tauri'
-import Editor from './Editor'
+import Editor, { type EditorHandle } from './Editor'
 import VersionHistoryPanel from './VersionHistoryPanel'
+import MaterialSidebar from './MaterialSidebar'
 
 interface Props {
   projectId: string
@@ -15,6 +16,8 @@ export default function ChapterManager({ projectId, targetWords = 1200 }: Props)
   const [chapterContent, setChapterContent] = useState('')
   const [loading, setLoading] = useState(true)
   const [showVersionHistory, setShowVersionHistory] = useState(false)
+  const [showMaterial, setShowMaterial] = useState(false)
+  const editorRef = useRef<EditorHandle>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -80,6 +83,9 @@ export default function ChapterManager({ projectId, targetWords = 1200 }: Props)
               🕐
             </button>
           )}
+          <button className="btn-small" onClick={() => setShowMaterial((v) => !v)} title="素材库">
+            📦
+          </button>
         </div>
         <div className="chapter-list">
           {chapters.map((ch) => (
@@ -111,14 +117,22 @@ export default function ChapterManager({ projectId, targetWords = 1200 }: Props)
             }}
           />
         ) : activeChapterId ? (
-          <Editor
-            key={activeChapterId}
-            projectId={projectId}
-            chapterId={activeChapterId}
-            initialContent={chapterContent}
-            targetWords={targetWords}
-            chapterNumber={Number(activeChapterId.replace('ch', ''))}
-          />
+          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <Editor
+                ref={editorRef}
+                key={activeChapterId}
+                projectId={projectId}
+                chapterId={activeChapterId}
+                initialContent={chapterContent}
+                targetWords={targetWords}
+                chapterNumber={Number(activeChapterId.replace('ch', ''))}
+              />
+            </div>
+            {showMaterial && (
+              <MaterialSidebar onInsert={(text) => editorRef.current?.insertAtCursor(text)} />
+            )}
+          </div>
         ) : (
           <div className="editor-placeholder">
             <p>选择或创建一个章节开始写作</p>

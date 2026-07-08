@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -27,7 +27,11 @@ interface Props {
 
 const AUTOSAVE_DELAY = 3000
 
-export default function Editor({ projectId, chapterId, initialContent, targetWords = 1200, onContentChange, chapterNumber = 1 }: Props) {
+export interface EditorHandle {
+  insertAtCursor: (text: string) => void
+}
+
+const Editor = forwardRef<EditorHandle, Props>(({ projectId, chapterId, initialContent, targetWords = 1200, onContentChange, chapterNumber = 1 }, ref) => {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSaved = useRef(initialContent)
   const generateStartTime = useRef(0)
@@ -229,6 +233,14 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
     handleSaveNow()
   }, [editor, handleSaveNow])
 
+  useImperativeHandle(ref, () => ({
+    insertAtCursor: (text: string) => {
+      if (!editor) return
+      editor.commands.focus()
+      editor.commands.insertContentAt(editor.state.selection.from, text)
+    },
+  }))
+
   if (!editor) return <div className="editor-loading">加载编辑器…</div>
 
   return (
@@ -313,4 +325,6 @@ export default function Editor({ projectId, chapterId, initialContent, targetWor
       )}
     </div>
   )
-}
+})
+
+export default Editor
