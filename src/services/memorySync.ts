@@ -1,5 +1,5 @@
 import { writeProjectFile, readProjectFile } from '../api/tauri'
-import type { ChapterSnapshot, ForeshadowStore, CognitionState, CharacterCognition } from '../types/novel'
+import type { ChapterSnapshot, ForeshadowStore, CognitionState, CharacterCognition, TimelineEntry } from '../types/novel'
 
 const SNAPSHOT_DIR = 'memory/snapshots'
 const FORESHADOW_DIR = 'memory'
@@ -29,6 +29,9 @@ export async function saveChapterSnapshot(
 
   // 3. Sync character cognition
   await syncCharacterCognition(projectId, snapshot)
+
+  // 4. Sync timeline events
+  await syncTimeline(projectId, snapshot)
 }
 
 // ─── Foreshadow sync ─────────────────────────────
@@ -170,4 +173,36 @@ function findOrCreateCognition(state: CognitionState, character: string): Charac
     state.characters.push(existing)
   }
   return existing
+}
+
+// ─── Timeline sync ────────────────────────────────
+
+/** Sync timeline events from snapshot to memory/timeline.json */
+async function syncTimeline(projectId: string, snapshot: ChapterSnapshot): Promise<void> {
+  if (!snapshot.timelineEvents?.length) return
+
+  let timeline: TimelineEntry[] = []
+  try {
+    const existing = await readProjectFile(projectId, 'memory', 'timeline.json')
+    if (existing?.trim()) {
+      timeline = JSON.parse(existing) as TimelineEntry[]
+    }
+  } catch { /* start fresh */ }
+
+  // Replace any existing entry for this chapter (re-save = update)
+  const existingIdx = timeline.findIndex((e) => e.chapterNumber === snapshot.chapterNumber)
+  const entry: TimelineEntry = {
+    chapterNumber: snapshot.chapterNumber,
+    events: snapshot.timelineEvents,
+  }
+  if (existingIdx >= 0) {
+    timeline[existingIdx] = entry
+  } else {
+    timeline.push(entry)
+  }
+
+  // Sort by chapter number ascending
+  timeline.sort((a, b) => a.chapterNumber - b.chapterNumber)
+
+  await writeProjectFile(projectId, 'memory', 'timeline.json', JSON.stringify(timeline, null, 2))
 }
