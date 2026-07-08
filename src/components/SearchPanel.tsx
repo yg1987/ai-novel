@@ -14,6 +14,7 @@ const SOURCE_LABELS: Record<string, string> = {
   notes: '备注',
   outline: '大纲',
   memory: '记忆',
+  resources: '素材',
 }
 
 export default function SearchPanel({ projectId }: Props) {
@@ -44,7 +45,7 @@ export default function SearchPanel({ projectId }: Props) {
           <h3>搜索范围</h3>
         </div>
         <div className="panel-list">
-          {['all', 'characters', 'worldview', 'chapters', 'notes', 'outline', 'memory'].map((s) => (
+          {['all', 'characters', 'worldview', 'chapters', 'notes', 'outline', 'memory', 'resources'].map((s) => (
             <div
               key={s}
               className={`panel-item${sourceFilter === s ? ' active' : ''}`}

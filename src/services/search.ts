@@ -1,5 +1,5 @@
 // src/services/search.ts
-import { searchProjectFiles, vectorSearchChunks } from '../api/tauri'
+import { searchProjectFiles, vectorSearchChunks, searchResourceFiles } from '../api/tauri'
 import type { SearchResult } from '../api/tauri'
 import { embedText } from './embeddings'
 
@@ -30,7 +30,7 @@ export function tokenizeQuery(query: string): string[] {
   return [...new Set([...tokens, ...expanded])]
 }
 
-export type SearchSource = 'characters' | 'worldview' | 'chapters' | 'notes' | 'outline' | 'memory'
+export type SearchSource = 'characters' | 'worldview' | 'chapters' | 'notes' | 'outline' | 'memory' | 'resources'
 
 export interface HybridSearchOptions {
   sources?: SearchSource[]
@@ -63,35 +63,46 @@ export async function hybridSearch(
     })()
   }
 
-  // 3. Run both
-  const [keywordResults, vectorResults] = await Promise.all([
+  // 3. Resource workspace-level search
+  const resourcePromise = searchResourceFiles(query, topK).catch(() => [] as SearchResult[])
+
+  // 4. Run all three
+  const [keywordResults, vectorResults, resourceResults] = await Promise.all([
     keywordPromise,
     vectorPromise,
+    resourcePromise,
   ])
 
-  // 4. RRF fusion
-  const rankMap = new Map<string, { keywordRank: number | null; vectorRank: number | null }>()
+  // 5. RRF fusion (3 ranks)
+  const rankMap = new Map<string, { keywordRank: number | null; vectorRank: number | null; resourceRank: number | null }>()
 
   keywordResults?.forEach((r, i) => {
     const key = r.path
-    if (!rankMap.has(key)) rankMap.set(key, { keywordRank: null, vectorRank: null })
+    if (!rankMap.has(key)) rankMap.set(key, { keywordRank: null, vectorRank: null, resourceRank: null })
     rankMap.get(key)!.keywordRank = i + 1
   })
 
   vectorResults?.forEach((r, i) => {
     const key = r.path
-    if (!rankMap.has(key)) rankMap.set(key, { keywordRank: null, vectorRank: null })
+    if (!rankMap.has(key)) rankMap.set(key, { keywordRank: null, vectorRank: null, resourceRank: null })
     rankMap.get(key)!.vectorRank = i + 1
   })
 
-  // 5. Compute RRF score
+  resourceResults?.forEach((r, i) => {
+    const key = r.path
+    if (!rankMap.has(key)) rankMap.set(key, { keywordRank: null, vectorRank: null, resourceRank: null })
+    rankMap.get(key)!.resourceRank = i + 1
+  })
+
+  // 6. Compute RRF score
   const merged: HybridResult[] = []
   for (const [path, ranks] of rankMap) {
     let rrfScore = 0
     if (ranks.keywordRank !== null) rrfScore += 1 / (RRF_K + ranks.keywordRank)
     if (ranks.vectorRank !== null) rrfScore += 1 / (RRF_K + ranks.vectorRank)
+    if (ranks.resourceRank !== null) rrfScore += 1 / (RRF_K + ranks.resourceRank)
 
-    const kr = keywordResults?.find((r) => r.path === path)
+    const kr = keywordResults?.find((r) => r.path === path) ?? resourceResults?.find((r) => r.path === path)
     merged.push({
       path: kr?.path ?? path,
       filename: kr?.filename ?? '',

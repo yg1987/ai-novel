@@ -58,7 +58,7 @@ export default function ProjectView({ project, onBack }: Props) {
         {tab === 'search' && <SearchPanel projectId={project.id} />}
         {tab === 'stats' && <StatisticsPanel projectId={project.id} targetWords={project.target_words} />}
         {tab === 'review' && <ReviewPanel projectId={project.id} currentChapterId={null} />}
-        {tab === 'resource' && <ResourcePanel />}
+        {tab === 'resource' && <ResourcePanel projectId={project.id} />}
       </div>
     </div>
   )

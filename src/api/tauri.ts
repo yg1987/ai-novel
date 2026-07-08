@@ -208,3 +208,7 @@ export async function writeResourceFile(category: string, filename: string, cont
 export async function deleteResourceFile(category: string, filename: string): Promise<void> {
   return invoke<void>('delete_resource_file', { category, filename })
 }
+
+export async function searchResourceFiles(query: string, maxResults?: number): Promise<SearchResult[]> {
+  return invoke<SearchResult[]>('search_resource_files', { query, maxResults: maxResults ?? 10 })
+}

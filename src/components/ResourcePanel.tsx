@@ -1,8 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { listResourceCategories, listResourceFiles, readResourceFile, writeResourceFile, deleteResourceFile } from '../api/tauri'
 import type { FileEntry } from '../api/tauri'
+import { indexResourceFile } from '../services/resourceIndexer'
 
-export default function ResourcePanel() {
+interface Props {
+  projectId?: string
+}
+
+export default function ResourcePanel({ projectId }: Props) {
   const [categories, setCategories] = useState<string[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [files, setFiles] = useState<FileEntry[]>([])
@@ -64,6 +69,10 @@ export default function ResourcePanel() {
       await writeResourceFile(selectedCategory, selectedFile, editContent)
       setFileContent(editContent)
       setEditing(false)
+      // Index for search
+      if (projectId) {
+        indexResourceFile(projectId, selectedCategory, selectedFile).catch(console.error)
+      }
     } catch (e) {
       setError(String(e))
     } finally {
