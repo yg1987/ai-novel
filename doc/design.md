@@ -308,10 +308,10 @@ DataSourceRegistry
   ├── 文件名精确匹配 bonus
   └── 内容词频评分
     ↓
-向量分支（Rust + LanceDB，2.5s 超时）
+向量分支（Rust + LanceDB ANN，2.5s 超时）
   ├── Markdown 递归分块（headingPath 面包屑）
   ├── 调用 embedding API
-  └── LanceDB ANN 搜索
+  └── LanceDB 嵌入式向量库 ANN 搜索（L2 distance → score）
     ↓
 RRF 融合（Reciprocal Rank Fusion, K=60）
     ↓
@@ -323,7 +323,7 @@ RRF 融合（Reciprocal Rank Fusion, K=60）
 | 功能 | 说明 |
 |---|---|
 | 关键词搜索 | CJK 分词 + 文件名精确匹配 + 内容词频评分 |
-| 向量搜索 | Markdown 感知分块 → embedding → LanceDB ANN |
+| 向量搜索 | Markdown 感知分块 → embedding → LanceDB ANN 搜索（_distance → 1/(1+d)） |
 | RRF 融合 | 基于排名的无偏融合，K=60 标准常数 |
 | 多源超时控制 | 每源 2.5s 超时，慢 API 不阻塞整体 |
 | 搜索范围 | characters / worldview / chapters / notes / memory / outline |
@@ -338,10 +338,13 @@ RRF 融合（Reciprocal Rank Fusion, K=60）
 - chunk 大小 500-1000 tokens，相邻 chunk 50 token 重叠
 - 纯确定性算法，相同输入产生相同分块
 
-#### 向量存储：LanceDB（嵌入式）
+#### 向量存储：LanceDB（嵌入式 ANN）
 
-- 存储位置：`{project_dir}/.lancedb/` — 文件级，无需独立服务
-- 每次章节保存时增量 upsert（仅更新改动的 chunks）
+- 存储位置：`{project_dir}/.lancedb/` — LanceDB 原生列式存储
+- 每次章节保存时 delete-then-insert（按 page_id 删除旧 chunks → 批量写入新数据）
+- 使用 Arrow RecordBatch + FixedSizeList<Float32> 向量列
+- 搜索使用 LanceDB 原生 ANN 索引：`table.vector_search(embedding).limit(k).execute()`
+- 距离转分数：`score = 1.0 / (1.0 + _distance)`（L2 距离 → [0,1] 相似度）
 - Rust Tauri command 层：`vector_upsert_chunks` / `vector_search_chunks`
 
 ### 2.9 审查系统
@@ -432,6 +435,7 @@ ai-novel-workspace/                 # 应用工作空间根目录（用户指定
     └── my-novel/                   # 单个项目根目录
         ├── project.json            # 项目元数据、类型、目标字数
         ├── style.md                # 文风设定（全局文体约束）
+        ├── .lancedb/               # 向量索引（LanceDB ANN 嵌入式向量库，自动管理）
         ├── .backups/               # 自动备份（系统维护）
         │   ├── 2024-01-01_120000/ # 每次备份为完整项目快照
         │   └── ...
@@ -480,10 +484,10 @@ ai-novel-workspace/                 # 应用工作空间根目录（用户指定
         │   ├── character-states.json # 角色全局状态
         │   └── timeline.json       # 故事时间线
         │
-        └── tracks/                 # 追踪信息
-            ├── review-reports/     # 审查报告历史
-            ├── statistics.json     # 写作统计数据（字数/速度/趋势）
-            └── session-log.txt     # 写作会话日志
+        ├── stats/                  # 写作统计事件日志（JSONL）
+        │   └── 2026-07.jsonl       # 按月分文件，每行一个事件
+        └── tracks/                 # 追踪信息（自动管理）
+            └── review-reports/     # 审查报告历史
 ```
 
 设计原则：
@@ -585,7 +589,7 @@ Post-process (去AI味 → 记忆提取 → 审查)
 │                        │ Tauri Commands              │
 │  ┌─────────────────────▼────────────────────────┐    │
 │  │           Rust Backend                       │    │
-│  │  文件 I/O │ 项目版本管理 │ LanceDB 向量检索    │    │
+│  │  文件 I/O │ 项目版本管理 │ LanceDB ANN 检索    │    │
 │  └──────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────┘
 ```
@@ -605,55 +609,53 @@ Post-process (去AI味 → 记忆提取 → 审查)
 
 ## 七、版本路线（建议）
 
-### v0.1 — 核心写作循环
-- [ ] 书架管理（多项目 + 分组/状态标签）
-- [ ] 项目管理（创建/打开/保存/删除项目）
-- [ ] 基础编辑器（TipTap，手动写作）
-- [ ] AI 生成正文（流式输出到编辑器）
-- [ ] AI Provider 配置面板
-- [ ] 最简单的上下文引擎（仅当前章节目标 + 上一章结尾）
-- [ ] 自动保存 + 崩溃恢复（基础版）
+### ✅ v0.1 — 核心写作循环
+- [x] 书架管理（多项目 + 分组/状态标签）
+- [x] 项目管理（创建/打开/保存/删除项目）
+- [x] 基础编辑器（TipTap，手动写作）
+- [x] AI 生成正文（流式输出到编辑器）
+- [x] AI Provider 配置面板
+- [x] 最简单的上下文引擎（仅当前章节目标 + 上一章结尾）
+- [x] 自动保存 + 崩溃恢复（基础版）
 
-### v0.2 — 设定管理
-- [ ] 角色 CRUD + 角色文件存储
-- [ ] 世界观条目管理
-- [ ] 类型预设模板（按小说类型自动生成初始设定）
-- [ ] 三层大纲系统
-- [ ] AI 辅助生成角色卡
-- [ ] AI 辅助生成大纲
-- [ ] 字数预算合同
-- [ ] 注释/批注系统（写作备注、TODO 标注）
+### ✅ v0.2 — 设定管理
+- [x] 角色 CRUD + 角色文件存储
+- [x] 世界观条目管理
+- [x] 类型预设模板（按小说类型自动生成初始设定）
+- [x] 三层大纲系统
+- [x] AI 辅助生成角色卡
+- [x] AI 辅助生成大纲
+- [x] 字数预算合同
+- [x] 注释/批注系统（写作备注、TODO 标注）
 
-### v0.3 — 记忆系统
+### ✅ v0.3 — 记忆系统
 - [x] Chapter Ingest（章节自动分析）
 - [x] 角色状态追踪
 - [x] 伏笔管理面板
 - [x] 上下文引擎完整版 — DataSourceRegistry 架构 + 角色认知注入 + 伏笔注入 + 文风设定
-- [x] 关键词 + 向量混合搜索 — CJK 分词 + RRF 融合 + JSON 向量库 + 增量索引
+- [x] 关键词 + 向量混合搜索 — CJK 分词 + RRF 融合 + LanceDB ANN + 增量索引
 - [x] 写作统计看板 — JSONL 事件日志 + 日更字数 / 趋势 / 连载进度 / 伏笔债评分
 
-### v0.4 — 质量保障 + 素材库基础
-- [ ] 自动一致性审查（时间线 / 角色认知 / 伏笔 / 设定自洽）
-- [ ] 去 AI 味检查
-- [ ] 敏感词/违禁词检查
-- [ ] 局部改写/扩写
-- [ ] 章节版本历史（保存快照 + 对比回退）
-- [ ] 审查报告面板 + AI 自动修复
-- [ ] 素材库基础版（条目 CRUD + 分类管理 + 快速记录入口）
+### 🚧 v0.4 — 质量保障
+- [x] AI 禁用词检测（基于 oh-story 词表，25+ 模式，1-5 星毒级）
+- [x] 自动一致性审查（时间线/角色认知/伏笔/设定自洽，Tier 1 确定性规则 + Tier 2 AI 深度审查）
+- [x] 局部改写/扩写
+- [x] 章节版本历史
+- [x] 审查报告面板
+- [ ] 素材库基础版
 
-### v0.5 — 辅助功能
-- [ ] 关系图谱
+### 📋 v0.5+ — 辅助功能
+- [ ] 关系图谱可视化
 - [ ] 章节关系图
 - [ ] 灵感/脑暴模式
 - [ ] 专注模式（目标锁定 + 屏蔽干扰）
-- [ ] 热门题材参考
 - [ ] 发布格式适配（一键复制为起点/番茄/晋江格式）
 - [ ] 数据导出（TXT / Markdown / epub）
 - [ ] 项目存档/导入
-- [ ] 批量操作（批量导出/重审/修改状态）
 - [ ] 全局搜索（全文关键字 + 语义搜索）
 - [ ] 写作风格管理（多套风格切换）
 - [ ] 素材库完整版（AI 分类 + 写作时素材面板 + 外部导入 + 素材关联项目）
+- [ ] 热门题材参考
 
 ---
 
