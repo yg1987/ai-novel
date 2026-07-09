@@ -1026,6 +1026,38 @@ body {
   font-family: inherit;
 }
 
+.panel-new-actions {
+  display: flex;
+  gap: 6px;
+  padding: 0 8px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-new-actions .btn-small {
+  flex: 1;
+  width: auto;
+  height: auto;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  gap: 2px;
+}
+
+.btn-ai {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+}
+
+.btn-ai:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn-ai:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .panel-list {
   flex: 1;
   overflow-y: auto;
