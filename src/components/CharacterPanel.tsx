@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { listProjectFiles, readProjectFile, writeProjectFile, deleteProjectFile, loadProviderConfig } from '../api/tauri'
+import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
 
 interface Props {
   projectId: string
@@ -91,6 +92,18 @@ export default function CharacterPanel({ projectId }: Props) {
   const [showExample, setShowExample] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [showPrompt, setShowPrompt] = useState(false)
+  const [editingPrompt, setEditingPrompt] = useState('')
+  const [savingPrompt, setSavingPrompt] = useState(false)
+
+  const promptKey = 'character_create'
+
+  useEffect(() => {
+    loadPrompt(projectId, promptKey).then((saved) => {
+      setEditingPrompt(saved ?? '')
+      setShowPrompt(false)
+    }).catch(() => {})
+  }, [projectId, promptKey])
 
   const refresh = useCallback(async () => {
     const entries = await listProjectFiles(projectId, CHARACTER_SUBDIR)
@@ -172,7 +185,9 @@ export default function CharacterPanel({ projectId }: Props) {
         projectInfo = `小说名称：${meta.name ?? ''}\n类型：${meta.genre ?? ''}\n简介：${meta.description ?? ''}`
       } catch { /* ignore */ }
 
-      const { system, user } = buildAIPrompt(newName, projectInfo)
+      const defaultPromptObj = buildAIPrompt(newName, projectInfo)
+      const system = editingPrompt.trim() || defaultPromptObj.system
+      const user = editingPrompt.trim() ? projectInfo || '请生成角色卡' : defaultPromptObj.user
 
       const base = provider.base_url.replace(/\/+$/, '')
       const res = await fetch(`${base}/chat/completions`, {
@@ -277,14 +292,23 @@ export default function CharacterPanel({ projectId }: Props) {
               <h3>{activeFile}</h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {editing && (
-                  <button
-                    className="btn-text"
-                    onClick={() => { void handleAICreate() }}
-                    disabled={generating}
-                    style={{ fontSize: '0.85rem' }}
-                  >
-                    {generating ? '⏳ 生成中…' : '✨ AI 辅助'}
-                  </button>
+                  <>
+                    <button
+                      className="btn-text"
+                      onClick={() => { void handleAICreate() }}
+                      disabled={generating}
+                      style={{ fontSize: '0.85rem' }}
+                    >
+                      {generating ? '⏳ 生成中…' : '✨ AI 辅助'}
+                    </button>
+                    <button
+                      className="btn-text"
+                      onClick={() => { setShowPrompt(!showPrompt) }}
+                      style={{ fontSize: '0.85rem' }}
+                    >
+                      {showPrompt ? '关闭提示词' : '✎ 提示词'}
+                    </button>
+                  </>
                 )}
                 {editing ? (
                   <button className="btn-primary" onClick={() => { handleSave() }}>保存</button>
@@ -293,6 +317,45 @@ export default function CharacterPanel({ projectId }: Props) {
                 )}
               </div>
             </div>
+            {showPrompt && editing && (
+              <div className="prompt-editor">
+                <div className="prompt-editor-header">
+                  <span>提示词（AI 辅助使用，修改后自动保存到本项目的提示词库）</span>
+                  <button
+                    className="btn-text"
+                    style={{ fontSize: '0.8rem' }}
+                    onClick={async () => {
+                      setSavingPrompt(true)
+                      await resetPrompt(projectId, promptKey)
+                      setEditingPrompt('')
+                      setShowPrompt(false)
+                      setSavingPrompt(false)
+                    }}
+                  >恢复默认</button>
+                </div>
+                <textarea
+                  className="prompt-editor-textarea"
+                  value={editingPrompt}
+                  onChange={(e) => { setEditingPrompt(e.target.value) }}
+                  placeholder="（使用默认提示词）"
+                />
+                <div className="prompt-editor-footer">
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    {editingPrompt.trim() ? '已保存自定义提示词' : '未设置自定义提示词，AI 将使用默认提示词'}
+                  </span>
+                  <button
+                    className="btn-primary"
+                    style={{ fontSize: '0.82rem', padding: '4px 12px' }}
+                    disabled={savingPrompt}
+                    onClick={async () => {
+                      setSavingPrompt(true)
+                      await savePrompt(projectId, promptKey, editingPrompt)
+                      setSavingPrompt(false)
+                    }}
+                  >{savingPrompt ? '保存中…' : '保存提示词'}</button>
+                </div>
+              </div>
+            )}
             {editing ? (
               <div className="panel-editor-inner">
                 <div className="sub-field" style={{ marginBottom: 0 }}>

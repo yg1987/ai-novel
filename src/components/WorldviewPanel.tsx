@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { readProjectFile, writeProjectFile, loadProviderConfig } from '../api/tauri'
+import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
 
 interface Props {
   projectId: string
@@ -167,9 +168,21 @@ export default function WorldviewPanel({ projectId }: Props) {
   const [editing, setEditing] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [showExample, setShowExample] = useState<string | null>(null)
+  const [showPrompt, setShowPrompt] = useState(false)
+  const [editingPrompt, setEditingPrompt] = useState('')
+  const [savingPrompt, setSavingPrompt] = useState(false)
 
+  const promptKey = `worldview_${activeSection.key}`
   const hasSubs = activeSection.subs.length > 0
   const isFreeform = !hasSubs
+
+  useEffect(() => {
+    // Load saved prompt for this section
+    loadPrompt(projectId, promptKey).then((saved) => {
+      setEditingPrompt(saved ?? '')
+      setShowPrompt(false)
+    }).catch(() => {})
+  }, [projectId, promptKey])
 
   useEffect(() => {
     readProjectFile(projectId, 'worldview', activeSection.file)
@@ -228,39 +241,40 @@ export default function WorldviewPanel({ projectId }: Props) {
         Authorization: `Bearer ${provider.api_key}`,
       }
 
-      if (hasSubs) {
-        const subPrompts = activeSection.subs
-          .map(s => `## ${s.label}\n（要求：${s.hint}）`)
-          .join('\n\n')
-
-        const systemPrompt = `你是一个网文世界观设定助手。根据以下项目信息，为这部小说生成「${activeSection.label}」的设定。
+      // Use saved custom prompt if available, otherwise build default
+      const defaultPrompt = hasSubs
+        ? `你是一个网文世界观设定助手。根据以下项目信息，为这部小说生成「${activeSection.label}」的设定。
 
 请严格按以下各部分输出，使用 ## 作为小标题：
 
-${subPrompts}
+${activeSection.subs.map(s => `## ${s.label}\n（要求：${s.hint}）`).join('\n\n')}
 
 要求：
 - 每部分控制在 200 字以内
 - 内容要符合小说类型
 - 直接输出小标题+内容，不要加额外说明`
+        : `你是一个网文世界观设定助手。根据以下项目信息，为这部小说生成「${activeSection.label}」的内容。直接输出内容，控制在 300 字以内，不要加额外说明。`
 
-        const res = await fetch(`${base}/chat/completions`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            model: provider.models.analysis,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: context || `请为一部${activeSection.label}类型的小说生成设定` },
-            ],
-            temperature: 0.8,
-            max_tokens: 2048,
-          }),
+      const systemPrompt = editingPrompt.trim() || defaultPrompt
+
+      const res = await fetch(`${base}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: provider.models.analysis,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: context || `请为${activeSection.label}生成内容` },
+          ],
+          temperature: 0.8,
+          max_tokens: 2048,
+        }),
         })
         if (!res.ok) throw new Error(`API ${res.status}`)
         const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
         const raw = data.choices?.[0]?.message?.content ?? ''
 
+      if (hasSubs) {
         const parsed = parseSubs(raw, activeSection.subs.map(s => s.key))
         setSubValues(prev => {
           const merged = { ...prev }
@@ -272,7 +286,6 @@ ${subPrompts}
             }
           }
           if (!changed) {
-            // If all fields already have content, overwrite anyway
             for (const [key, val] of Object.entries(parsed)) {
               if (val.trim()) merged[key] = val.trim()
             }
@@ -280,29 +293,9 @@ ${subPrompts}
           return merged
         })
         setDirty(true)
-      } else {
-        const systemPrompt = `你是一个网文世界观设定助手。根据以下项目信息，为这部小说生成「${activeSection.label}」的内容。直接输出内容，控制在 300 字以内，不要加额外说明。`
-
-        const res = await fetch(`${base}/chat/completions`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            model: provider.models.analysis,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: context || `请为${activeSection.label}生成内容` },
-            ],
-            temperature: 0.8,
-            max_tokens: 1024,
-          }),
-        })
-        if (!res.ok) throw new Error(`API ${res.status}`)
-        const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-        const raw = data.choices?.[0]?.message?.content ?? ''
-        if (raw.trim()) {
-          setContent(raw.trim())
-          setDirty(true)
-        }
+      } else if (raw.trim()) {
+        setContent(raw.trim())
+        setDirty(true)
       }
     } catch (e) {
       setAiError(e instanceof Error ? e.message : String(e))
@@ -339,14 +332,23 @@ ${subPrompts}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {dirty && <span style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>未保存</span>}
             {editing && (
-              <button
-                className="btn-text"
-                onClick={() => { void generateWithAI() }}
-                disabled={generatingAi}
-                style={{ fontSize: '0.85rem' }}
-              >
-                {generatingAi ? '⏳ 生成中…' : '✨ AI 辅助'}
-              </button>
+              <>
+                <button
+                  className="btn-text"
+                  onClick={() => { void generateWithAI() }}
+                  disabled={generatingAi}
+                  style={{ fontSize: '0.85rem' }}
+                >
+                  {generatingAi ? '⏳ 生成中…' : '✨ AI 辅助'}
+                </button>
+                <button
+                  className="btn-text"
+                  onClick={() => { setShowPrompt(!showPrompt) }}
+                  style={{ fontSize: '0.85rem' }}
+                >
+                  {showPrompt ? '关闭提示词' : '✎ 提示词'}
+                </button>
+              </>
             )}
             {editing ? (
               <button className="btn-primary" onClick={() => { void handleSave() }}>保存</button>
@@ -355,6 +357,45 @@ ${subPrompts}
             )}
           </div>
         </div>
+        {showPrompt && editing && (
+          <div className="prompt-editor">
+            <div className="prompt-editor-header">
+              <span>提示词（AI 辅助使用，修改后自动保存到本项目的提示词库，换项目不影响）</span>
+              <button
+                className="btn-text"
+                style={{ fontSize: '0.8rem' }}
+                onClick={async () => {
+                  setSavingPrompt(true)
+                  await resetPrompt(projectId, promptKey)
+                  setEditingPrompt('')
+                  setShowPrompt(false)
+                  setSavingPrompt(false)
+                }}
+              >恢复默认</button>
+            </div>
+            <textarea
+              className="prompt-editor-textarea"
+              value={editingPrompt}
+              onChange={(e) => { setEditingPrompt(e.target.value) }}
+              placeholder="（使用默认提示词）"
+            />
+            <div className="prompt-editor-footer">
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                {editingPrompt.trim() ? '已保存自定义提示词' : '未设置自定义提示词，AI 将使用默认提示词'}
+              </span>
+              <button
+                className="btn-primary"
+                style={{ fontSize: '0.82rem', padding: '4px 12px' }}
+                disabled={savingPrompt}
+                onClick={async () => {
+                  setSavingPrompt(true)
+                  await savePrompt(projectId, promptKey, editingPrompt)
+                  setSavingPrompt(false)
+                }}
+              >{savingPrompt ? '保存中…' : '保存提示词'}</button>
+            </div>
+          </div>
+        )}
         {aiError && (
           <div style={{ padding: '8px 24px', fontSize: '0.85rem', color: 'var(--danger)', background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
             AI 生成失败：{aiError}
