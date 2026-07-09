@@ -277,9 +277,13 @@ export default function CharacterPanel({ projectId }: Props) {
         )}
         <div className="panel-list">
           {files.map((f) => (
-            <div key={f} className={`panel-item${f === activeFile ? ' active' : ''}`}>
-              <span onClick={() => { setActiveFile(f); setEditing(false) }}>{f}</span>
-              <button className="btn-text" onClick={() => { handleDelete(f) }} style={{ color: 'var(--danger)', fontSize: '0.8rem' }}>✕</button>
+            <div
+              key={f}
+              className={`panel-item${f === activeFile ? ' active' : ''}`}
+              onClick={() => { setActiveFile(f); setEditing(false) }}
+            >
+              <span>{f}</span>
+              <button className="btn-text" onClick={(e) => { e.stopPropagation(); handleDelete(f) }} style={{ color: 'var(--danger)', fontSize: '0.8rem' }}>✕</button>
             </div>
           ))}
           {files.length === 0 && <p className="panel-empty">暂无角色</p>}
