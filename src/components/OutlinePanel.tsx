@@ -16,6 +16,69 @@ interface ChapterInfo {
   volumeLabel: string // e.g. "卷1"
 }
 
+// ─── Examples ─────────────────────────────────────────
+
+const EXAMPLES: Record<string, string> = {
+  outline: `故事背景：这是一个以武道为尊的世界，大陆分为五域，修炼之风盛行。
+
+主线剧情：
+- 开局：主角林氏少年林烬在家族大比中落败，被嘲笑为废柴
+- 发展：意外获得太古剑魂传承，修为突飞猛进，考入玄天宗
+- 转折：发现父母失踪与天渊封印有关，宗门内奸暴露
+- 高潮：天渊封印破裂，邪魔入侵，林烬挺身而出
+- 结局：林烬封印天渊，成为剑道至尊，揭开父母身世之谜
+
+核心冲突：林烬与宗门内奸的斗争 / 人族与邪魔的千年战争
+结局走向：HE，主角成就至尊，但留下续作空间（天渊之外还有更高层次的世界）
+
+→ 按这个框架把你的故事填进去就行，不用太详细。`,
+
+  volume: `第1卷 - 崛起篇
+
+概要：林烬从家族弃子成长为玄天宗核心弟子，初步掌握剑魂之力。
+
+主要冲突：
+- 家族内部排挤 vs 林烬的反击
+- 玄天宗入门考核的竞争
+- 首次接触天渊秘密
+
+章节规划（共 10 章）：
+第1章：家族大比落败，被羞辱
+第2章：意外获得剑魂传承
+第3-4章：拜入玄天宗
+第5-7章：修行历练，崭露头角
+第8-9章：初次接触天渊之谜
+第10章：第一卷高潮，获得秘境资格
+
+本卷目标：建立世界观，塑造主角性格，埋下天渊伏笔
+
+→ 写 3-5 句话概括本卷剧情走向就行。`,
+
+  chapter: `第3章 - 剑魂觉醒
+
+情节点 1：林烬在藏经阁被同门围攻
+描述：三名外门弟子堵住林烬，嘲讽他"废物不配进藏经阁"，动手推搡
+类型：铺垫
+字数：300 字
+
+情节点 2：危急时刻剑魂共鸣
+描述：林烬被推倒撞上墙壁，祖传玉佩碎裂，太古剑魂觉醒，剑气震退三人
+类型：爽点
+字数：200 字
+
+情节点 3：藏经阁长老现身
+描述：长老感应到剑气波动赶来，斥退众人，却若有所思地看了林烬一眼
+类型：推进
+字数：250 字
+
+情节点 4：回到住处整理思绪
+描述：林烬回想刚才的异象，决定隐瞒剑魂的秘密，私下查询父母遗物
+类型：悬念
+字数：250 字
+
+→ 每章写 3-5 个情节点，每个写清楚发生什么 + 类型 + 大概字数。`,
+}
+
 // ─── AI prompt builders ───────────────────────────────
 
 function getDefaultPrompt(type: 'outline' | 'volume' | 'chapter', label: string): string {
@@ -81,6 +144,7 @@ export default function OutlinePanel({ projectId }: Props) {
   const [showPrompt, setShowPrompt] = useState(false)
   const [editingPrompt, setEditingPrompt] = useState('')
   const [savingPrompt, setSavingPrompt] = useState(false)
+  const [showExample, setShowExample] = useState(false)
 
   // ─── Data loading ──────────────────────────────────
 
@@ -384,6 +448,13 @@ export default function OutlinePanel({ projectId }: Props) {
                     </button>
                     <button
                       className="btn-text"
+                      onClick={() => { setShowExample(!showExample) }}
+                      style={{ fontSize: '0.85rem' }}
+                    >
+                      {showExample ? '收起示例' : '📖 看示例'}
+                    </button>
+                    <button
+                      className="btn-text"
                       onClick={() => {
                         if (!showPrompt && !editingPrompt.trim()) {
                           setEditingPrompt(getActiveDefaultPrompt())
@@ -447,6 +518,12 @@ export default function OutlinePanel({ projectId }: Props) {
             {aiError && (
               <div style={{ padding: '8px 24px', fontSize: '0.85rem', color: 'var(--danger)', background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                 AI 生成失败：{aiError}
+              </div>
+            )}
+
+            {showExample && editing && (
+              <div className="sub-field-example" style={{ margin: '8px 24px' }}>
+                <pre>{EXAMPLES[activeType] ?? '暂无示例'}</pre>
               </div>
             )}
 
