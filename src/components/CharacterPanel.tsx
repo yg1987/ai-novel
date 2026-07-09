@@ -7,12 +7,22 @@ interface Props {
 
 const CHARACTER_SUBDIR = 'characters'
 
+const CHAR_EXAMPLE = `角色：林烬
+身份/职业：玄天宗外门弟子，后觉醒太古剑魂
+外貌特征：黑发黑瞳，身形清瘦，左眉有一道细疤
+性格特点：沉默寡言但重情义，遇强则强，不畏权势
+背景经历：自幼父母双亡，被玄天宗收养。入门十二年仍在淬体境徘徊，遭同门轻视。意外获得太古剑魂传承后命运转折。
+动机目标：寻找父母死因真相，最终成为剑道至尊
+说话风格：话少，常用短句。愤怒时语气冰冷
+标签：["剑修", "孤儿", "逆袭", "天选之子"]`
+
 export default function CharacterPanel({ projectId }: Props) {
   const [files, setFiles] = useState<string[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [content, setContent] = useState('')
   const [editing, setEditing] = useState(false)
   const [newName, setNewName] = useState('')
+  const [showExample, setShowExample] = useState(false)
 
   const refresh = useCallback(async () => {
     const entries = await listProjectFiles(projectId, CHARACTER_SUBDIR)
@@ -104,12 +114,32 @@ export default function CharacterPanel({ projectId }: Props) {
               </div>
             </div>
             {editing ? (
-              <textarea
-                className="panel-textarea"
-                value={content}
-                onChange={(e) => { setContent(e.target.value) }}
-                placeholder={`角色：${activeFile}\n身份/职业：\n外貌特征：\n性格特点：\n背景经历：\n动机目标：\n说话风格：\n标签：[]\n\n💡 每行填一项就行，不确定的可以空着，以后边写边补`}
-              />
+              <div className="panel-editor-inner">
+                <div className="sub-field" style={{ marginBottom: 0 }}>
+                  <div className="sub-field-label-row">
+                    <label className="sub-field-label">角色信息</label>
+                    <button
+                      className="btn-text"
+                      style={{ fontSize: '0.78rem' }}
+                      onClick={() => { setShowExample(!showExample) }}
+                    >
+                      {showExample ? '收起示例' : '📖 看示例'}
+                    </button>
+                  </div>
+                  {showExample && (
+                    <div className="sub-field-example">
+                      <pre>{CHAR_EXAMPLE}</pre>
+                    </div>
+                  )}
+                  <textarea
+                    className="sub-field-textarea"
+                    style={{ minHeight: 350 }}
+                    value={content}
+                    onChange={(e) => { setContent(e.target.value) }}
+                    placeholder={`角色：${activeFile}\n身份/职业：\n外貌特征：\n性格特点：\n背景经历：\n动机目标：\n说话风格：\n标签：[标签1, 标签2, ...]\n\n💡 每行填一项就行，不确定的可以空着，以后边写边补`}
+                  />
+                </div>
+              </div>
             ) : (
               <div className="panel-preview">{content || <span style={{ color: 'var(--text-muted)' }}>暂无内容，点击编辑填写角色信息</span>}</div>
             )}

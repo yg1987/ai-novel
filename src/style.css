@@ -1101,6 +1101,34 @@ body {
   margin-bottom: 4px;
 }
 
+.sub-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sub-field-label-row .sub-field-label {
+  margin-bottom: 0;
+}
+
+.sub-field-example {
+  margin: 6px 0 8px;
+  padding: 12px 14px;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.sub-field-example pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-sans, sans-serif);
+  font-size: 0.85rem;
+}
+
 .sub-field-hint {
   display: block;
   font-size: 0.78rem;
