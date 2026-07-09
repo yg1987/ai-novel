@@ -306,7 +306,7 @@ export default function OutlinePanel({ projectId }: Props) {
           {volumes.map((v) => {
             const volLabel = v.replace(/\.md$/, '')
             const volChapters = chaptersByVolume(volLabel)
-            const isVolActive = activeFile === v || volChapters.some((c) => c.filename === activeFile)
+            const isVolActive = activeFile === v
             return (
               <div key={v}>
                 <div className={`panel-item${isVolActive ? ' active' : ''}`}>
