@@ -211,6 +211,17 @@ pub struct ChapterMeta {
     pub id: String,
     pub title: String,
     pub order: u32,
+    pub volume: String,
+}
+
+/// Build chapter file path: chapters/{volume}/{chapter_id}.md
+fn chapter_path(dir: &PathBuf, volume: &str, chapter_id: &str) -> PathBuf {
+    dir.join("chapters").join(volume).join(format!("{chapter_id}.md"))
+}
+
+/// Build chapter history path: chapters/{volume}/.history/{chapter_id}/
+fn chapter_history_dir(dir: &PathBuf, volume: &str, chapter_id: &str) -> PathBuf {
+    dir.join("chapters").join(volume).join(".history").join(chapter_id)
 }
 
 #[tauri::command]
@@ -225,22 +236,32 @@ fn list_chapters(app_handle: tauri::AppHandle, project_id: String) -> Result<Vec
 
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        // Skip .history dir, match ch*.md
-        if name.starts_with("ch") && name.ends_with(".md") {
-            let id = name.trim_end_matches(".md").to_string();
-            // Extract order: ch001 -> 1
-            let order = id.strip_prefix("ch")
-                .and_then(|s| s.parse::<u32>().ok())
-                .unwrap_or(0);
-            chapters.push(ChapterMeta {
-                id,
-                title: format!("第{}章", order),
-                order,
-            });
+        // Skip hidden dirs and non-dirs
+        if name.starts_with('.') { continue; }
+        let vol_dir = dir.join(&name);
+        if !vol_dir.is_dir() { continue; }
+
+        // Read ch*.md files in this volume directory
+        if let Ok(vol_entries) = fs::read_dir(&vol_dir) {
+            for ve in vol_entries.flatten() {
+                let fname = ve.file_name().to_string_lossy().to_string();
+                if fname.starts_with("ch") && fname.ends_with(".md") {
+                    let id = fname.trim_end_matches(".md").to_string();
+                    let order = id.strip_prefix("ch")
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or(0);
+                    chapters.push(ChapterMeta {
+                        id,
+                        title: format!("第{}章", order),
+                        order,
+                        volume: name.clone(),
+                    });
+                }
+            }
         }
     }
 
-    chapters.sort_by_key(|c| c.order);
+    chapters.sort_by_key(|c| (c.volume.clone(), c.order));
     Ok(chapters)
 }
 
@@ -248,11 +269,11 @@ fn list_chapters(app_handle: tauri::AppHandle, project_id: String) -> Result<Vec
 fn get_chapter_content(
     app_handle: tauri::AppHandle,
     project_id: String,
+    volume: String,
     chapter_id: String,
 ) -> Result<String, String> {
-    let path = project_dir(&app_handle, &project_id)?
-        .join("chapters")
-        .join(format!("{chapter_id}.md"));
+    let dir = project_dir(&app_handle, &project_id)?;
+    let path = chapter_path(&dir, &volume, &chapter_id);
 
     if !path.exists() {
         return Ok(String::new());
@@ -265,11 +286,12 @@ fn get_chapter_content(
 fn save_chapter_content(
     app_handle: tauri::AppHandle,
     project_id: String,
+    volume: String,
     chapter_id: String,
     content: String,
 ) -> Result<(), String> {
     let dir = project_dir(&app_handle, &project_id)?;
-    let chapter_path = dir.join("chapters").join(format!("{chapter_id}.md"));
+    let chapter_path = chapter_path(&dir, &volume, &chapter_id);
     fs::create_dir_all(chapter_path.parent().unwrap())
         .map_err(|e| format!("Failed to create dir: {e}"))?;
 
@@ -279,13 +301,14 @@ fn save_chapter_content(
             let current_trimmed = current.trim();
             let new_trimmed = content.trim();
             if !current_trimmed.is_empty() && current_trimmed != new_trimmed {
-                let idx_path = dir.join("chapters/.history").join(&chapter_id).join("_index.json");
-                let idx_dir = idx_path.parent().unwrap();
-                fs::create_dir_all(idx_dir).map_err(|e| format!("Failed to create history dir: {e}"))?;
+                let history_dir = chapter_history_dir(&dir, &volume, &chapter_id);
+                fs::create_dir_all(&history_dir)
+                    .map_err(|e| format!("Failed to create history dir: {e}"))?;
 
+                let idx_path = history_dir.join("_index.json");
                 let mut index = commands::version::load_index_for_save(&idx_path);
                 let next_ver = index.versions.iter().map(|v| v.version).max().unwrap_or(0) + 1;
-                let backup_path = idx_dir.join(format!("v{next_ver}.md"));
+                let backup_path = history_dir.join(format!("v{next_ver}.md"));
                 fs::write(&backup_path, &current).map_err(|e| format!("Failed to write backup: {e}"))?;
                 index.versions.push(commands::version::VersionMeta {
                     version: next_ver,
@@ -298,7 +321,7 @@ fn save_chapter_content(
                 // Prune old versions
                 while index.versions.len() > index.max_versions as usize {
                     let oldest = index.versions.remove(0);
-                    let old_path = idx_dir.join(format!("v{}.md", oldest.version));
+                    let old_path = history_dir.join(format!("v{}.md", oldest.version));
                     if old_path.exists() {
                         let _ = fs::remove_file(&old_path);
                     }

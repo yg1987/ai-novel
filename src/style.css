@@ -762,6 +762,14 @@ body {
   padding: 4px;
 }
 
+.chapter-volume-label {
+  padding: 6px 12px 2px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+
 .chapter-item {
   padding: 8px 12px;
   border-radius: var(--radius-sm);

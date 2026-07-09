@@ -33,12 +33,12 @@ export async function listChapters(projectId: string): Promise<ChapterMeta[]> {
   return invoke<ChapterMeta[]>('list_chapters', { projectId })
 }
 
-export async function getChapterContent(projectId: string, chapterId: string): Promise<string> {
-  return invoke<string>('get_chapter_content', { projectId, chapterId })
+export async function getChapterContent(projectId: string, volume: string, chapterId: string): Promise<string> {
+  return invoke<string>('get_chapter_content', { projectId, volume, chapterId })
 }
 
-export async function saveChapterContent(projectId: string, chapterId: string, content: string): Promise<null> {
-  return invoke<null>('save_chapter_content', { projectId, chapterId, content })
+export async function saveChapterContent(projectId: string, volume: string, chapterId: string, content: string): Promise<null> {
+  return invoke<null>('save_chapter_content', { projectId, volume, chapterId, content })
 }
 
 export async function loadProviderConfig(): Promise<ProviderConfig> {
@@ -167,24 +167,24 @@ export async function computeDailyStats(
 
 // ─── Version History ─────────────────────────────
 
-export async function listChapterVersions(projectId: string, chapterId: string): Promise<VersionMeta[]> {
-  return invoke<VersionMeta[]>('list_chapter_versions', { projectId, chapterId })
+export async function listChapterVersions(projectId: string, volume: string, chapterId: string): Promise<VersionMeta[]> {
+  return invoke<VersionMeta[]>('list_chapter_versions', { projectId, volume, chapterId })
 }
 
-export async function getChapterVersion(projectId: string, chapterId: string, version: number): Promise<string> {
-  return invoke<string>('get_chapter_version', { projectId, chapterId, version })
+export async function getChapterVersion(projectId: string, volume: string, chapterId: string, version: number): Promise<string> {
+  return invoke<string>('get_chapter_version', { projectId, volume, chapterId, version })
 }
 
-export async function restoreChapterVersion(projectId: string, chapterId: string, version: number): Promise<void> {
-  return invoke<void>('restore_chapter_version', { projectId, chapterId, version })
+export async function restoreChapterVersion(projectId: string, volume: string, chapterId: string, version: number): Promise<void> {
+  return invoke<void>('restore_chapter_version', { projectId, volume, chapterId, version })
 }
 
-export async function deleteChapterVersion(projectId: string, chapterId: string, version: number): Promise<void> {
-  return invoke<void>('delete_chapter_version', { projectId, chapterId, version })
+export async function deleteChapterVersion(projectId: string, volume: string, chapterId: string, version: number): Promise<void> {
+  return invoke<void>('delete_chapter_version', { projectId, volume, chapterId, version })
 }
 
-export async function renameChapterVersion(projectId: string, chapterId: string, version: number, label: string): Promise<void> {
-  return invoke<void>('rename_chapter_version', { projectId, chapterId, version, label })
+export async function renameChapterVersion(projectId: string, volume: string, chapterId: string, version: number, label: string): Promise<void> {
+  return invoke<void>('rename_chapter_version', { projectId, volume, chapterId, version, label })
 }
 
 // ─── Resource Library ─────────────────────────────

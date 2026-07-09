@@ -15,6 +15,7 @@ import { runSavePipeline } from '../services/savePipeline'
 
 interface Props {
   projectId: string
+  volume: string
   chapterId: string
   initialContent: string
   targetWords?: number
@@ -28,7 +29,7 @@ export interface EditorHandle {
   insertAtCursor: (text: string) => void
 }
 
-const Editor = forwardRef<EditorHandle, Props>(({ projectId, chapterId, initialContent, targetWords = 1200, onContentChange, chapterNumber = 1 }, ref) => {
+const Editor = forwardRef<EditorHandle, Props>(({ projectId, volume, chapterId, initialContent, targetWords = 1200, onContentChange, chapterNumber = 1 }, ref) => {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSaved = useRef(initialContent)
   const generateStartTime = useRef(0)
@@ -54,7 +55,7 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, chapterId, initialC
       saveTimer.current = setTimeout(() => {
         if (html !== lastSaved.current) {
           lastSaved.current = html
-          saveChapterContent(projectId, chapterId, html)
+          saveChapterContent(projectId, volume, chapterId, html)
             .catch((e: unknown) => { console.error('Auto-save failed:', e) })
         }
       }, AUTOSAVE_DELAY)
@@ -80,7 +81,7 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, chapterId, initialC
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current)
       if (editor && editor.getHTML() !== lastSaved.current) {
-        saveChapterContent(projectId, chapterId, editor.getHTML())
+        saveChapterContent(projectId, volume, chapterId, editor.getHTML())
           .catch((e: unknown) => { console.error('Final save failed:', e) })
       }
     }
@@ -115,7 +116,7 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, chapterId, initialC
     }
 
     // Run the save pipeline (sequential, awaited internally)
-    runSavePipeline({ projectId, chapterId, chapterNumber, html })
+    runSavePipeline({ projectId, volume, chapterId, chapterNumber, html })
       .then((result) => {
         setBannedCheck(result.bannedCheck)
         setLastLightCheckResult(result.lightCheckResult)
@@ -129,7 +130,7 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, chapterId, initialC
     generateStartTime.current = Date.now()
     editor.commands.focus()
     try {
-      const ctx = await buildContext(projectId, chapterId, targetWords)
+      const ctx = await buildContext(projectId, volume, chapterId, targetWords)
       const { from } = editor.state.selection
       editor.commands.insertContentAt(from, '<p></p>')
       await generateChapter(ctx.systemPrompt, {

@@ -22,6 +22,7 @@ import { runAndSaveLightCheck } from './reviewService'
 
 export interface SavePipelineInput {
   projectId: string
+  volume: string
   chapterId: string
   chapterNumber: number
   html: string
@@ -145,10 +146,10 @@ async function maybeRunDeepReview(
  * and is triggered separately by the caller.
  */
 export async function runSavePipeline(input: SavePipelineInput): Promise<SavePipelineResult> {
-  const { projectId, chapterId, chapterNumber, html } = input
+  const { projectId, volume, chapterId, chapterNumber, html } = input
 
   // 1. Persist chapter content to disk
-  await saveChapterContent(projectId, chapterId, html)
+  await saveChapterContent(projectId, volume, chapterId, html)
 
   const plainText = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
 

@@ -55,7 +55,7 @@ export async function runBrainstorm(
     const recent = [...chapters].sort((a, b) => b.order - a.order).slice(0, 3)
     const summaries: string[] = ['## 最近章节']
     for (const ch of recent) {
-      const html = await getChapterContent(request.projectId, ch.id)
+      const html = await getChapterContent(request.projectId, ch.volume, ch.id)
       const text = htmlToPlainText(html)
       summaries.push(`第${ch.order}章：${text.slice(0, 200)}`)
     }

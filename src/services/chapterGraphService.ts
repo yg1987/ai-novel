@@ -30,7 +30,7 @@ export async function loadChapterGraph(projectId: string): Promise<ChapterGraph>
   // Build nodes
   const nodeMap = new Map<string, ChapterNode>()
   for (const ch of chapters) {
-    const html = await getChapterContent(projectId, ch.id)
+    const html = await getChapterContent(projectId, ch.volume, ch.id)
     const plain = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
     nodeMap.set(ch.id, {
       id: ch.id,

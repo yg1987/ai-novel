@@ -54,7 +54,7 @@ export default function ExportDialog({ projectId, projectName, onClose }: Props)
       chapters.sort((a, b) => a.order - b.order)
       const parts: string[] = []
       for (const ch of chapters) {
-        const html = await getChapterContent(projectId, ch.id)
+        const html = await getChapterContent(projectId, ch.volume, ch.id)
         parts.push(adaptForPlatform(html, publishPlatform))
       }
       const text = parts.join('\n\n')

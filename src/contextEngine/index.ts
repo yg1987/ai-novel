@@ -18,6 +18,7 @@ function stripHtml(html: string): string {
 
 export async function buildContext(
   projectId: string,
+  volume: string,
   chapterId: string,
   targetWords: number,
 ): Promise<ContextPack> {
@@ -31,7 +32,7 @@ export async function buildContext(
   if (chapterNumber > 1) {
     const prevId = `ch${String(chapterNumber - 1).padStart(3, '0')}`
     try {
-      const prevContent = await getChapterContent(projectId, prevId)
+      const prevContent = await getChapterContent(projectId, volume, prevId)
       const text = stripHtml(prevContent)
       previousEnding = text.slice(-500)
     } catch { /* no previous chapter */ }

@@ -4,11 +4,12 @@ import { listChapterVersions, getChapterVersion, restoreChapterVersion, deleteCh
 
 interface Props {
   projectId: string
+  volume: string
   chapterId: string | null
   onRestore?: () => void
 }
 
-export default function VersionHistoryPanel({ projectId, chapterId, onRestore }: Props) {
+export default function VersionHistoryPanel({ projectId, volume, chapterId, onRestore }: Props) {
   const [versions, setVersions] = useState<VersionMeta[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null)
@@ -20,17 +21,17 @@ export default function VersionHistoryPanel({ projectId, chapterId, onRestore }:
   useEffect(() => {
     if (!chapterId) return
     setLoading(true)
-    listChapterVersions(projectId, chapterId)
+    listChapterVersions(projectId, volume, chapterId)
       .then(setVersions)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [projectId, chapterId])
+  }, [projectId, volume, chapterId])
 
   const handlePreview = async (version: number) => {
     if (!chapterId) return
     setSelectedVersion(version)
     try {
-      const content = await getChapterVersion(projectId, chapterId, version)
+      const content = await getChapterVersion(projectId, volume, chapterId, version)
       setPreviewContent(content)
     } catch (e) {
       console.error('Failed to load version:', e)
@@ -40,7 +41,7 @@ export default function VersionHistoryPanel({ projectId, chapterId, onRestore }:
   const handleRestore = async (version: number) => {
     if (!chapterId) return
     try {
-      await restoreChapterVersion(projectId, chapterId, version)
+      await restoreChapterVersion(projectId, volume, chapterId, version)
       setConfirmRestore(null)
       onRestore?.()
     } catch (e) {
@@ -51,7 +52,7 @@ export default function VersionHistoryPanel({ projectId, chapterId, onRestore }:
   const handleDelete = async (version: number) => {
     if (!chapterId) return
     try {
-      await deleteChapterVersion(projectId, chapterId, version)
+      await deleteChapterVersion(projectId, volume, chapterId, version)
       setVersions((prev) => prev.filter((v) => v.version !== version))
     } catch (e) {
       console.error('Failed to delete version:', e)
@@ -61,7 +62,7 @@ export default function VersionHistoryPanel({ projectId, chapterId, onRestore }:
   const handleRename = async (version: number) => {
     if (!chapterId || !renameValue.trim()) return
     try {
-      await renameChapterVersion(projectId, chapterId, version, renameValue.trim())
+      await renameChapterVersion(projectId, volume, chapterId, version, renameValue.trim())
       setVersions((prev) => prev.map((v) => v.version === version ? { ...v, label: renameValue.trim() } : v))
       setRenamingVersion(null)
       setRenameValue('')

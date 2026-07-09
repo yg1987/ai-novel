@@ -18,16 +18,17 @@ pub struct VersionIndex {
     pub max_versions: u32,
 }
 
-fn history_dir(project_dir: &PathBuf, chapter_id: &str) -> PathBuf {
-    project_dir.join("chapters").join(".history").join(chapter_id)
+/// chapters/{volume}/.history/{chapter_id}/
+fn history_dir(project_dir: &PathBuf, volume: &str, chapter_id: &str) -> PathBuf {
+    project_dir.join("chapters").join(volume).join(".history").join(chapter_id)
 }
 
-fn index_path(project_dir: &PathBuf, chapter_id: &str) -> PathBuf {
-    history_dir(project_dir, chapter_id).join("_index.json")
+fn index_path(project_dir: &PathBuf, volume: &str, chapter_id: &str) -> PathBuf {
+    history_dir(project_dir, volume, chapter_id).join("_index.json")
 }
 
-fn version_file_path(project_dir: &PathBuf, chapter_id: &str, version: u32) -> PathBuf {
-    history_dir(project_dir, chapter_id).join(format!("v{}.md", version))
+fn version_file_path(project_dir: &PathBuf, volume: &str, chapter_id: &str, version: u32) -> PathBuf {
+    history_dir(project_dir, volume, chapter_id).join(format!("v{}.md", version))
 }
 
 pub fn count_chars(text: &str) -> u32 {
@@ -65,13 +66,14 @@ pub fn load_index_for_save(path: &std::path::PathBuf) -> VersionIndex {
 pub fn list_chapter_versions(
     app_handle: tauri::AppHandle,
     project_id: String,
+    volume: String,
     chapter_id: String,
 ) -> Result<Vec<VersionMeta>, String> {
     let dir = crate::project_dir(&app_handle, &project_id)?;
-    let idx_path = index_path(&dir, &chapter_id);
+    let idx_path = index_path(&dir, &volume, &chapter_id);
     let index = load_index(&idx_path);
     let mut versions = index.versions;
-    versions.sort_by(|a, b| b.version.cmp(&a.version)); // newest first
+    versions.sort_by(|a, b| b.version.cmp(&a.version));
     Ok(versions)
 }
 
@@ -79,11 +81,12 @@ pub fn list_chapter_versions(
 pub fn get_chapter_version(
     app_handle: tauri::AppHandle,
     project_id: String,
+    volume: String,
     chapter_id: String,
     version: u32,
 ) -> Result<String, String> {
     let dir = crate::project_dir(&app_handle, &project_id)?;
-    let file_path = version_file_path(&dir, &chapter_id, version);
+    let file_path = version_file_path(&dir, &volume, &chapter_id, version);
     if !file_path.exists() {
         return Err(format!("Version {} not found", version));
     }
@@ -94,25 +97,26 @@ pub fn get_chapter_version(
 pub fn restore_chapter_version(
     app_handle: tauri::AppHandle,
     project_id: String,
+    volume: String,
     chapter_id: String,
     version: u32,
 ) -> Result<(), String> {
     let dir = crate::project_dir(&app_handle, &project_id)?;
-    let file_path = version_file_path(&dir, &chapter_id, version);
+    let file_path = version_file_path(&dir, &volume, &chapter_id, version);
     if !file_path.exists() {
         return Err(format!("Version {} not found", version));
     }
     let content = fs::read_to_string(&file_path).map_err(|e| format!("Read error: {}", e))?;
 
     // Backup current content first
-    let chapter_path = dir.join("chapters").join(format!("{}.md", chapter_id));
+    let chapter_path = dir.join("chapters").join(&volume).join(format!("{}.md", chapter_id));
     if chapter_path.exists() {
         let current = fs::read_to_string(&chapter_path).map_err(|e| format!("Read error: {}", e))?;
         if !current.trim().is_empty() {
-            let idx_path = index_path(&dir, &chapter_id);
+            let idx_path = index_path(&dir, &volume, &chapter_id);
             let mut index = load_index(&idx_path);
             let next_ver = index.versions.iter().map(|v| v.version).max().unwrap_or(0) + 1;
-            let backup_path = version_file_path(&dir, &chapter_id, next_ver);
+            let backup_path = version_file_path(&dir, &volume, &chapter_id, next_ver);
             fs::create_dir_all(backup_path.parent().unwrap()).map_err(|e| format!("Dir error: {}", e))?;
             fs::write(&backup_path, &current).map_err(|e| format!("Write error: {}", e))?;
             index.versions.push(VersionMeta {
@@ -124,10 +128,9 @@ pub fn restore_chapter_version(
                 label: format!("恢复前 (v{})", version),
             });
             save_index(&idx_path, &index)?;
-            // Prune old versions
             while index.versions.len() > index.max_versions as usize {
                 let oldest = index.versions.remove(0);
-                let old_path = version_file_path(&dir, &chapter_id, oldest.version);
+                let old_path = version_file_path(&dir, &volume, &chapter_id, oldest.version);
                 if old_path.exists() {
                     let _ = fs::remove_file(&old_path);
                 }
@@ -136,7 +139,6 @@ pub fn restore_chapter_version(
         }
     }
 
-    // Write restored content
     fs::write(&chapter_path, &content).map_err(|e| format!("Write error: {}", e))?;
     Ok(())
 }
@@ -145,20 +147,19 @@ pub fn restore_chapter_version(
 pub fn delete_chapter_version(
     app_handle: tauri::AppHandle,
     project_id: String,
+    volume: String,
     chapter_id: String,
     version: u32,
 ) -> Result<(), String> {
     let dir = crate::project_dir(&app_handle, &project_id)?;
-    let idx_path = index_path(&dir, &chapter_id);
+    let idx_path = index_path(&dir, &volume, &chapter_id);
     let mut index = load_index(&idx_path);
 
-    // Can't delete last remaining version
     if index.versions.len() <= 1 {
         return Err("Cannot delete the last version".to_string());
     }
 
-    // Delete the version file first
-    let file_path = version_file_path(&dir, &chapter_id, version);
+    let file_path = version_file_path(&dir, &volume, &chapter_id, version);
     if file_path.exists() {
         fs::remove_file(&file_path).map_err(|e| format!("Delete error: {}", e))?;
     }
@@ -173,12 +174,13 @@ pub fn delete_chapter_version(
 pub fn rename_chapter_version(
     app_handle: tauri::AppHandle,
     project_id: String,
+    volume: String,
     chapter_id: String,
     version: u32,
     label: String,
 ) -> Result<(), String> {
     let dir = crate::project_dir(&app_handle, &project_id)?;
-    let idx_path = index_path(&dir, &chapter_id);
+    let idx_path = index_path(&dir, &volume, &chapter_id);
     let mut index = load_index(&idx_path);
 
     if let Some(v) = index.versions.iter_mut().find(|v| v.version == version) {
