@@ -5,31 +5,152 @@ interface Props {
   projectId: string
 }
 
-const SECTIONS = [
-  { key: 'world', label: '世界背景', file: 'world.md', placeholder: '# 世界背景\n\n## 世界概况\n\n## 历史事件\n\n## 特殊规则\n' },
-  { key: 'forces', label: '势力组织', file: 'forces.md', placeholder: '# 势力/组织\n\n## 势力列表\n\n' },
-  { key: 'locations', label: '重要地点', file: 'locations.md', placeholder: '# 重要地点\n\n' },
-  { key: 'power-system', label: '力量体系', file: 'power-system.md', placeholder: '# 力量体系\n\n## 境界划分\n\n' },
-  { key: 'timeline', label: '全局时间线', file: 'timeline.md', placeholder: '# 全局时间线\n\n' },
+interface SubField {
+  key: string
+  label: string
+  hint: string
+}
+
+interface SectionDef {
+  key: string
+  label: string
+  file: string
+  subs: SubField[]
+  hint: string
+}
+
+const SECTIONS: SectionDef[] = [
+  {
+    key: 'world',
+    label: '世界背景',
+    file: 'world.md',
+    hint: '描述这个世界的基本设定，让读者对故事发生的世界有个大致印象',
+    subs: [
+      { key: '世界概况', label: '世界概况', hint: '这个世界是什么样子的？时代背景、地理格局、整体氛围' },
+      { key: '历史事件', label: '历史事件', hint: '有哪些重要的历史事件？战争、灾难、传奇人物的陨落等' },
+      { key: '特殊规则', label: '特殊规则', hint: '这个世界有哪些独有规则？修炼体系、自然法则、社会禁忌等' },
+    ],
+  },
+  {
+    key: 'forces',
+    label: '势力组织',
+    file: 'forces.md',
+    hint: '列出故事中的主要势力，简单描述其立场和相互关系',
+    subs: [
+      { key: '势力列表', label: '势力列表', hint: '列出主要势力、宗派、家族，每行写一个，附一句话描述' },
+    ],
+  },
+  {
+    key: 'locations',
+    label: '重要地点',
+    file: 'locations.md',
+    hint: '列出世界中的重要地点，简单描述其特点',
+    subs: [],
+  },
+  {
+    key: 'power-system',
+    label: '力量体系',
+    file: 'power-system.md',
+    hint: '描述力量体系的核心规则',
+    subs: [
+      { key: '境界划分', label: '境界划分', hint: '修炼境界的等级名称和特征，从低到高排列' },
+    ],
+  },
+  {
+    key: 'timeline',
+    label: '全局时间线',
+    file: 'timeline.md',
+    hint: '按时间顺序列出故事世界中的重要事件节点',
+    subs: [],
+  },
 ]
+
+// ─── Markdown helpers ───────────────────────────────────
+
+/** Parse ## 小节 heading + content from Markdown */
+function parseSubs(content: string, definedKeys: string[]): Record<string, string> {
+  const result: Record<string, string> = {}
+  let currentKey = ''
+  const lines: string[] = []
+
+  for (const line of content.split('\n')) {
+    const m = line.match(/^##\s+(.+)/)
+    if (m) {
+      if (currentKey) result[currentKey] = lines.join('\n').trim()
+      currentKey = m[1]!.trim()
+      lines.length = 0
+    } else if (!line.startsWith('# ')) {
+      lines.push(line)
+    }
+  }
+  if (currentKey) result[currentKey] = lines.join('\n').trim()
+
+  // Ensure all defined keys exist (even if empty)
+  for (const k of definedKeys) {
+    if (!(k in result)) result[k] = ''
+  }
+
+  return result
+}
+
+/** Build Markdown from section title and sub-field values */
+function buildContent(title: string, subs: Record<string, string>): string {
+  const parts = [`# ${title}`]
+  for (const [key, text] of Object.entries(subs)) {
+    parts.push('', `## ${key}`, '')
+    if (text.trim()) {
+      parts.push(text.trim())
+    }
+  }
+  return parts.join('\n')
+}
+
+// ─── Component ──────────────────────────────────────────
 
 export default function WorldviewPanel({ projectId }: Props) {
   const [activeSection, setActiveSection] = useState(SECTIONS[0]!)
   const [content, setContent] = useState('')
+  const [subValues, setSubValues] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState(false)
   const [dirty, setDirty] = useState(false)
 
+  const hasSubs = activeSection.subs.length > 0
+  const isFreeform = !hasSubs
+
   useEffect(() => {
     readProjectFile(projectId, 'worldview', activeSection.file)
-      .then((c) => { setContent(c); setDirty(false) })
+      .then((c) => {
+        setContent(c)
+        setSubValues(parseSubs(c, activeSection.subs.map(s => s.key)))
+        setDirty(false)
+      })
       .catch(console.error)
   }, [projectId, activeSection])
 
   const handleSave = async () => {
-    await writeProjectFile(projectId, 'worldview', activeSection.file, content)
+    if (hasSubs) {
+      const md = buildContent(activeSection.label, subValues)
+      await writeProjectFile(projectId, 'worldview', activeSection.file, md)
+    } else {
+      await writeProjectFile(projectId, 'worldview', activeSection.file, content)
+    }
     setEditing(false)
     setDirty(false)
   }
+
+  const handleStartEdit = () => {
+    setSubValues(parseSubs(content, activeSection.subs.map(s => s.key)))
+    setEditing(true)
+  }
+
+  const updateSubField = (key: string, value: string) => {
+    setSubValues(prev => ({ ...prev, [key]: value }))
+    setDirty(true)
+  }
+
+  const previewContent = hasSubs
+    ? buildContent(activeSection.label, subValues)
+    : content
 
   return (
     <div className="panel-layout">
@@ -57,19 +178,46 @@ export default function WorldviewPanel({ projectId }: Props) {
             {editing ? (
               <button className="btn-primary" onClick={() => { void handleSave() }}>保存</button>
             ) : (
-              <button className="btn-secondary" onClick={() => { setEditing(true) }}>编辑</button>
+              <button className="btn-secondary" onClick={handleStartEdit}>编辑</button>
             )}
           </div>
         </div>
         {editing ? (
-          <textarea
-            className="panel-textarea"
-            value={content}
-            onChange={(e) => { setContent(e.target.value); setDirty(true) }}
-            placeholder={activeSection.placeholder}
-          />
+          isFreeform ? (
+            <textarea
+              className="panel-textarea"
+              value={content}
+              onChange={(e) => { setContent(e.target.value); setDirty(true) }}
+              placeholder={activeSection.hint + '…'}
+            />
+          ) : (
+            <div className="panel-editor-inner">
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>
+                💡 {activeSection.hint}
+              </p>
+              {activeSection.subs.map((sub) => (
+                <div key={sub.key} className="sub-field">
+                  <label className="sub-field-label">{sub.label}</label>
+                  <span className="sub-field-hint">{sub.hint}</span>
+                  <textarea
+                    className="sub-field-textarea"
+                    value={subValues[sub.key] ?? ''}
+                    onChange={(e) => { updateSubField(sub.key, e.target.value) }}
+                    placeholder="在这里填写…"
+                  />
+                </div>
+              ))}
+            </div>
+          )
         ) : (
-          <div className="panel-preview">{content || '暂无内容，点击编辑添加'}</div>
+          <div className="panel-preview">
+            {previewContent.trim() || (
+              <span style={{ color: 'var(--text-muted)' }}>
+                暂无内容，点击编辑添加
+                {activeSection.subs.length > 0 && '（可填写 ' + activeSection.subs.map(s => s.label).join('、') + '）'}
+              </span>
+            )}
+          </div>
         )}
       </div>
     </div>

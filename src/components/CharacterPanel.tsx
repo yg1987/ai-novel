@@ -108,10 +108,10 @@ export default function CharacterPanel({ projectId }: Props) {
                 className="panel-textarea"
                 value={content}
                 onChange={(e) => { setContent(e.target.value) }}
-                placeholder={`## 角色卡\n\nname: ${activeFile}\nrole: \nappearance: \npersonality: \nbackground: \nmotivation: \nspeaking_style: \ntags: []`}
+                placeholder={`角色：${activeFile}\n身份/职业：\n外貌特征：\n性格特点：\n背景经历：\n动机目标：\n说话风格：\n标签：[]\n\n💡 每行填一项就行，不确定的可以空着，以后边写边补`}
               />
             ) : (
-              <div className="panel-preview">{content || '暂无内容'}</div>
+              <div className="panel-preview">{content || <span style={{ color: 'var(--text-muted)' }}>暂无内容，点击编辑填写角色信息</span>}</div>
             )}
           </>
         ) : (
