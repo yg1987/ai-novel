@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { listProjectFiles, readProjectFile, writeProjectFile, loadProviderConfig } from '../api/tauri'
+import { listProjectFiles, readProjectFile, writeProjectFile, deleteProjectFile, loadProviderConfig } from '../api/tauri'
 import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
+import ConfirmDialog from './ConfirmDialog'
 
 interface Props {
   projectId: string
@@ -162,25 +163,55 @@ export default function OutlinePanel({ projectId }: Props) {
     setDirty(false)
   }
 
+  const [deleteTarget, setDeleteTarget] = useState<{ name: string; label: string; type: 'volume' | 'chapter' } | null>(null)
+
   const handleCreateVolume = () => {
     const num = volumes.length + 1
     const name = `卷${num}.md`
-    writeProjectFile(projectId, OUTLINE_DIR, name, `# 第${num}卷\n\n## 概要\n\n## 章节规划\n\n`)
+    writeProjectFile(projectId, OUTLINE_DIR, name, `第${num}卷\n\n概要：\n\n章节规划：\n\n`)
       .then(() => refresh())
       .then(() => { setActiveFile(name); setActiveType('volume'); setEditing(true) })
       .catch((e: unknown) => { console.error(e) })
   }
 
   const handleCreateChapter = (volumeLabel: string) => {
-    // Count existing chapters for this volume
     const existing = chapters.filter((c) => c.volumeLabel === volumeLabel)
     const chNum = existing.length + 1
     const name = `${volumeLabel}_第${chNum}章.md`
     const label = `第${chNum}章`
-    writeProjectFile(projectId, OUTLINE_CHAPTER_DIR, name, `## ${label}细纲\n\n### 情节点\n\n`)
+    writeProjectFile(projectId, OUTLINE_CHAPTER_DIR, name, `${label}细纲：\n\n情节点：\n\n`)
       .then(() => refresh())
       .then(() => { setActiveFile(name); setActiveType('chapter'); setEditing(true) })
       .catch((e: unknown) => { console.error(e) })
+  }
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return
+    const { name, type } = deleteTarget
+    if (type === 'volume') {
+      const volLabel = name.replace(/\.md$/, '')
+      const volChapters = chaptersByVolume(volLabel)
+      Promise.all([
+        deleteProjectFile(projectId, OUTLINE_DIR, name),
+        ...volChapters.map((c) => deleteProjectFile(projectId, OUTLINE_CHAPTER_DIR, c.filename)),
+      ]).then(() => {
+        if (activeFile === name || volChapters.some((c) => c.filename === activeFile)) {
+          setActiveFile('outline.md')
+          setActiveType('outline')
+        }
+        setDeleteTarget(null)
+        refresh()
+      }).catch((e: unknown) => { console.error(e) })
+    } else {
+      deleteProjectFile(projectId, OUTLINE_CHAPTER_DIR, name).then(() => {
+        if (activeFile === name) {
+          setActiveFile('outline.md')
+          setActiveType('outline')
+        }
+        setDeleteTarget(null)
+        refresh()
+      }).catch((e: unknown) => { console.error(e) })
+    }
   }
 
   // ─── Navigation ─────────────────────────────────────
@@ -282,21 +313,37 @@ export default function OutlinePanel({ projectId }: Props) {
                   <div className="panel-item-main" onClick={() => openFile(v, 'volume')}>
                     📖 {volLabel}
                   </div>
-                  <button
-                    className="panel-item-add"
-                    onClick={(e) => { e.stopPropagation(); handleCreateChapter(volLabel) }}
-                    title="添加章节细纲"
-                  >
-                    +
-                  </button>
+                  <div style={{ display: 'flex', gap: 2 }}>
+                    <button
+                      className="panel-item-add"
+                      onClick={(e) => { e.stopPropagation(); handleCreateChapter(volLabel) }}
+                      title="添加章节细纲"
+                    >+</button>
+                    <button
+                      className="panel-item-add"
+                      style={{ color: 'var(--danger)' }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDeleteTarget({ name: v, label: volLabel, type: 'volume' })
+                      }}
+                      title="删除分卷"
+                    >✕</button>
+                  </div>
                 </div>
                 {volChapters.map((c) => (
-                  <div
-                    key={c.filename}
-                    className={`panel-sub-item${activeFile === c.filename ? ' active' : ''}`}
-                    onClick={() => openFile(c.filename, 'chapter')}
-                  >
-                    📝 {c.label}
+                  <div key={c.filename} className="panel-sub-item-row">
+                    <div
+                      className={`panel-sub-item${activeFile === c.filename ? ' active' : ''}`}
+                      onClick={() => openFile(c.filename, 'chapter')}
+                    >
+                      📝 {c.label}
+                    </div>
+                    <button
+                      className="panel-item-add"
+                      style={{ color: 'var(--danger)' }}
+                      onClick={() => setDeleteTarget({ name: c.filename, label: c.label, type: 'chapter' })}
+                      title="删除章节细纲"
+                    >✕</button>
                   </div>
                 ))}
               </div>
@@ -305,6 +352,17 @@ export default function OutlinePanel({ projectId }: Props) {
 
           {volumes.length === 0 && <p className="panel-empty">暂无分卷，点击 + 添加</p>}
         </div>
+
+        {deleteTarget && (
+          <ConfirmDialog
+            title={deleteTarget.type === 'volume' ? '删除分卷' : '删除章节细纲'}
+            message={`确定删除「${deleteTarget.label}」？${deleteTarget.type === 'volume' ? '\n该分卷下的所有章节细纲也将被删除。' : ''}\n此操作不可恢复。`}
+            confirmText="删除"
+            danger
+            onConfirm={confirmDelete}
+            onCancel={() => { setDeleteTarget(null) }}
+          />
+        )}
       </div>
 
       <div className="panel-editor">

@@ -1120,6 +1120,26 @@ body {
   color: #fff;
 }
 
+.panel-sub-item-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.panel-sub-item-row .panel-sub-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.panel-sub-item-row .panel-item-add {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.panel-sub-item-row:hover .panel-item-add {
+  opacity: 1;
+}
+
 .panel-empty {
   padding: 16px 12px;
   font-size: 0.85rem;
