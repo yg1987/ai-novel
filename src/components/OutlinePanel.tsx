@@ -1,97 +1,399 @@
 import { useState, useEffect, useCallback } from 'react'
-import { listProjectFiles, readProjectFile, writeProjectFile } from '../api/tauri'
+import { listProjectFiles, readProjectFile, writeProjectFile, loadProviderConfig } from '../api/tauri'
+import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
 
 interface Props {
   projectId: string
 }
 
 const OUTLINE_DIR = 'outline'
+const OUTLINE_CHAPTER_DIR = 'outline/细纲'
+
+interface ChapterInfo {
+  filename: string
+  label: string
+  volumeLabel: string // e.g. "卷1"
+}
+
+// ─── AI prompt builders ───────────────────────────────
+
+function getDefaultPrompt(type: 'outline' | 'volume' | 'chapter', label: string): string {
+  const prompts: Record<'outline' | 'volume' | 'chapter', string> = {
+    outline: `你是一个网文大纲助手。根据项目信息，生成全书的总纲（故事梗概）。
+
+请按以下结构输出：
+
+## 故事背景（一句话概括世界观）
+## 主线剧情（故事的起承转合）
+## 核心冲突（主要矛盾）
+## 结局走向
+
+控制在 500 字以内，直接输出，不要加额外说明。`,
+    volume: `你是一个网文大纲助手。根据项目信息，为「${label}」生成分卷大纲。
+
+请按以下结构输出：
+
+## 概要（本卷的核心剧情）
+## 主要冲突
+## 章节规划（计划写几章，每章一句话概括）
+## 本卷目标
+
+控制在 300 字以内，直接输出，不要加额外说明。`,
+    chapter: `你是一个网文大纲助手。根据项目信息，为「${label}」生成章节细纲。
+
+请生成 3-5 个情节点，每个情节点包含：
+
+1. 情节点名称
+2. 具体描述（1-2 句话）
+3. 类型（铺垫/爽点/推进/转折/悬念）
+4. 字数预算
+
+输出格式：
+## 情节点 1
+- 名称：xxx
+- 描述：xxx
+- 类型：铺垫
+- 字数：300 字
+
+控制在 400 字以内，直接输出。`,
+  }
+  return prompts[type]
+}
+
+// ─── Component ────────────────────────────────────────
 
 export default function OutlinePanel({ projectId }: Props) {
+  // Sidebar data
   const [volumes, setVolumes] = useState<string[]>([])
+  const [chapters, setChapters] = useState<ChapterInfo[]>([])
   const [activeFile, setActiveFile] = useState<string | null>('outline.md')
+  const [activeType, setActiveType] = useState<'outline' | 'volume' | 'chapter'>('outline')
+
+  // Editor state
   const [content, setContent] = useState('')
   const [editing, setEditing] = useState(false)
+  const [dirty, setDirty] = useState(false)
+
+  // AI state
+  const [generatingAi, setGeneratingAi] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [showPrompt, setShowPrompt] = useState(false)
+  const [editingPrompt, setEditingPrompt] = useState('')
+  const [savingPrompt, setSavingPrompt] = useState(false)
+
+  // ─── Data loading ──────────────────────────────────
 
   const refresh = useCallback(async () => {
-    const files = await listProjectFiles(projectId, OUTLINE_DIR)
-    const names = files
+    const [rootFiles, chapterFiles] = await Promise.all([
+      listProjectFiles(projectId, OUTLINE_DIR),
+      listProjectFiles(projectId, OUTLINE_CHAPTER_DIR).catch(() => []),
+    ])
+
+    // Volumes: .md files at root of outline/ that aren't outline.md
+    const vols = rootFiles
       .map((f) => f.name)
-      .filter((n) => n.endsWith('.md'))
-      .filter((n) => !n.includes('/'))
-    setVolumes(names.sort())
+      .filter((n) => n.endsWith('.md') && n !== 'outline.md')
+      .sort()
+    setVolumes(vols)
+
+    // Chapters: parse filenames like "卷1_第1章.md" -> volumeLabel + chapterLabel
+    const chs: ChapterInfo[] = chapterFiles
+      .map((f) => {
+        const name = f.name
+        if (!name.endsWith('.md')) return null
+        const label = name.replace(/\.md$/, '')
+        // Try to extract volume prefix (e.g. "卷1_第1章" -> volumeLabel="卷1", chapterLabel="第1章")
+        const match = label.match(/^(卷\d+)_(.+)$/)
+        if (match) {
+          return { filename: name, label: match[2]!, volumeLabel: match[1]! }
+        }
+        return { filename: name, label, volumeLabel: '' }
+      })
+      .filter((c): c is ChapterInfo => c !== null)
+    setChapters(chs)
   }, [projectId])
 
   useEffect(() => {
     refresh().catch((e: unknown) => { console.error(e) })
   }, [refresh])
 
+  // Load content when active file changes
   useEffect(() => {
     if (!activeFile) return
-    readProjectFile(projectId, OUTLINE_DIR, activeFile)
-      .then(setContent)
-      .catch((e: unknown) => { console.error(e) })
-  }, [projectId, activeFile])
+    if (activeType === 'chapter') {
+      readProjectFile(projectId, OUTLINE_CHAPTER_DIR, activeFile)
+        .then((c) => { setContent(c); setDirty(false) })
+        .catch((e: unknown) => { console.error(e) })
+    } else {
+      readProjectFile(projectId, OUTLINE_DIR, activeFile)
+        .then((c) => { setContent(c); setDirty(false) })
+        .catch((e: unknown) => { console.error(e) })
+    }
+  }, [projectId, activeFile, activeType])
 
-  const handleSave = () => {
+  // Load saved prompt for this type
+  const promptKey = `outline_${activeType}`
+  useEffect(() => {
+    loadPrompt(projectId, promptKey).then((saved) => {
+      setEditingPrompt(saved ?? '')
+      setShowPrompt(false)
+    }).catch(() => {})
+  }, [projectId, promptKey])
+
+  // ─── File operations ────────────────────────────────
+
+  const saveFile = async () => {
     if (!activeFile) return
-    writeProjectFile(projectId, OUTLINE_DIR, activeFile, content)
-      .then(() => { setEditing(false) })
-      .catch((e: unknown) => { console.error(e) })
+    if (activeType === 'chapter') {
+      await writeProjectFile(projectId, OUTLINE_CHAPTER_DIR, activeFile, content)
+    } else {
+      await writeProjectFile(projectId, OUTLINE_DIR, activeFile, content)
+    }
+    setEditing(false)
+    setDirty(false)
   }
 
   const handleCreateVolume = () => {
-    const num = volumes.length
-    const name = `卷${String(num + 1)}.md`
-    writeProjectFile(projectId, OUTLINE_DIR, name, `# 第${String(num + 1)}卷\n\n## 概要\n\n## 章节列表\n\n`)
+    const num = volumes.length + 1
+    const name = `卷${num}.md`
+    writeProjectFile(projectId, OUTLINE_DIR, name, `# 第${num}卷\n\n## 概要\n\n## 章节规划\n\n`)
       .then(() => refresh())
-      .then(() => { setActiveFile(name); setEditing(true) })
+      .then(() => { setActiveFile(name); setActiveType('volume'); setEditing(true) })
       .catch((e: unknown) => { console.error(e) })
   }
 
-  const label = (name: string) => {
-    if (name === 'outline.md') return '📋 总纲'
-    return `📖 ${name.replace(/\.md$/, '')}`
+  const handleCreateChapter = (volumeLabel: string) => {
+    // Count existing chapters for this volume
+    const existing = chapters.filter((c) => c.volumeLabel === volumeLabel)
+    const chNum = existing.length + 1
+    const name = `${volumeLabel}_第${chNum}章.md`
+    const label = `第${chNum}章`
+    writeProjectFile(projectId, OUTLINE_CHAPTER_DIR, name, `## ${label}细纲\n\n### 情节点\n\n`)
+      .then(() => refresh())
+      .then(() => { setActiveFile(name); setActiveType('chapter'); setEditing(true) })
+      .catch((e: unknown) => { console.error(e) })
   }
+
+  // ─── Navigation ─────────────────────────────────────
+
+  const openFile = (file: string, type: 'outline' | 'volume' | 'chapter') => {
+    setActiveFile(file)
+    setActiveType(type)
+    setEditing(false)
+  }
+
+  const activeLabel = () => {
+    if (!activeFile) return ''
+    if (activeFile === 'outline.md') return '📋 总纲'
+    if (activeType === 'chapter') return `📝 ${activeFile.replace(/\.md$/, '')}`
+    return `📖 ${activeFile.replace(/\.md$/, '')}`
+  }
+
+  // ─── AI generation ──────────────────────────────────
+
+  const getActiveDefaultPrompt = () => getDefaultPrompt(activeType, activeLabel())
+
+  const handleAIGenerate = async () => {
+    setGeneratingAi(true)
+    setAiError(null)
+    try {
+      const config = await loadProviderConfig()
+      const provider = config.providers.find((p) => p.name === config.active_profile)
+      if (!provider) throw new Error('未配置 AI Provider')
+      if (!provider.models.analysis) throw new Error('未配置分析模型，请在 AI 配置中设置')
+
+      let context = ''
+      try {
+        const metaRaw = await readProjectFile(projectId, '', 'project.json')
+        const meta = JSON.parse(metaRaw) as { name?: string; genre?: string; description?: string }
+        context = `小说名称：${meta.name ?? ''}\n类型：${meta.genre ?? ''}\n简介：${meta.description ?? ''}`
+      } catch { /* ignore */ }
+
+      const systemPrompt = editingPrompt.trim() || getActiveDefaultPrompt()
+
+      const base = provider.base_url.replace(/\/+$/, '')
+      const res = await fetch(`${base}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${provider.api_key}`,
+        },
+        body: JSON.stringify({
+          model: provider.models.analysis,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: context || '请生成大纲内容' },
+          ],
+          temperature: 0.8,
+          max_tokens: 2048,
+        }),
+      })
+      if (!res.ok) throw new Error(`API ${res.status}`)
+      const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+      const raw = data.choices?.[0]?.message?.content ?? ''
+      if (raw.trim()) {
+        setContent(raw.trim())
+        setDirty(true)
+      }
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setGeneratingAi(false)
+    }
+  }
+
+  // Volume chapters grouped
+  const chaptersByVolume = (volLabel: string) =>
+    chapters.filter((c) => c.volumeLabel === volLabel)
 
   return (
     <div className="panel-layout">
       <div className="panel-sidebar">
         <div className="panel-sidebar-header">
           <h3>大纲</h3>
-          <button className="btn-small" onClick={() => { handleCreateVolume() }} title="添加分卷">+</button>
+          <button className="btn-small" onClick={handleCreateVolume} title="添加分卷">+</button>
         </div>
         <div className="panel-list">
-          {volumes.map((v) => (
+          {/* 总纲 */}
+          <div
+            className={`panel-item${activeFile === 'outline.md' ? ' active' : ''}`}
+            onClick={() => openFile('outline.md', 'outline')}
+          >
+            📋 总纲
+          </div>
+
+          {/* 分卷 */}
+          {volumes.map((v) => {
+            const volLabel = v.replace(/\.md$/, '')
+            const chs = chaptersByVolume(volLabel)
+            const isActive = activeFile === v || chs.some((c) => c.filename === activeFile)
+            return (
+              <div key={v} className={`panel-item${isActive ? ' active' : ''}`}>
+                <div className="panel-item-main" onClick={() => openFile(v, 'volume')}>
+                  📖 {volLabel}
+                </div>
+                <button
+                  className="panel-item-add"
+                  onClick={(e) => { e.stopPropagation(); handleCreateChapter(volLabel) }}
+                  title="添加章节细纲"
+                >
+                  +
+                </button>
+              </div>
+            )
+          })}
+
+          {/* Chapter outlines under volumes */}
+          {chapters.map((c) => (
             <div
-              key={v}
-              className={`panel-item${v === activeFile ? ' active' : ''}`}
-              onClick={() => { setActiveFile(v); setEditing(false) }}
+              key={c.filename}
+              className={`panel-sub-item${activeFile === c.filename ? ' active' : ''}`}
+              onClick={() => openFile(c.filename, 'chapter')}
+              style={{ paddingLeft: 36 }}
             >
-              {label(v)}
+              📝 {c.label}
             </div>
           ))}
+
+          {volumes.length === 0 && <p className="panel-empty">暂无分卷，点击 + 添加</p>}
         </div>
       </div>
+
       <div className="panel-editor">
         {activeFile ? (
           <>
             <div className="panel-editor-header">
-              <h3>{label(activeFile)}</h3>
-              <div>
+              <h3>{activeLabel()}</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {dirty && <span style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>未保存</span>}
+                {editing && (
+                  <>
+                    <button
+                      className="btn-text"
+                      onClick={() => { void handleAIGenerate() }}
+                      disabled={generatingAi}
+                      style={{ fontSize: '0.85rem' }}
+                    >
+                      {generatingAi ? '⏳ 生成中…' : '✨ AI 辅助'}
+                    </button>
+                    <button
+                      className="btn-text"
+                      onClick={() => {
+                        if (!showPrompt && !editingPrompt.trim()) {
+                          setEditingPrompt(getActiveDefaultPrompt())
+                        }
+                        setShowPrompt(!showPrompt)
+                      }}
+                      style={{ fontSize: '0.85rem' }}
+                    >
+                      {showPrompt ? '关闭提示词' : '✎ 提示词'}
+                    </button>
+                  </>
+                )}
                 {editing ? (
-                  <button className="btn-primary" onClick={() => { handleSave() }}>保存</button>
+                  <button className="btn-primary" onClick={() => { void saveFile() }}>保存</button>
                 ) : (
                   <button className="btn-secondary" onClick={() => { setEditing(true) }}>编辑</button>
                 )}
               </div>
             </div>
+
+            {showPrompt && editing && (
+              <div className="prompt-editor">
+                <div className="prompt-editor-header">
+                  <span>提示词（AI 辅助使用，修改后自动保存到本项目）</span>
+                  <button
+                    className="btn-text"
+                    style={{ fontSize: '0.8rem' }}
+                    onClick={async () => {
+                      setSavingPrompt(true)
+                      await resetPrompt(projectId, promptKey)
+                      setEditingPrompt('')
+                      setShowPrompt(false)
+                      setSavingPrompt(false)
+                    }}
+                  >恢复默认</button>
+                </div>
+                <textarea
+                  className="prompt-editor-textarea"
+                  value={editingPrompt}
+                  onChange={(e) => { setEditingPrompt(e.target.value) }}
+                  placeholder="在此编写自定义提示词…"
+                />
+                <div className="prompt-editor-footer">
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    {editingPrompt.trim() ? '已保存自定义提示词' : '修改后点保存，AI 将使用你的提示词'}
+                  </span>
+                  <button
+                    className="btn-primary"
+                    style={{ fontSize: '0.82rem', padding: '4px 12px' }}
+                    disabled={savingPrompt}
+                    onClick={async () => {
+                      setSavingPrompt(true)
+                      await savePrompt(projectId, promptKey, editingPrompt)
+                      setSavingPrompt(false)
+                    }}
+                  >{savingPrompt ? '保存中…' : '保存提示词'}</button>
+                </div>
+              </div>
+            )}
+
+            {aiError && (
+              <div style={{ padding: '8px 24px', fontSize: '0.85rem', color: 'var(--danger)', background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+                AI 生成失败：{aiError}
+              </div>
+            )}
+
             {editing ? (
               <textarea
                 className="panel-textarea"
                 value={content}
-                onChange={(e) => { setContent(e.target.value) }}
-                placeholder="# 大纲内容"
+                onChange={(e) => { setContent(e.target.value); setDirty(true) }}
+                placeholder={
+                  activeType === 'outline' ? '撰写全书总纲…' :
+                  activeType === 'volume' ? '撰写本卷大纲…' :
+                  '撰写章节细纲，3-5 个情节点…'
+                }
               />
             ) : (
               <div className="panel-preview">{content || '暂无内容'}</div>

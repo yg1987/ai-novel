@@ -1083,6 +1083,43 @@ body {
   color: #fff;
 }
 
+.panel-item-add {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--text-muted);
+  padding: 0 4px;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+}
+
+.panel-item-add:hover {
+  color: var(--accent);
+  background: rgba(0,0,0,0.04);
+}
+
+.panel-sub-item {
+  display: flex;
+  align-items: center;
+  padding: 5px 12px 5px 36px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  transition: background 0.12s;
+}
+
+.panel-sub-item:hover {
+  background: rgba(0,0,0,0.03);
+  color: var(--text);
+}
+
+.panel-sub-item.active {
+  background: var(--accent);
+  color: #fff;
+}
+
 .panel-empty {
   padding: 16px 12px;
   font-size: 0.85rem;
