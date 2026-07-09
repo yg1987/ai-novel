@@ -110,6 +110,15 @@ export default function OutlinePanel({ projectId }: Props) {
         return { filename: name, label, volumeLabel: '' }
       })
       .filter((c): c is ChapterInfo => c !== null)
+      .sort((a, b) => {
+        // Sort by volume number first, then chapter number
+        const volA = parseInt(a.volumeLabel.match(/\d+/)?.[0] ?? '0')
+        const volB = parseInt(b.volumeLabel.match(/\d+/)?.[0] ?? '0')
+        if (volA !== volB) return volA - volB
+        const chA = parseInt(a.label.match(/\d+/)?.[0] ?? '0')
+        const chB = parseInt(b.label.match(/\d+/)?.[0] ?? '0')
+        return chA - chB
+      })
     setChapters(chs)
   }, [projectId])
 
@@ -262,38 +271,37 @@ export default function OutlinePanel({ projectId }: Props) {
             📋 总纲
           </div>
 
-          {/* 分卷 */}
+          {/* 分卷 + 归属的章节细纲 */}
           {volumes.map((v) => {
             const volLabel = v.replace(/\.md$/, '')
-            const chs = chaptersByVolume(volLabel)
-            const isActive = activeFile === v || chs.some((c) => c.filename === activeFile)
+            const volChapters = chaptersByVolume(volLabel)
+            const isVolActive = activeFile === v || volChapters.some((c) => c.filename === activeFile)
             return (
-              <div key={v} className={`panel-item${isActive ? ' active' : ''}`}>
-                <div className="panel-item-main" onClick={() => openFile(v, 'volume')}>
-                  📖 {volLabel}
+              <div key={v}>
+                <div className={`panel-item${isVolActive ? ' active' : ''}`}>
+                  <div className="panel-item-main" onClick={() => openFile(v, 'volume')}>
+                    📖 {volLabel}
+                  </div>
+                  <button
+                    className="panel-item-add"
+                    onClick={(e) => { e.stopPropagation(); handleCreateChapter(volLabel) }}
+                    title="添加章节细纲"
+                  >
+                    +
+                  </button>
                 </div>
-                <button
-                  className="panel-item-add"
-                  onClick={(e) => { e.stopPropagation(); handleCreateChapter(volLabel) }}
-                  title="添加章节细纲"
-                >
-                  +
-                </button>
+                {volChapters.map((c) => (
+                  <div
+                    key={c.filename}
+                    className={`panel-sub-item${activeFile === c.filename ? ' active' : ''}`}
+                    onClick={() => openFile(c.filename, 'chapter')}
+                  >
+                    📝 {c.label}
+                  </div>
+                ))}
               </div>
             )
           })}
-
-          {/* Chapter outlines under volumes */}
-          {chapters.map((c) => (
-            <div
-              key={c.filename}
-              className={`panel-sub-item${activeFile === c.filename ? ' active' : ''}`}
-              onClick={() => openFile(c.filename, 'chapter')}
-              style={{ paddingLeft: 36 }}
-            >
-              📝 {c.label}
-            </div>
-          ))}
 
           {volumes.length === 0 && <p className="panel-empty">暂无分卷，点击 + 添加</p>}
         </div>
