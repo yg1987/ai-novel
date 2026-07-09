@@ -27,3 +27,22 @@ Task R3: ResourcePanel component (463e839, tsc clean)
 Task R4: Wire into ProjectView (f23ca94, tsc+cargo clean)
 ---
 Phase D total: 4 commits, 1 new file, 0 lint/type errors.
+---
+Task P1-1: complete (commits 981becc..9bbf4ea, 2 commits, review clean after fix)
+---
+Task P1-5: complete (commit 5029aa4, 5 files, tsc clean)
+Task P1-3: complete (commit bbb6a8a, 9 files, tsc+cargo clean)
+---
+Task P1-2: complete (commit 3927c35, 5 files, tsc clean)
+---
+Task P1-4: complete (commit 57e33b8, 7 files, tsc+cargo clean)
+---
+Phase 1 total: 6 commits (981becc..57e33b8), 12 new files, 0 lint/type errors.
+---
+=== v0.5 Phase 2 ===
+Task P2-2: publish format adaptation (434109a)
+Task P2-4: focus mode (49ac6ec)
+Task P2-1: archive/import (610b887)
+Task P2-3: chapter graph (5b47bf8)
+---
+v0.5 total: 10 commits (981becc..5b47bf8), 22 new files, 0 lint/type/cargo errors.

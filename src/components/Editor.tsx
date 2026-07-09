@@ -6,15 +6,12 @@ import Underline from '@tiptap/extension-underline'
 import { saveChapterContent } from '../api/tauri'
 import { buildContext } from '../contextEngine'
 import { generateChapter, stopGeneration } from '../services/aiProvider'
-import { checkBannedWords, type CheckResult } from '../services/bannedWords'
+import type { CheckResult } from '../services/bannedWords'
 import RewritePreview from './RewritePreview'
 import { analyzeChapter } from '../services/chapterIngest'
 import { saveChapterSnapshot } from '../services/memorySync'
-import { logChapterSaved, logAIGenerated, logSessionStart } from '../services/stats'
-import { chunkMarkdown } from '../services/textChunker'
-import { embedChunks } from '../services/embeddings'
-import { vectorUpsertChunks } from '../api/tauri'
-import { runAndSaveLightCheck, runDeepReview } from '../services/reviewService'
+import { logAIGenerated, logSessionStart } from '../services/stats'
+import { runSavePipeline } from '../services/savePipeline'
 
 interface Props {
   projectId: string
@@ -35,10 +32,6 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, chapterId, initialC
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSaved = useRef(initialContent)
   const generateStartTime = useRef(0)
-  const deepReviewCount = useRef(0)
-  const lastDeepReviewTime = useRef(0)
-  const DEEP_REVIEW_INTERVAL_MS = 30 * 60 * 1000 // 30 min
-  const DEEP_REVIEW_SAVE_THRESHOLD = 5 // every 5 saves
   const [generating, setGenerating] = useState(false)
   const [bannedCheck, setBannedCheck] = useState<CheckResult | null>(null)
   const [showBannedDetail, setShowBannedDetail] = useState(false)
@@ -93,12 +86,6 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, chapterId, initialC
     }
   }, [editor, projectId, chapterId])
 
-  const runBannedCheck = useCallback((html: string) => {
-    const text = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
-    const result = checkBannedWords(text)
-    setBannedCheck(result)
-  }, [])
-
   const runIngest = useCallback(async (html: string) => {
     if (ingesting) return
     setIngesting(true)
@@ -116,74 +103,25 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, chapterId, initialC
 
   const handleSaveNow = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    if (editor) {
-      const html = editor.getHTML()
-      if (html !== lastSaved.current) {
-        lastSaved.current = html
-        saveChapterContent(projectId, chapterId, html)
-          .then(() => {
-            runBannedCheck(html)
-            void runIngest(html)
-          })
-          .then(() => {
-            logChapterSaved(projectId, chapterNumber, html)
-          })
-          .then(async () => {
-            try {
-              const text = html.replace(/<[^>]*>/g, '').trim()
-              if (text.length > 100) {
-                const chunks = chunkMarkdown(text, chapterId, { maxChunkChars: 1500 })
-                const results = await embedChunks(chunks)
-                if (results) {
-                  await vectorUpsertChunks(projectId, results.map((r) => ({
-                    chunk_id: r.chunk.chunkId,
-                    page_id: r.chunk.pageId,
-                    chunk_index: r.chunk.chunkIndex,
-                    heading_path: r.chunk.headingPath,
-                    chunk_text: r.chunk.content,
-                    embedding: Array.from(r.embedding),
-                  })))
-                }
-              }
-            } catch (e) {
-              console.error('Vector indexing failed:', e)
-            }
-          })
-          .then(async () => {
-            const plainText = html.replace(/<[^>]*>/g, '').trim()
-            if (plainText.length > 50) {
-              try {
-                const result = await runAndSaveLightCheck(projectId, chapterId, html)
-                setLastLightCheckResult({ passed: result.passed, issues: result.checks.reduce((sum, c) => sum + c.issues.length, 0) })
-              } catch (e) {
-                console.error('Light check failed:', e)
-              }
-            }
-          })
-          .then(async () => {
-            // Auto-trigger deep review with throttle (设计文档 §四.6 Phase 2)
-            deepReviewCount.current++
-            const now = Date.now()
-            const timeSinceLast = now - lastDeepReviewTime.current
-            const text = html.replace(/<[^>]*>/g, '').trim()
-            if (
-              text.length > 200 &&
-              (deepReviewCount.current >= DEEP_REVIEW_SAVE_THRESHOLD || timeSinceLast >= DEEP_REVIEW_INTERVAL_MS) &&
-              !chapterId.startsWith('new-')
-            ) {
-              deepReviewCount.current = 0
-              lastDeepReviewTime.current = now
-              try {
-                await runDeepReview(projectId, chapterId, html)
-              } catch (e) {
-                console.error('Auto deep review failed:', e)
-              }
-            }
-          })
-          .catch((e: unknown) => { console.error('Manual save failed:', e) })
-      }
+    if (!editor) return
+    const html = editor.getHTML()
+    if (html === lastSaved.current) return
+    lastSaved.current = html
+
+    // Fire ingest in parallel (it has its own UI state: ingesting spinner)
+    const plainText = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+    if (plainText.trim().length >= 100) {
+      void runIngest(html)
     }
-  }, [editor, projectId, chapterId, runBannedCheck, runIngest])
+
+    // Run the save pipeline (sequential, awaited internally)
+    runSavePipeline({ projectId, chapterId, chapterNumber, html })
+      .then((result) => {
+        setBannedCheck(result.bannedCheck)
+        setLastLightCheckResult(result.lightCheckResult)
+      })
+      .catch((e: unknown) => { console.error('Save failed:', e) })
+  }, [editor, projectId, chapterId, chapterNumber, runIngest])
 
   const handleGenerate = useCallback(async () => {
     if (!editor || generating) return
