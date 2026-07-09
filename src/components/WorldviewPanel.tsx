@@ -159,6 +159,24 @@ function buildContent(title: string, subs: Record<string, string>): string {
   return parts.join('\n')
 }
 
+// ─── Default prompt builder ────────────────────────────
+
+function getDefaultPrompt(section: SectionDef, hasSubs: boolean): string {
+  if (hasSubs) {
+    return `你是一个网文世界观设定助手。根据以下项目信息，为这部小说生成「${section.label}」的设定。
+
+请严格按以下各部分输出，使用 ## 作为小标题：
+
+${section.subs.map(s => `## ${s.label}\n（要求：${s.hint}）`).join('\n\n')}
+
+要求：
+- 每部分控制在 200 字以内
+- 内容要符合小说类型
+- 直接输出小标题+内容，不要加额外说明`
+  }
+  return `你是一个网文世界观设定助手。根据以下项目信息，为这部小说生成「${section.label}」的内容。直接输出内容，控制在 300 字以内，不要加额外说明。`
+}
+
 // ─── Component ──────────────────────────────────────────
 
 export default function WorldviewPanel({ projectId }: Props) {
@@ -241,21 +259,7 @@ export default function WorldviewPanel({ projectId }: Props) {
         Authorization: `Bearer ${provider.api_key}`,
       }
 
-      // Use saved custom prompt if available, otherwise build default
-      const defaultPrompt = hasSubs
-        ? `你是一个网文世界观设定助手。根据以下项目信息，为这部小说生成「${activeSection.label}」的设定。
-
-请严格按以下各部分输出，使用 ## 作为小标题：
-
-${activeSection.subs.map(s => `## ${s.label}\n（要求：${s.hint}）`).join('\n\n')}
-
-要求：
-- 每部分控制在 200 字以内
-- 内容要符合小说类型
-- 直接输出小标题+内容，不要加额外说明`
-        : `你是一个网文世界观设定助手。根据以下项目信息，为这部小说生成「${activeSection.label}」的内容。直接输出内容，控制在 300 字以内，不要加额外说明。`
-
-      const systemPrompt = editingPrompt.trim() || defaultPrompt
+      const systemPrompt = editingPrompt.trim() || getDefaultPrompt(activeSection, hasSubs)
 
       const res = await fetch(`${base}/chat/completions`, {
         method: 'POST',
@@ -343,7 +347,12 @@ ${activeSection.subs.map(s => `## ${s.label}\n（要求：${s.hint}）`).join('\
                 </button>
                 <button
                   className="btn-text"
-                  onClick={() => { setShowPrompt(!showPrompt) }}
+                  onClick={() => {
+                    if (!showPrompt && !editingPrompt.trim()) {
+                      setEditingPrompt(getDefaultPrompt(activeSection, hasSubs))
+                    }
+                    setShowPrompt(!showPrompt)
+                  }}
                   style={{ fontSize: '0.85rem' }}
                 >
                   {showPrompt ? '关闭提示词' : '✎ 提示词'}
@@ -377,11 +386,11 @@ ${activeSection.subs.map(s => `## ${s.label}\n（要求：${s.hint}）`).join('\
               className="prompt-editor-textarea"
               value={editingPrompt}
               onChange={(e) => { setEditingPrompt(e.target.value) }}
-              placeholder="（使用默认提示词）"
+              placeholder="在此编写自定义提示词…"
             />
             <div className="prompt-editor-footer">
               <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                {editingPrompt.trim() ? '已保存自定义提示词' : '未设置自定义提示词，AI 将使用默认提示词'}
+                {editingPrompt.trim() ? '已保存自定义提示词' : '修改后点保存，AI 将使用你的提示词'}
               </span>
               <button
                 className="btn-primary"

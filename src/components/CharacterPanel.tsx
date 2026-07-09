@@ -307,7 +307,19 @@ export default function CharacterPanel({ projectId }: Props) {
                     </button>
                     <button
                       className="btn-text"
-                      onClick={() => { setShowPrompt(!showPrompt) }}
+                      onClick={async () => {
+                        if (!showPrompt && !editingPrompt.trim()) {
+                          let info = ''
+                          try {
+                            const metaRaw = await readProjectFile(projectId, '', 'project.json')
+                            const meta = JSON.parse(metaRaw) as { name?: string; genre?: string; description?: string }
+                            info = `小说名称：${meta.name ?? ''}\n类型：${meta.genre ?? ''}\n简介：${meta.description ?? ''}`
+                          } catch { /* ignore */ }
+                          const def = buildAIPrompt(newName, info)
+                          setEditingPrompt(def.system + '\n\n---\n\n' + def.user)
+                        }
+                        setShowPrompt(!showPrompt)
+                      }}
                       style={{ fontSize: '0.85rem' }}
                     >
                       {showPrompt ? '关闭提示词' : '✎ 提示词'}
@@ -341,11 +353,11 @@ export default function CharacterPanel({ projectId }: Props) {
                   className="prompt-editor-textarea"
                   value={editingPrompt}
                   onChange={(e) => { setEditingPrompt(e.target.value) }}
-                  placeholder="（使用默认提示词）"
+                  placeholder="在此编写自定义提示词…"
                 />
                 <div className="prompt-editor-footer">
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    {editingPrompt.trim() ? '已保存自定义提示词' : '未设置自定义提示词，AI 将使用默认提示词'}
+                    {editingPrompt.trim() ? '已保存自定义提示词' : '修改后点保存，AI 将使用你的提示词'}
                   </span>
                   <button
                     className="btn-primary"
