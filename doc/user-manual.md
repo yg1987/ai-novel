@@ -37,26 +37,13 @@ AI Novel Writer 是一款**AI 辅助网文写作桌面工具**，基于 Tauri 2 
 
 ## 1. 快速开始
 
-### 1.1 环境要求
+### 1.1 安装
 
-- Windows 10+（需 WebView2 运行时，Windows 10 一般自带）
-- Node.js 22.12+
-- Rust 1.70+（仅开发构建时需要）
+从 GitHub Releases 页面下载最新版本的安装包（`.msi` 或 `.exe`），双击安装即可。
 
-### 1.2 安装与启动
+> 如果目前还没有发布包，请联系开发者获取构建好的版本。
 
-```bash
-# 安装依赖
-npm install
-
-# 开发模式启动
-npm run tauri:dev
-
-# 生产构建（生成安装包）
-npm run tauri:build
-```
-
-### 1.3 首次使用四步走
+### 1.2 首次使用四步走
 
 1. 启动应用 → 进入**书架**页面
 2. 点击右上角 **⚙ AI 配置** → 填写你的 API 地址和 Key（支持 OpenAI / DeepSeek / Ollama 等）
@@ -701,7 +688,7 @@ ai-novel-workspace/
 
 ### Q1: 启动后报错 WebView2 未找到？
 
-Windows 10 需安装 [Microsoft Edge WebView2 运行时](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)。Windows 11 自带。如无，下载安装即可。
+Windows 10 需安装 [Microsoft Edge WebView2 运行时](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)。Windows 11/10 一般自带，如果报错下载安装即可。
 
 ### Q2: AI 生成没反应？
 
