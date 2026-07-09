@@ -118,6 +118,23 @@ export default function CharacterPanel({ projectId }: Props) {
       .catch((e: unknown) => { console.error(e) })
   }
 
+  const handleCreate = () => {
+    if (!newName.trim()) return
+    const name = newName.trim()
+    if (files.includes(name)) return
+    writeProjectFile(projectId, CHARACTER_SUBDIR, `${name}.md`, '')
+      .then(() => {
+        setNewName('')
+        return refresh()
+      })
+      .then(() => {
+        setActiveFile(name)
+        setContent('')
+        setEditing(true)
+      })
+      .catch((e: unknown) => { console.error(e) })
+  }
+
   const handleDelete = (name: string) => {
     deleteProjectFile(projectId, CHARACTER_SUBDIR, `${name}.md`)
       .then(() => {
@@ -214,8 +231,11 @@ export default function CharacterPanel({ projectId }: Props) {
             value={newName}
             onChange={(e) => { setNewName(e.target.value) }}
             placeholder="角色名"
-            onKeyDown={(e) => { if (e.key === 'Enter' && !generating) { handleAICreate() } }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !generating) { handleCreate() } }}
           />
+          <button className="btn-small" onClick={handleCreate} disabled={!newName.trim() || isNameDuplicate} title="创建空白角色卡">
+            +
+          </button>
         </div>
         <div className="panel-new-actions">
           <button className="btn-small" onClick={handleRandomName} title="随机起名">
@@ -224,7 +244,7 @@ export default function CharacterPanel({ projectId }: Props) {
           <button
             className="btn-small btn-ai"
             onClick={() => { void handleAICreate() }}
-            disabled={generating || isNameDuplicate}
+            disabled={generating || (newName.trim().length > 0 && isNameDuplicate)}
             title="AI 生成完整角色卡"
           >
             {generating ? '⏳ 生成中' : '✨ AI 创建'}
