@@ -197,3 +197,31 @@ warning: unused import: `flate2::Compression`
 
 **涉及文件**：`src/components/CharacterPanel.tsx`、`src/style.css`
 
+---
+
+### 14. 角色列表 — 角色卡点击区域太小
+
+**问题**：角色列表中的点击切换只绑在 `<span>` 文字上，而卡片区域的 `cursor: pointer` 样式让用户以为整个卡片都可点击。用户点击卡片空白处不会触发切换，造成"点了没反应"的错觉。该问题在添加 prompt 编辑功能后因布局微调而暴露。
+
+**改进**：
+- 将 `onClick` 从 `<span>` 移至父级 `.panel-item` div，整个卡片均可点击切换
+- 删除按钮添加 `e.stopPropagation()` 防止误触切换
+
+**涉及文件**：`src/components/CharacterPanel.tsx`
+
+---
+
+### 15. AI 提示词 — 可编辑且持久保存
+
+**问题**：AI 辅助功能是黑盒，用户无法看到 AI 被问了什么，也无法自定义 prompt。每次 AI 辅助生成的风格不一致（因为 prompt 是动态固定的），且不同项目共享同一份提示词不合理。
+
+**改进**：
+- 新增 `src/services/aiPrompts.ts` 提供 `loadPrompt`/`savePrompt`/`resetPrompt` 三个函数
+- 提示词按项目独立存储到 `memory/ai-prompts.json`
+- 世界观各条目和角色编辑区的标题栏增加「✎ 提示词」按钮
+- 点击展开可编辑的提示词面板，修改后点「保存提示词」持久化
+- 点「恢复默认」删除自定义 prompt，回到内置默认
+- 下次进入该项目、该条目时，自动加载之前保存的提示词
+- 如果没自定义过，AI 用内置默认 prompt
+
+**涉及文件**：`src/services/aiPrompts.ts`（新建）、`src/components/WorldviewPanel.tsx`、`src/components/CharacterPanel.tsx`、`src/style.css`
