@@ -56,8 +56,10 @@ export default function ProjectView({ project, onBack }: Props) {
       <div className="project-info-bar">
         <span>{project.genre}</span>
         <span>目标: {project.target_words.toLocaleString()} 字</span>
-        {project.description && <span>{project.description}</span>}
       </div>
+      {project.description && (
+        <div className="project-desc" title={project.description}>{project.description}</div>
+      )}
 
       <div className="project-tabs">
         <button className={`tab-btn${tab === 'writing' ? ' active' : ''}`} onClick={() => { setTab('writing') }}>✍ 写作</button>

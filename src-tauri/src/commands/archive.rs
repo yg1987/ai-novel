@@ -1,7 +1,4 @@
 use std::fs;
-use flate2::read::GzDecoder;
-use flate2::write::GzEncoder;
-use flate2::Compression;
 
 #[tauri::command]
 pub fn archive_project(

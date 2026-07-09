@@ -134,6 +134,91 @@ function ProviderForm({
   onSetActive: () => void
   onRemove: () => void
 }) {
+  const [models, setModels] = useState<string[] | null>(null)
+  const [fetching, setFetching] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+  const [customFields, setCustomFields] = useState<Set<string>>(new Set())
+
+  const canFetch = entry.base_url.trim().length > 0 && entry.api_key.trim().length > 0
+
+  const fetchModels = async () => {
+    if (!canFetch) return
+    setFetching(true)
+    setFetchError(null)
+    try {
+      const base = entry.base_url.replace(/\/+$/, '')
+      const headers = { Authorization: `Bearer ${entry.api_key}` }
+
+      // Try /models first, fall back to /v1/models
+      let resp = await fetch(`${base}/models`, { headers })
+      if (!resp.ok) {
+        resp = await fetch(`${base}/v1/models`, { headers })
+      }
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status} ${resp.statusText}`)
+      }
+
+      const json = await resp.json() as { data?: Array<{ id: string }> }
+      const ids = (json.data ?? []).map(m => m.id).filter(Boolean)
+      if (ids.length === 0) {
+        throw new Error('未找到可用模型')
+      }
+      setModels(ids)
+    } catch (e) {
+      setFetchError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setFetching(false)
+    }
+  }
+
+  const renderModelField = (field: keyof typeof entry.models, label: string, placeholder: string) => {
+    const value = entry.models[field]
+    const showSelect = models !== null && !customFields.has(field)
+
+    return (
+      <div className="provider-field">
+        <label>{label}</label>
+        {showSelect ? (
+          <select
+            value={models.includes(value) ? value : '__custom__'}
+            onChange={(e) => {
+              if (e.target.value === '__custom__') {
+                setCustomFields(prev => new Set(prev).add(field))
+              } else {
+                onModelChange(field, e.target.value)
+              }
+            }}
+          >
+            {!models.includes(value) && value && (
+              <option value={value}>{value}（当前）</option>
+            )}
+            {models.map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+            <option value="__custom__">✏ 手动输入</option>
+          </select>
+        ) : (
+          <div className="model-input-row">
+            <input
+              value={value}
+              onChange={(e) => { onModelChange(field, e.target.value) }}
+              placeholder={placeholder}
+            />
+            {models && (
+              <button
+                className="btn-text"
+                onClick={() => setCustomFields(prev => { const n = new Set(prev); n.delete(field); return n })}
+                title="从列表选择"
+              >
+                选择
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="provider-form">
       <div className="provider-form-header">
@@ -160,23 +245,31 @@ function ProviderForm({
         <label>API Key</label>
         <input type="password" value={entry.api_key} onChange={(e) => { onChange('api_key', e.target.value) }} placeholder="sk-..." />
       </div>
+
+      <div className="fetch-models-row">
+        <button className="fetch-models-btn" onClick={fetchModels} disabled={fetching || !canFetch}>
+          {fetching ? '获取中…' : '🔍 获取模型列表'}
+        </button>
+        {models && !fetchError && (
+          <span className="fetch-models-info ok">已获取 {models.length} 个模型</span>
+        )}
+      </div>
+      {fetchError && (
+        <div className="fetch-models-info err" style={{ marginBottom: 6 }}>获取失败: {fetchError}</div>
+      )}
+      {models && models.length > 0 && (
+        <div className="fetch-models-detail">
+          {models.map(m => (
+            <span key={m} title="点击复制模型名">{m}</span>
+          ))}
+        </div>
+      )}
+
       <div className="provider-models">
-        <div className="provider-field">
-          <label>写作模型</label>
-          <input value={entry.models.writing} onChange={(e) => { onModelChange('writing', e.target.value) }} placeholder="gpt-4o" />
-        </div>
-        <div className="provider-field">
-          <label>分析模型</label>
-          <input value={entry.models.analysis} onChange={(e) => { onModelChange('analysis', e.target.value) }} placeholder="gpt-4o-mini" />
-        </div>
-        <div className="provider-field">
-          <label>审查模型</label>
-          <input value={entry.models.review} onChange={(e) => { onModelChange('review', e.target.value) }} placeholder="gpt-4o-mini" />
-        </div>
-        <div className="provider-field">
-          <label>Embedding</label>
-          <input value={entry.models.embedding} onChange={(e) => { onModelChange('embedding', e.target.value) }} placeholder="text-embedding-3-small" />
-        </div>
+        {renderModelField('writing', '写作模型', 'gpt-4o')}
+        {renderModelField('analysis', '分析模型', 'gpt-4o-mini')}
+        {renderModelField('review', '审查模型', 'gpt-4o-mini')}
+        {renderModelField('embedding', 'Embedding', 'text-embedding-3-small')}
       </div>
     </div>
   )

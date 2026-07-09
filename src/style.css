@@ -132,12 +132,22 @@ body {
 .project-item {
   padding: 12px;
   border-radius: var(--radius);
-  cursor: pointer;
-  transition: background 0.15s;
   margin-bottom: 4px;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
 }
 
-.project-item:hover {
+.project-item-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  border-radius: var(--radius);
+  padding: 2px 0;
+  transition: background 0.15s;
+}
+
+.project-item-main:hover {
   background: rgba(0, 0, 0, 0.04);
 }
 
@@ -146,11 +156,28 @@ body {
   color: #fff;
 }
 
+.project-item.active .project-item-main:hover {
+  background: transparent;
+}
+
 .project-item-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 4px;
+}
+
+.project-item-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.project-item:hover .project-item-actions {
+  opacity: 1;
 }
 
 .project-name {
@@ -296,6 +323,16 @@ body {
   margin-bottom: 16px;
 }
 
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.form-row .form-field {
+  flex: 1;
+  min-width: 0;
+}
+
 .form-field label {
   display: block;
   font-size: 0.85rem;
@@ -354,6 +391,29 @@ body {
   cursor: not-allowed;
 }
 
+.btn-danger {
+  padding: 8px 16px;
+  background: var(--danger);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
+}
+
+.confirm-dialog {
+  max-width: 400px;
+}
+
+.confirm-dialog p {
+  white-space: pre-wrap;
+}
+
 .btn-secondary {
   padding: 8px 16px;
   background: var(--bg);
@@ -373,6 +433,26 @@ body {
   font-family: inherit;
   cursor: pointer;
   padding: 4px 0;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.btn-icon:hover {
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.btn-icon-danger:hover {
+  color: var(--danger);
 }
 
 .btn-text:hover {
@@ -496,6 +576,103 @@ body {
   border-color: var(--accent);
 }
 
+.provider-field select {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-family: inherit;
+  background: var(--bg-card);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.provider-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.model-input-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.model-input-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.model-input-row .btn-text {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.fetch-models-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 6px;
+}
+
+.fetch-models-btn {
+  padding: 6px 12px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fetch-models-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.fetch-models-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fetch-models-info {
+  font-size: 0.8rem;
+}
+
+.fetch-models-info.ok { color: #27ae60; }
+
+.fetch-models-info.err { color: var(--danger); }
+
+.fetch-models-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.fetch-models-detail span {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.fetch-models-detail span:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
 .provider-models {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -508,11 +685,22 @@ body {
 .project-info-bar {
   display: flex;
   gap: 16px;
-  padding: 8px 24px;
+  padding: 8px 24px 4px;
+  background: var(--bg-card);
+  border-bottom: none;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.project-desc {
+  padding: 0 24px 8px;
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ─── Chapter Manager ──────────────────────────── */
@@ -744,20 +932,34 @@ body {
   gap: 0;
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
-  padding: 0 24px;
+  padding: 0 12px;
   flex-shrink: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+
+.project-tabs::-webkit-scrollbar {
+  height: 3px;
+}
+
+.project-tabs::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 2px;
 }
 
 .tab-btn {
-  padding: 10px 16px;
+  padding: 10px 12px;
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-family: inherit;
   color: var(--text-secondary);
   border-bottom: 2px solid transparent;
   transition: all 0.15s;
+  flex-shrink: 0;
 }
 
 .tab-btn:hover {

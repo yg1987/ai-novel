@@ -1,28 +1,39 @@
 import { useState, type SyntheticEvent } from 'react'
+import type { ProjectMeta, UpdateProjectInput } from '../types/project'
 
 interface Props {
-  onConfirm: (data: { name: string; genre: string; description: string; target_words: number }) => void
+  project: ProjectMeta
+  onConfirm: (data: UpdateProjectInput) => void
   onCancel: () => void
 }
 
 const GENRES = ['玄幻', '都市', '言情', '科幻', '悬疑', '历史', '游戏', '轻小说']
+const STATUSES = ['连载中', '完结', '搁置']
 
-export default function CreateProjectDialog({ onConfirm, onCancel }: Props) {
-  const [name, setName] = useState('')
-  const [genre, setGenre] = useState(GENRES[0]!)
-  const [description, setDescription] = useState('')
-  const [targetWords, setTargetWords] = useState(100000)
+export default function EditProjectDialog({ project, onConfirm, onCancel }: Props) {
+  const [name, setName] = useState(project.name)
+  const [genre, setGenre] = useState(project.genre)
+  const [description, setDescription] = useState(project.description)
+  const [status, setStatus] = useState(project.status)
+  const [targetWords, setTargetWords] = useState(project.target_words)
 
   const handleSubmit = (e: SyntheticEvent) => {
     e.preventDefault()
     if (!name.trim()) return
-    onConfirm({ name: name.trim(), genre, description: description.trim(), target_words: targetWords })
+    onConfirm({
+      projectId: project.id,
+      name: name.trim(),
+      genre,
+      description: description.trim(),
+      status,
+      targetWords,
+    })
   }
 
   return (
     <div className="dialog-overlay" onClick={onCancel}>
       <div className="dialog" onClick={(e) => { e.stopPropagation() }}>
-        <h2>新建项目</h2>
+        <h2>编辑项目</h2>
         <form onSubmit={handleSubmit}>
           <div className="form-field">
             <label>书名 *</label>
@@ -35,13 +46,23 @@ export default function CreateProjectDialog({ onConfirm, onCancel }: Props) {
               required
             />
           </div>
-          <div className="form-field">
-            <label>类型</label>
-            <select value={genre} onChange={(e) => { setGenre(e.target.value) }}>
-              {GENRES.map((g) => (
-                <option key={g} value={g}>{g}</option>
-              ))}
-            </select>
+          <div className="form-row">
+            <div className="form-field">
+              <label>类型</label>
+              <select value={genre} onChange={(e) => { setGenre(e.target.value) }}>
+                {GENRES.map((g) => (
+                  <option key={g} value={g}>{g}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-field">
+              <label>状态</label>
+              <select value={status} onChange={(e) => { setStatus(e.target.value) }}>
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="form-field">
             <label>简介</label>
@@ -65,7 +86,7 @@ export default function CreateProjectDialog({ onConfirm, onCancel }: Props) {
           </div>
           <div className="dialog-actions">
             <button type="button" className="btn-secondary" onClick={onCancel}>取消</button>
-            <button type="submit" className="btn-primary" disabled={!name.trim()}>创建</button>
+            <button type="submit" className="btn-primary" disabled={!name.trim()}>保存</button>
           </div>
         </form>
       </div>

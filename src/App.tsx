@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
-import type { ProjectMeta } from './types/project'
-import { listProjects, createProject } from './api/tauri'
+import type { ProjectMeta, UpdateProjectInput } from './types/project'
+import { listProjects, createProject, updateProject, deleteProject } from './api/tauri'
 import ProjectList from './components/ProjectList'
 import CreateProjectDialog from './components/CreateProjectDialog'
+import EditProjectDialog from './components/EditProjectDialog'
 import ProjectView from './components/ProjectView'
 import ProviderConfigPanel from './components/ProviderConfig'
 
@@ -13,6 +14,7 @@ export default function App() {
   const [view, setView] = useState<View>({ kind: 'bookshelf' })
   const [showCreate, setShowCreate] = useState(false)
   const [showProviderConfig, setShowProviderConfig] = useState(false)
+  const [editingProject, setEditingProject] = useState<ProjectMeta | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
@@ -33,6 +35,27 @@ export default function App() {
     createProject(data)
       .then(() => {
         setShowCreate(false)
+        refresh().catch((e: unknown) => { setError(String(e)) })
+      })
+      .catch((e: unknown) => { setError(String(e)) })
+  }
+
+  const handleEdit = (data: UpdateProjectInput) => {
+    updateProject(data)
+      .then(() => {
+        setEditingProject(null)
+        refresh().catch((e: unknown) => { setError(String(e)) })
+      })
+      .catch((e: unknown) => { setError(String(e)) })
+  }
+
+  const handleDelete = (projectId: string) => {
+    deleteProject(projectId)
+      .then(() => {
+        // If currently viewing the deleted project, go back to bookshelf
+        if (view.kind === 'project' && view.id === projectId) {
+          setView({ kind: 'bookshelf' })
+        }
         refresh().catch((e: unknown) => { setError(String(e)) })
       })
       .catch((e: unknown) => { setError(String(e)) })
@@ -72,6 +95,8 @@ export default function App() {
                 projects={projects}
                 activeId={null}
                 onSelect={(id) => { setView({ kind: 'project', id }) }}
+                onEdit={(p) => { setEditingProject(p) }}
+                onDelete={handleDelete}
               />
             </aside>
             <section className="content">
@@ -93,6 +118,14 @@ export default function App() {
         <CreateProjectDialog
           onConfirm={handleCreate}
           onCancel={() => { setShowCreate(false) }}
+        />
+      )}
+
+      {editingProject && (
+        <EditProjectDialog
+          project={editingProject}
+          onConfirm={handleEdit}
+          onCancel={() => { setEditingProject(null) }}
         />
       )}
 
