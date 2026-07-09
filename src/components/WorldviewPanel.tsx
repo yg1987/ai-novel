@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { readProjectFile, writeProjectFile } from '../api/tauri'
+import { readProjectFile, writeProjectFile, loadProviderConfig } from '../api/tauri'
 
 interface Props {
   projectId: string
@@ -202,6 +202,115 @@ export default function WorldviewPanel({ projectId }: Props) {
     setDirty(true)
   }
 
+  const [generatingAi, setGeneratingAi] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+
+  const generateWithAI = async () => {
+    setGeneratingAi(true)
+    setAiError(null)
+    try {
+      const config = await loadProviderConfig()
+      const provider = config.providers.find(p => p.name === config.active_profile)
+      if (!provider) { throw new Error('未配置 AI Provider') }
+      if (!provider.models.analysis) { throw new Error('未配置分析模型，请在 AI 配置中设置') }
+
+      // Read project info for context
+      let context = ''
+      try {
+        const metaRaw = await readProjectFile(projectId, '', 'project.json')
+        const meta = JSON.parse(metaRaw) as { name?: string; genre?: string; description?: string }
+        context = `小说名称：${meta.name ?? ''}\n类型：${meta.genre ?? ''}\n简介：${meta.description ?? ''}`
+      } catch { /* ignore */ }
+
+      const base = provider.base_url.replace(/\/+$/, '')
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${provider.api_key}`,
+      }
+
+      if (hasSubs) {
+        const subPrompts = activeSection.subs
+          .map(s => `## ${s.label}\n（要求：${s.hint}）`)
+          .join('\n\n')
+
+        const systemPrompt = `你是一个网文世界观设定助手。根据以下项目信息，为这部小说生成「${activeSection.label}」的设定。
+
+请严格按以下各部分输出，使用 ## 作为小标题：
+
+${subPrompts}
+
+要求：
+- 每部分控制在 200 字以内
+- 内容要符合小说类型
+- 直接输出小标题+内容，不要加额外说明`
+
+        const res = await fetch(`${base}/chat/completions`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: provider.models.analysis,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: context || `请为一部${activeSection.label}类型的小说生成设定` },
+            ],
+            temperature: 0.8,
+            max_tokens: 2048,
+          }),
+        })
+        if (!res.ok) throw new Error(`API ${res.status}`)
+        const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+        const raw = data.choices?.[0]?.message?.content ?? ''
+
+        const parsed = parseSubs(raw, activeSection.subs.map(s => s.key))
+        setSubValues(prev => {
+          const merged = { ...prev }
+          let changed = false
+          for (const [key, val] of Object.entries(parsed)) {
+            if (val.trim() && !prev[key]?.trim()) {
+              merged[key] = val.trim()
+              changed = true
+            }
+          }
+          if (!changed) {
+            // If all fields already have content, overwrite anyway
+            for (const [key, val] of Object.entries(parsed)) {
+              if (val.trim()) merged[key] = val.trim()
+            }
+          }
+          return merged
+        })
+        setDirty(true)
+      } else {
+        const systemPrompt = `你是一个网文世界观设定助手。根据以下项目信息，为这部小说生成「${activeSection.label}」的内容。直接输出内容，控制在 300 字以内，不要加额外说明。`
+
+        const res = await fetch(`${base}/chat/completions`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: provider.models.analysis,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: context || `请为${activeSection.label}生成内容` },
+            ],
+            temperature: 0.8,
+            max_tokens: 1024,
+          }),
+        })
+        if (!res.ok) throw new Error(`API ${res.status}`)
+        const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+        const raw = data.choices?.[0]?.message?.content ?? ''
+        if (raw.trim()) {
+          setContent(raw.trim())
+          setDirty(true)
+        }
+      }
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setGeneratingAi(false)
+    }
+  }
+
   const previewContent = hasSubs
     ? buildContent(activeSection.label, subValues)
     : content
@@ -227,8 +336,18 @@ export default function WorldviewPanel({ projectId }: Props) {
       <div className="panel-editor">
         <div className="panel-editor-header">
           <h3>{activeSection.label}</h3>
-          <div>
-            {dirty && <span style={{ color: 'var(--danger)', fontSize: '0.85rem', marginRight: 8 }}>未保存</span>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {dirty && <span style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>未保存</span>}
+            {editing && (
+              <button
+                className="btn-text"
+                onClick={() => { void generateWithAI() }}
+                disabled={generatingAi}
+                style={{ fontSize: '0.85rem' }}
+              >
+                {generatingAi ? '⏳ 生成中…' : '✨ AI 辅助'}
+              </button>
+            )}
             {editing ? (
               <button className="btn-primary" onClick={() => { void handleSave() }}>保存</button>
             ) : (
@@ -236,6 +355,11 @@ export default function WorldviewPanel({ projectId }: Props) {
             )}
           </div>
         </div>
+        {aiError && (
+          <div style={{ padding: '8px 24px', fontSize: '0.85rem', color: 'var(--danger)', background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
+            AI 生成失败：{aiError}
+          </div>
+        )}
         {editing ? (
           isFreeform ? (
             <div className="panel-editor-inner">
