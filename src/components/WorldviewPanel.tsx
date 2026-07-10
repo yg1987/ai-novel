@@ -494,7 +494,7 @@ export default function WorldviewPanel({ projectId }: Props) {
   }
 
   return (
-    <div className="panel-layout">
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 110px)' }}>
       {/* Genre mismatch banner — top of worldview tab */}
       {genreMismatch && (
         <div style={{
@@ -505,20 +505,21 @@ export default function WorldviewPanel({ projectId }: Props) {
           display: 'flex',
           alignItems: 'center',
           gap: 10,
+          flexShrink: 0,
         }}>
           <span style={{ flex: 1 }}>
             项目类型已改为「{genre}」，世界观栏目还是「{savedGenre}」的默认预设。重置将替换栏目配置为新品类的预设（不影响已填内容）。
           </span>
           <button
             className="btn-text"
-            style={{ fontWeight: 600, fontSize: '0.82rem' }}
+            style={{ fontWeight: 600, fontSize: '0.82rem', whiteSpace: 'nowrap' }}
             onClick={() => { setShowResetConfirm(true) }}
           >
             重置
           </button>
           <button
             className="btn-text"
-            style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}
+            style={{ fontSize: '0.82rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}
             onClick={() => { setGenreMismatchDismissed(true) }}
           >
             忽略
@@ -526,8 +527,10 @@ export default function WorldviewPanel({ projectId }: Props) {
         </div>
       )}
 
-      {/* Left sidebar: sections */}
-      <div className="panel-sidebar">
+      {/* Inner layout: sidebar + editor */}
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        {/* Left sidebar: sections */}
+        <div className="panel-sidebar">
         <div className="panel-sidebar-header">
           <h3>世界观</h3>
         </div>
@@ -926,6 +929,7 @@ export default function WorldviewPanel({ projectId }: Props) {
           />
         ) : null
       })()}
-    </div>
+      </div>{/* end inner flex: sidebar + editor */}
+    </div>{/* end outer column wrapper */}
   )
 }
