@@ -31,7 +31,7 @@ export default function EditProjectDialog({ project, onConfirm, onCancel }: Prop
   }
 
   return (
-    <div className="dialog-overlay" onClick={onCancel}>
+    <div className="dialog-overlay">
       <div className="dialog" onClick={(e) => { e.stopPropagation() }}>
         <h2>编辑项目</h2>
         <form onSubmit={handleSubmit}>

@@ -18,7 +18,7 @@ export default function ConfirmDialog({
   onCancel,
 }: Props) {
   return (
-    <div className="dialog-overlay" onClick={onCancel}>
+    <div className="dialog-overlay">
       <div className="dialog confirm-dialog" onClick={(e) => { e.stopPropagation() }}>
         <h2>{title}</h2>
         <p style={{ margin: '12px 0', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{message}</p>

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { listProjectFiles, readProjectFile, writeProjectFile, deleteProjectFile, loadProviderConfig } from '../api/tauri'
 import { buildAIContext } from '../services/aiContext'
 import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
+import { loadChapterExpectedWords, saveChapterExpectedWords } from '../services/settings'
 import type { TextareaSelection } from '../services/rewriteUtils'
 import { getTextareaSelection, applyTextareaRewrite } from '../services/rewriteUtils'
 import { type RewriteMode } from '../services/rewriteService'
@@ -88,6 +89,13 @@ const EXAMPLES: Record<string, string> = {
 
 // ─── AI prompt builders ───────────────────────────────
 
+/** 从大纲文件名推导章节 ID，如 "卷1_第1章.md" → "ch001" */
+function outlineFileToChapterId(filename: string): string | null {
+  const match = filename.match(/卷(\d+)_第(\d+)章/)
+  if (!match) return null
+  return `ch${match[2]!.padStart(3, '0')}`
+}
+
 function getDefaultPrompt(type: 'outline' | 'volume' | 'chapter', label: string): string {
   const prompts: Record<'outline' | 'volume' | 'chapter', string> = {
     outline: `你是一个网文大纲助手。根据项目信息，生成全书的总纲（故事梗概）。
@@ -160,6 +168,33 @@ export default function OutlinePanel({ projectId }: Props) {
     const ta = rewriteTextareaRef.current
     if (ta) setHasSelection(ta.selectionStart !== ta.selectionEnd)
   }, [])
+
+  // ─── Expected words (chapter only) ────────────────
+
+  const [expectedWords, setExpectedWords] = useState<number | null>(null)
+  const expectedWordsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Derive chapterId from active outline file
+  const activeChapterId = activeFile && activeType === 'chapter'
+    ? outlineFileToChapterId(activeFile)
+    : null
+
+  // Load expectedWords when chapter changes
+  useEffect(() => {
+    if (!activeChapterId) {
+      setExpectedWords(null)
+      return
+    }
+    loadChapterExpectedWords(projectId, activeChapterId)
+      .then((v) => { setExpectedWords(v) })
+      .catch(() => { setExpectedWords(null) })
+  }, [projectId, activeChapterId])
+
+  const persistExpectedWords = async (id: string, words: number) => {
+    try {
+      await saveChapterExpectedWords(projectId, id, words)
+    } catch { /* ignore */ }
+  }
 
   // ─── Data loading ──────────────────────────────────
 
@@ -562,6 +597,43 @@ export default function OutlinePanel({ projectId }: Props) {
             {showExample && editing && (
               <div className="sub-field-example" style={{ margin: '8px 24px' }}>
                 <pre>{EXAMPLES[activeType] ?? '暂无示例'}</pre>
+              </div>
+            )}
+
+            {/* Expected words — chapter outline only */}
+            {editing && activeType === 'chapter' && activeChapterId && (
+              <div style={{ padding: '8px 24px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>预计字数:</span>
+                <input
+                  type="number"
+                  className="notes-input"
+                  style={{ width: 100 }}
+                  value={expectedWords ?? ''}
+                  placeholder="4000"
+                  min={500}
+                  max={50000}
+                  step={100}
+                  onChange={(e) => {
+                    const v = e.target.value ? Math.max(500, parseInt(e.target.value, 10) || 500) : null
+                    setExpectedWords(v ? v : null)
+                    if (expectedWordsTimer.current) clearTimeout(expectedWordsTimer.current)
+                    expectedWordsTimer.current = setTimeout(() => {
+                      if (v != null) {
+                        void persistExpectedWords(activeChapterId, v)
+                      }
+                    }, 800)
+                  }}
+                  onBlur={() => {
+                    if (expectedWordsTimer.current) clearTimeout(expectedWordsTimer.current)
+                    if (expectedWords != null) {
+                      void persistExpectedWords(activeChapterId, expectedWords)
+                    }
+                  }}
+                />
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>字</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: 8 }}>
+                  💡 AI 生成时将使用此预计字数目标
+                </span>
               </div>
             )}
 

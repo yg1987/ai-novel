@@ -14,6 +14,7 @@ interface Props {
 }
 
 const CHARACTER_SUBDIR = 'characters'
+const ORDER_FILE = 'order.json'
 
 const CHAR_EXAMPLE = `角色：林烬
 身份/职业：玄天宗外门弟子，后觉醒太古剑魂
@@ -92,6 +93,10 @@ ${nameLine}
 
 export default function CharacterPanel({ projectId }: Props) {
   const [files, setFiles] = useState<string[]>([])
+  const [order, setOrder] = useState<string[]>([])
+  const orderRef = useRef<string[]>([])
+  // Keep ref in sync so mouse event closures use latest order
+  useEffect(() => { orderRef.current = order }, [order])
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [content, setContent] = useState('')
   const [editing, setEditing] = useState(false)
@@ -120,9 +125,37 @@ export default function CharacterPanel({ projectId }: Props) {
     }).catch(() => {})
   }, [projectId, promptKey])
 
+  const saveOrder = useCallback(async (names: string[]) => {
+    await writeProjectFile(projectId, CHARACTER_SUBDIR, ORDER_FILE, JSON.stringify(names, null, 2))
+  }, [projectId])
+
   const refresh = useCallback(async () => {
     const entries = await listProjectFiles(projectId, CHARACTER_SUBDIR)
-    setFiles(entries.map((e) => e.name.replace(/\.md$/i, '')))
+    // Only .md files are character files; order.json is not a character
+    const charNames = entries
+      .filter((e) => e.name.endsWith('.md'))
+      .map((e) => e.name.replace(/\.md$/i, ''))
+
+    let currentOrder: string[] = []
+    try {
+      const raw = await readProjectFile(projectId, CHARACTER_SUBDIR, ORDER_FILE)
+      if (raw.trim()) {
+        currentOrder = JSON.parse(raw)
+      }
+    } catch { /* order.json missing or malformed */ }
+
+    // Merge: keep order entries that still exist, append new ones at end
+    const validOrder = currentOrder.filter((n) => charNames.includes(n))
+    const newChars = charNames.filter((n) => !currentOrder.includes(n))
+    const mergedOrder = [...validOrder, ...newChars]
+
+    // Persist if order changed (new/deleted chars)
+    if (mergedOrder.length !== currentOrder.length || validOrder.length !== currentOrder.length) {
+      await writeProjectFile(projectId, CHARACTER_SUBDIR, ORDER_FILE, JSON.stringify(mergedOrder, null, 2))
+    }
+
+    setOrder(mergedOrder)
+    setFiles(mergedOrder)
   }, [projectId])
 
   useEffect(() => {
@@ -155,7 +188,12 @@ export default function CharacterPanel({ projectId }: Props) {
         setNewName('')
         return refresh()
       })
-      .then(() => {
+      .then(async () => {
+        // Append new char to end of order
+        const updatedOrder = [...order, name]
+        await saveOrder(updatedOrder)
+        setOrder(updatedOrder)
+        setFiles(updatedOrder)
         setActiveFile(name)
         setContent('')
         setEditing(true)
@@ -168,6 +206,12 @@ export default function CharacterPanel({ projectId }: Props) {
       .then(() => {
         if (activeFile === name) { setActiveFile(null); setContent('') }
         return refresh()
+      })
+      .then(async () => {
+        const updatedOrder = order.filter((n) => n !== name)
+        await saveOrder(updatedOrder)
+        setOrder(updatedOrder)
+        setFiles(updatedOrder)
       })
       .catch((e: unknown) => { console.error(e) })
   }
@@ -245,6 +289,63 @@ export default function CharacterPanel({ projectId }: Props) {
 
   const isNameDuplicate = newName.trim().length > 0 && files.includes(newName.trim())
 
+  // ─── Drag-and-drop reorder (mouse events) ─────
+
+  const dragItemRef = useRef<{ index: number; startY: number; currentY: number } | null>(null)
+  const [dragPreview, setDragPreview] = useState<{ index: number; offset: number } | null>(null)
+
+  const handleMouseDown = (e: React.MouseEvent, index: number) => {
+    // Only drag from the grip icon (⠿)
+    if (!(e.target as HTMLElement).closest('[data-drag-handle]')) return
+    e.preventDefault()
+    
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    dragItemRef.current = {
+      index,
+      startY: e.clientY,
+      currentY: e.clientY,
+    }
+    setDragPreview({ index, offset: 0 })
+
+    const handleMove = (ev: MouseEvent) => {
+      if (!dragItemRef.current) return
+      dragItemRef.current.currentY = ev.clientY
+      const offset = ev.clientY - dragItemRef.current.startY
+      setDragPreview({ index: dragItemRef.current.index, offset })
+
+      // Calculate target position
+      const itemHeight = rect.height
+      const moveStep = Math.round(offset / itemHeight)
+      const targetIndex = Math.max(0, Math.min(files.length - 1, dragItemRef.current.index + moveStep))
+      
+      if (targetIndex !== dragItemRef.current.index) {
+        // Apply reorder using latest order from ref
+        const newOrder = [...orderRef.current]
+        const [moved] = newOrder.splice(dragItemRef.current.index, 1)
+        newOrder.splice(targetIndex, 0, moved)
+        orderRef.current = newOrder
+        setOrder(newOrder)
+        setFiles(newOrder)
+        dragItemRef.current.index = targetIndex
+        dragItemRef.current.startY = dragItemRef.current.currentY
+        setDragPreview({ index: targetIndex, offset: 0 })
+      }
+    }
+
+    const handleUp = () => {
+      if (dragItemRef.current) {
+        saveOrder(orderRef.current).catch((e: unknown) => { console.error(e) })
+      }
+      dragItemRef.current = null
+      setDragPreview(null)
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+  }
+
   // ─── Rewrite handlers ──────────────────────────
 
   const handleRewriteMode = (mode: RewriteMode) => {
@@ -306,13 +407,17 @@ export default function CharacterPanel({ projectId }: Props) {
           </div>
         )}
         <div className="panel-list">
-          {files.map((f) => (
+          {files.map((f, idx) => (
             <div
               key={f}
-              className={`panel-item${f === activeFile ? ' active' : ''}`}
+              className={`panel-item${f === activeFile ? ' active' : ''}${dragPreview?.index === idx ? ' dragging' : ''}`}
               onClick={() => { setActiveFile(f); setEditing(false) }}
             >
-              <span>{f}</span>
+              <span
+                data-drag-handle
+                style={{ cursor: 'grab', userSelect: 'none' }}
+                onMouseDown={(e) => handleMouseDown(e, idx)}
+              >⠿ {f}</span>
               <button className="btn-text" onClick={(e) => { e.stopPropagation(); handleDelete(f) }} style={{ color: 'var(--danger)', fontSize: '0.8rem' }}>✕</button>
             </div>
           ))}

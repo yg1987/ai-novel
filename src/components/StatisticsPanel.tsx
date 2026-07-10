@@ -31,7 +31,7 @@ export default function StatisticsPanel({ projectId, targetWords = 0 }: Props) {
 
   useEffect(() => { load().catch(console.error) }, [load])
 
-  const maxCharCount = Math.max(...dailyStats.map((d) => d.char_count), 1)
+  const maxWordCount = Math.max(...dailyStats.map((d) => d.word_count), 1)
   const totalWords = dailyStats.reduce((s, d) => s + d.word_count, 0)
   const avgDaily = dailyStats.length > 0 ? Math.round(totalWords / dailyStats.length) : 0
   const aiRatio = dailyStats.reduce((s, d) => s + d.ai_generations, 0)
@@ -107,9 +107,9 @@ export default function StatisticsPanel({ projectId, targetWords = 0 }: Props) {
                     position: 'relative',
                   }}>
                     <div style={{
-                      width: maxWidth(d.char_count, maxCharCount),
+                      width: maxWidth(d.word_count, maxWordCount),
                       height: '100%',
-                      background: d.char_count > 0 ? 'var(--accent)' : 'transparent',
+                      background: d.word_count > 0 ? 'var(--accent)' : 'transparent',
                       borderRadius: 'var(--radius-sm)',
                       opacity: 0.7,
                       transition: 'width 0.3s',
@@ -119,7 +119,7 @@ export default function StatisticsPanel({ projectId, targetWords = 0 }: Props) {
                     width: 70, fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'right',
                     flexShrink: 0,
                   }}>
-                    {d.char_count.toLocaleString()}
+                    {d.word_count.toLocaleString()}
                   </span>
                 </div>
               ))}

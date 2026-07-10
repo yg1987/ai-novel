@@ -1,4 +1,4 @@
-import { getChapterOutline, getChapterContent } from '../api/tauri'
+import { getChapterOutline, getChapterContent, readProjectFile } from '../api/tauri'
 import { DataSourceRegistry } from './dataSource'
 import { cognitionDS, foreshadowDS, styleDS, recentSummaryDS } from './sources'
 import { estimateTokens, truncateToBudget, getDefaultSystemPrompt } from './budget'
@@ -25,8 +25,20 @@ export async function buildContext(
   const chapterNumber = Number(chapterId.replace('ch', ''))
   const ctx: ContextLoadContext = { projectId, chapterId, chapterNumber, targetWords }
 
-  // 1. Load outline + previous ending (direct, these are always needed)
+  // 1. Load outline. If empty, fall back to project metadata
   const outline = await getChapterOutline(projectId, chapterId)
+  let chapterGuide = outline
+  if (!chapterGuide) {
+    try {
+      const raw = await readProjectFile(projectId, '', 'project.json')
+      const meta = JSON.parse(raw) as { name?: string; genre?: string; description?: string }
+      const lines: string[] = []
+      if (meta.name) lines.push(`小说名称：${meta.name}`)
+      if (meta.genre) lines.push(`类型：${meta.genre}`)
+      if (meta.description) lines.push(`简介：${meta.description}`)
+      chapterGuide = lines.join('\n')
+    } catch { chapterGuide = '' }
+  }
 
   let previousEnding = ''
   if (chapterNumber > 1) {
@@ -48,10 +60,10 @@ export async function buildContext(
   const promptBase = getDefaultSystemPrompt()
   let promptBudget = MAX_PROMPT_TOKENS - estimateTokens(promptBase)
 
-  // Outline gets 25% of budget
-  const outlineTokens = estimateTokens(outline)
-  const outlineActual = Math.min(outlineTokens, Math.floor(promptBudget * 0.25))
-  promptBudget -= outlineActual
+  // Outline / project context gets 25% of budget
+  const guideTokens = estimateTokens(chapterGuide)
+  const guideActual = Math.min(guideTokens, Math.floor(promptBudget * 0.25))
+  promptBudget -= guideActual
 
   // Previous ending gets 10%
   const endingTokens = estimateTokens(previousEnding)
@@ -64,14 +76,17 @@ export async function buildContext(
   // 4. Assemble final prompt
   const sections: string[] = [promptBase]
 
-  if (outline) sections.push('', '## 本章细纲', outline)
+  if (chapterGuide) {
+    const label = outline ? '## 本章细纲' : '## 项目背景'
+    sections.push('', label, chapterGuide)
+  }
   if (previousEnding) sections.push('', '## 上一章结尾', previousEnding)
 
   for (const src of fitted) {
     sections.push('', `## ${src.name}`, src.content)
   }
 
-  sections.push('', `## 字数要求`, `本章目标字数约 ${String(targetWords)} 字`)
+  sections.push('', `## 字数要求`, `本章必须写满约 ${String(targetWords)} 字，请确保情节充分展开、描写细致到位，不要仓促收尾或省略细节。`)
 
   return {
     systemPrompt: sections.join('\n'),

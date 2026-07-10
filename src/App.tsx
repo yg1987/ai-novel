@@ -6,6 +6,7 @@ import CreateProjectDialog from './components/CreateProjectDialog'
 import EditProjectDialog from './components/EditProjectDialog'
 import ProjectView from './components/ProjectView'
 import ProviderConfigPanel from './components/ProviderConfig'
+import SettingsModal from './components/SettingsModal'
 
 type View = { kind: 'bookshelf' } | { kind: 'project'; id: string }
 
@@ -14,6 +15,7 @@ export default function App() {
   const [view, setView] = useState<View>({ kind: 'bookshelf' })
   const [showCreate, setShowCreate] = useState(false)
   const [showProviderConfig, setShowProviderConfig] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [editingProject, setEditingProject] = useState<ProjectMeta | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -77,6 +79,9 @@ export default function App() {
         <button className="btn-text" onClick={() => { setShowProviderConfig(true) }} style={{ marginLeft: 12 }}>
           ⚙ AI 配置
         </button>
+        <button className="btn-text" onClick={() => { setShowSettings(true) }} style={{ marginLeft: 8 }}>
+          🛠 系统设置
+        </button>
       </header>
 
       {error && (
@@ -132,6 +137,8 @@ export default function App() {
       {showProviderConfig && (
         <ProviderConfigPanel onClose={() => { setShowProviderConfig(false) }} />
       )}
+
+      <SettingsModal visible={showSettings} onClose={() => { setShowSettings(false) }} />
     </div>
   )
 }

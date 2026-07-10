@@ -83,7 +83,7 @@ export default function ProviderConfigPanel({ onClose }: Props) {
   }
 
   return (
-    <div className="dialog-overlay" onClick={onClose}>
+    <div className="dialog-overlay">
       <div className="dialog dialog-wide" onClick={(e) => { e.stopPropagation() }}>
         <div className="dialog-header">
           <h2>AI Provider 配置</h2>

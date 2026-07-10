@@ -344,16 +344,67 @@ fn get_chapter_outline(
     project_id: String,
     chapter_id: String,
 ) -> Result<String, String> {
-    let path = project_dir(&app_handle, &project_id)?
-        .join("outline")
-        .join("细纲")
-        .join(format!("{chapter_id}.md"));
+    let dir = project_dir(&app_handle, &project_id)?.join("outline").join("细纲");
 
-    if !path.exists() {
-        return Ok(String::new());
+    // 1. Try direct match: ch001.md
+    let path = dir.join(format!("{chapter_id}.md"));
+    if path.exists() {
+        return fs::read_to_string(&path).map_err(|e| format!("Failed to read outline: {e}"));
     }
 
-    fs::read_to_string(&path).map_err(|e| format!("Failed to read outline: {e}"))
+    // 2. Fallback: search by chapter number for old naming convention (卷1_第1章.md)
+    if let Some(num) = chapter_id.strip_prefix("ch").and_then(|s| s.parse::<u32>().ok()) {
+        let needle = format!("第{}章", num);
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let fname = entry.file_name().to_string_lossy().to_string();
+                if fname.ends_with(".md") && fname.contains(&needle) {
+                    return fs::read_to_string(&entry.path())
+                        .map_err(|e| format!("Failed to read outline: {e}"));
+                }
+            }
+        }
+    }
+
+    Ok(String::new())
+}
+
+// ─── System settings I/O ────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppSettings {
+    pub default_word_count: u32,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        AppSettings {
+            default_word_count: 4000,
+        }
+    }
+}
+
+fn settings_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(workspace_dir(app_handle)?.join("settings.json"))
+}
+
+#[tauri::command]
+fn load_settings(app_handle: tauri::AppHandle) -> Result<AppSettings, String> {
+    let path = settings_path(&app_handle)?;
+    if !path.exists() {
+        return Ok(AppSettings::default());
+    }
+    let content = fs::read_to_string(&path).map_err(|e| format!("Failed to read settings: {e}"))?;
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse settings: {e}"))
+}
+
+#[tauri::command]
+fn save_settings(app_handle: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
+    let path = settings_path(&app_handle)?;
+    let content = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
+    fs::write(&path, &content).map_err(|e| format!("Failed to write settings: {e}"))?;
+    Ok(())
 }
 
 // ─── Provider config I/O ───────────────────────────────────
@@ -511,6 +562,8 @@ pub fn run() {
             save_chapter_content,
             load_provider_config,
             save_provider_config,
+            load_settings,
+            save_settings,
             get_chapter_outline,
             list_project_files,
             read_project_file,

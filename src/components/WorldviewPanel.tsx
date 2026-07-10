@@ -363,8 +363,10 @@ export default function WorldviewPanel({ projectId }: Props) {
   const handleResetToDefaults = () => {
     const defaults = getDefaultSections(genre)
     setSections(defaults)
-    setSavedGenre(genre) // dismiss mismatch after reset
+    setSavedGenre(genre)
     setGenreMismatchDismissed(false)
+    // Save immediately with correct genre, so autosave effect won't read stale genre from disk
+    saveSections(projectId, defaults, genre)
     if (defaults.length > 0) setActiveSection(defaults[0]!)
     setEditing(false)
     setDirty(false)
@@ -494,7 +496,7 @@ export default function WorldviewPanel({ projectId }: Props) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 110px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
       {/* Genre mismatch banner — top of worldview tab */}
       {genreMismatch && (
         <div style={{
@@ -508,7 +510,7 @@ export default function WorldviewPanel({ projectId }: Props) {
           flexShrink: 0,
         }}>
           <span style={{ flex: 1 }}>
-            项目类型已改为「{genre}」，世界观栏目还是「{savedGenre}」的默认预设。重置将替换栏目配置为新品类的预设（不影响已填内容）。
+            项目类型已改为「{genre}」，世界观栏目还是「{savedGenre}」的默认预设。
           </span>
           <button
             className="btn-text"
@@ -527,9 +529,8 @@ export default function WorldviewPanel({ projectId }: Props) {
         </div>
       )}
 
-      {/* Inner layout: sidebar + editor */}
+      {/* Inner flex row: sidebar + editor, flex:1 fills remaining height */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        {/* Left sidebar: sections */}
         <div className="panel-sidebar">
         <div className="panel-sidebar-header">
           <h3>世界观</h3>
@@ -929,7 +930,7 @@ export default function WorldviewPanel({ projectId }: Props) {
           />
         ) : null
       })()}
-      </div>{/* end inner flex: sidebar + editor */}
-    </div>{/* end outer column wrapper */}
+      </div>
+    </div>
   )
 }

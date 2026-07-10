@@ -20,8 +20,8 @@ export default function CreateProjectDialog({ onConfirm, onCancel }: Props) {
   }
 
   return (
-    <div className="dialog-overlay" onClick={onCancel}>
-      <div className="dialog" onClick={(e) => { e.stopPropagation() }}>
+    <div className="dialog-overlay">
+      <div className="dialog">
         <h2>新建项目</h2>
         <form onSubmit={handleSubmit}>
           <div className="form-field">

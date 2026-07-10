@@ -5,12 +5,13 @@ interface Props {
   selectedText: string
   beforeText: string
   afterText: string
+  defaultMode?: RewriteMode
   onAccept: (newText: string) => void
   onReject: () => void
 }
 
-export default function RewritePreview({ selectedText, beforeText, afterText, onAccept, onReject }: Props) {
-  const [mode, setMode] = useState<RewriteMode>('rewrite')
+export default function RewritePreview({ selectedText, beforeText, afterText, defaultMode = 'rewrite', onAccept, onReject }: Props) {
+  const [mode, setMode] = useState<RewriteMode>(defaultMode)
   const [result, setResult] = useState('')
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)

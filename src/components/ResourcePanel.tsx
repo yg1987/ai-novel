@@ -1,8 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { listResourceCategories, listResourceFiles, readResourceFile, writeResourceFile, deleteResourceFile } from '../api/tauri'
 import type { FileEntry } from '../api/tauri'
 import { indexResourceFile } from '../services/resourceIndexer'
-import { suggestCategory, expandResource } from '../services/resourceAI'
+import { suggestCategory } from '../services/resourceAI'
+import type { TextareaSelection } from '../services/rewriteUtils'
+import { getTextareaSelection, applyTextareaRewrite } from '../services/rewriteUtils'
+import { type RewriteMode } from '../services/rewriteService'
+import RewriteButtons from './RewriteButtons'
+import RewritePreview from './RewritePreview'
+import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
 
 interface Props {
   projectId?: string
@@ -23,8 +29,14 @@ export default function ResourcePanel({ projectId }: Props) {
   const [saving, setSaving] = useState(false)
   const [aiSuggesting, setAiSuggesting] = useState(false)
   const [aiSuggestion, setAiSuggestion] = useState<import('../services/resourceAI').ClassificationResult | null>(null)
-  const [aiExpanding, setAiExpanding] = useState(false)
-  const [aiExpandedText, setAiExpandedText] = useState('')
+  const [rewriteState, setRewriteState] = useState<(TextareaSelection & { mode: RewriteMode }) | null>(null)
+  const [hasSelection, setHasSelection] = useState(false)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const rewriteTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const checkSelection = useCallback(() => {
+    const ta = rewriteTextareaRef.current
+    if (ta) setHasSelection(ta.selectionStart !== ta.selectionEnd)
+  }, [])
 
   const refreshCategories = useCallback(async () => {
     try {
@@ -120,6 +132,26 @@ export default function ResourcePanel({ projectId }: Props) {
     await refreshCategories()
     setSelectedCategory(newCategory.trim())
   }
+
+  // ─── Rewrite handlers ──────────────────────────
+
+  const handleRewriteMode = (mode: RewriteMode) => {
+    const sel = getTextareaSelection(rewriteTextareaRef.current, editContent)
+    if (!sel) return
+    setRewriteState({ ...sel, mode })
+  }
+
+  const handleRewriteAccept = (newText: string) => {
+    if (!rewriteState) return
+    setEditContent((prev) => applyTextareaRewrite(prev, rewriteState.start, rewriteState.end, newText))
+    setRewriteState(null)
+  }
+
+  const menuItems: ContextMenuAction[] = contextMenu ? [
+    { label: '✏️ AI 改写', onClick: () => handleRewriteMode('rewrite') },
+    { label: '📝 AI 扩写', onClick: () => handleRewriteMode('expand') },
+    { label: '✨ AI 润色', onClick: () => handleRewriteMode('polish') },
+  ] : []
 
   return (
     <div className="panel-layout">
@@ -220,16 +252,6 @@ export default function ResourcePanel({ projectId }: Props) {
             <button className="btn-text" style={{ float: 'right' }} onClick={() => setAiSuggestion(null)}>✕</button>
           </div>
         )}
-        {aiExpandedText && (
-          <div style={{ margin: '8px', padding: 12, border: '1px solid var(--accent)', borderRadius: 'var(--radius-sm)', background: '#f0f8ff' }}>
-            <h5 style={{ marginBottom: 8 }}>AI 建议</h5>
-            <pre style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', lineHeight: 1.7, fontFamily: 'var(--font-sans)' }}>{aiExpandedText}</pre>
-            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-              <button className="btn-primary" onClick={() => { setEditContent(aiExpandedText); setAiExpandedText('') }}>✓ 接受</button>
-              <button className="btn-text" onClick={() => setAiExpandedText('')}>✕ 拒绝</button>
-            </div>
-          </div>
-        )}
         {selectedFile ? (
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div style={{
@@ -255,42 +277,13 @@ export default function ResourcePanel({ projectId }: Props) {
                   </button>
                 )}
                 {editing && editContent && (
-                  <>
-                    <button
-                      className="btn-text"
-                      style={{ fontSize: '0.78rem' }}
-                      onClick={() => {
-                        setAiExpanding(true)
-                        setAiExpandedText('')
-                        expandResource(
-                          editContent, 'expand',
-                          (t) => setAiExpandedText((p) => p + t),
-                          () => setAiExpanding(false),
-                          (e) => { console.error(e); setAiExpanding(false) },
-                        )
-                      }}
-                      disabled={aiExpanding}
-                    >
-                      {aiExpanding ? '扩写中…' : '📝 扩写'}
-                    </button>
-                    <button
-                      className="btn-text"
-                      style={{ fontSize: '0.78rem' }}
-                      onClick={() => {
-                        setAiExpanding(true)
-                        setAiExpandedText('')
-                        expandResource(
-                          editContent, 'polish',
-                          (t) => setAiExpandedText((p) => p + t),
-                          () => setAiExpanding(false),
-                          (e) => { console.error(e); setAiExpanding(false) },
-                        )
-                      }}
-                      disabled={aiExpanding}
-                    >
-                      {aiExpanding ? '润色中…' : '✨ 润色'}
-                    </button>
-                  </>
+                  <RewriteButtons
+                    enabled={hasSelection}
+                    loading={rewriteState !== null}
+                    onRewrite={() => handleRewriteMode('rewrite')}
+                    onExpand={() => handleRewriteMode('expand')}
+                    onPolish={() => handleRewriteMode('polish')}
+                  />
                 )}
                 {editing ? (
                   <>
@@ -307,6 +300,7 @@ export default function ResourcePanel({ projectId }: Props) {
             <div style={{ flex: 1, overflow: 'auto' }}>
               {editing ? (
                 <textarea
+                  ref={rewriteTextareaRef}
                   style={{
                     width: '100%', height: '100%', border: 'none', resize: 'none',
                     padding: 16, fontSize: '0.9rem', lineHeight: 1.7,
@@ -314,6 +308,15 @@ export default function ResourcePanel({ projectId }: Props) {
                   }}
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
+                  onMouseUp={checkSelection}
+                  onKeyUp={checkSelection}
+                  onContextMenu={(e) => {
+                    const ta = e.currentTarget as HTMLTextAreaElement
+                    if (ta.selectionStart !== ta.selectionEnd) {
+                      e.preventDefault()
+                      setContextMenu({ x: e.clientX, y: e.clientY })
+                    }
+                  }}
                 />
               ) : (
                 <pre style={{
@@ -331,6 +334,26 @@ export default function ResourcePanel({ projectId }: Props) {
           </div>
         )}
       </div>
+
+      {rewriteState && (
+        <RewritePreview
+          selectedText={rewriteState.selectedText}
+          beforeText={rewriteState.beforeText}
+          afterText={rewriteState.afterText}
+          defaultMode={rewriteState.mode}
+          onAccept={handleRewriteAccept}
+          onReject={() => setRewriteState(null)}
+        />
+      )}
+
+      {contextMenu && (
+        <SelectionContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={menuItems}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   )
 }

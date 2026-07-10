@@ -59,6 +59,8 @@ body {
 
 .app-main {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -495,6 +497,18 @@ body {
   margin-bottom: 20px;
 }
 
+.setting-description {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 2px 0 6px;
+}
+
+.setting-suffix {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 .dialog-header h2 {
   margin-bottom: 0;
 }
@@ -707,7 +721,7 @@ body {
 
 .chapter-manager {
   display: flex;
-  height: calc(100vh - 110px);
+  flex: 1;
 }
 
 .chapter-loading,
@@ -732,7 +746,6 @@ body {
 .chapter-sidebar-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 12px;
   border-bottom: 1px solid var(--border);
 }
@@ -740,7 +753,81 @@ body {
 .chapter-sidebar-header h3 {
   font-size: 0.9rem;
   font-weight: 600;
+  flex: 1;
 }
+
+/* ─── Toolbar ─────────────────────────────── */
+
+.chapter-sidebar-toolbar {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chapter-new-volume-btn {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 0.82rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: center;
+}
+
+.chapter-new-volume-btn:hover {
+  background: var(--bg-hover);
+}
+
+.chapter-new-volume-input {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 0.82rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+}
+
+/* ─── Volume groups ───────────────────────── */
+
+.chapter-volume-header {
+  display: flex;
+  align-items: center;
+  padding: 7px 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.chapter-volume-header:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.chapter-volume-chevron {
+  margin-right: 6px;
+  font-size: 0.7rem;
+  transition: transform 0.15s;
+}
+
+.chapter-volume-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.chapter-volume-name {
+  flex: 1;
+}
+
+.chapter-volume-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* ─── Chapter items ───────────────────────── */
 
 .btn-small {
   width: 24px;
@@ -754,27 +841,21 @@ body {
   align-items: center;
   justify-content: center;
   line-height: 1;
+  flex-shrink: 0;
 }
 
 .chapter-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px;
-}
-
-.chapter-volume-label {
-  padding: 6px 12px 2px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  letter-spacing: 0.5px;
+  padding: 4px 0;
 }
 
 .chapter-item {
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  padding: 7px 8px 7px 24px;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   transition: background 0.1s;
 }
 
@@ -787,11 +868,114 @@ body {
   color: #fff;
 }
 
+.chapter-item.active .chapter-item-actions button {
+  color: #fff;
+}
+
+.chapter-item.active .chapter-item-actions button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.chapter-item-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chapter-item-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.chapter-item:hover .chapter-item-actions {
+  display: flex;
+}
+
+/* ─── Tiny buttons ────────────────────────── */
+
+.btn-tiny {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 0;
+}
+
+.btn-tiny:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: var(--border);
+}
+
+.btn-tiny-danger:hover {
+  color: var(--danger);
+  background: rgba(231, 76, 60, 0.08);
+  border-color: var(--danger);
+}
+
+/* ─── Add chapter / empty ─────────────────── */
+
+.chapter-add-btn {
+  display: block;
+  width: 100%;
+  padding: 4px 24px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.chapter-add-btn:hover {
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.chapter-volume-empty {
+  padding: 4px 24px 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
 .chapter-empty {
   padding: 16px 12px;
   font-size: 0.85rem;
   color: var(--text-muted);
 }
+
+/* ─── Footer ──────────────────────────────── */
+
+.chapter-sidebar-footer {
+  border-top: 1px solid var(--border);
+  padding: 6px 8px;
+  flex-shrink: 0;
+}
+
+.chapter-footer-stats {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.chapter-footer-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* ─── Editor area ─────────────────────────── */
 
 .chapter-editor-area {
   flex: 1;
@@ -800,12 +984,107 @@ body {
   overflow: hidden;
 }
 
+/* ─── Chapter title bar ──────────────────── */
+
+.chapter-title-bar {
+  display: flex;
+  align-items: center;
+  padding: 10px 24px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.chapter-title-text {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0;
+  flex: 1;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chapter-title-text:hover {
+  color: var(--accent);
+}
+
+.chapter-title-text::after {
+  content: '✎';
+  font-size: 0.9rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.chapter-title-text:hover::after {
+  opacity: 0.6;
+}
+
+.chapter-title-input {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-family: inherit;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--bg-card);
+}
+
+/* ─── Volume rename input ────────────────── */
+
+.chapter-volume-rename-input {
+  flex: 1;
+  padding: 2px 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  outline: none;
+  min-width: 0;
+}
+
+/* ─── Volume delete button ───────────────── */
+
+.volume-delete-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  opacity: 0;
+  flex-shrink: 0;
+}
+
+.chapter-volume-header:hover .volume-delete-btn {
+  opacity: 1;
+}
+
+.volume-delete-btn:hover {
+  color: var(--danger);
+  background: rgba(231, 76, 60, 0.08);
+  border-color: var(--danger);
+}
+
 /* ─── Editor ───────────────────────────────────── */
 
 .editor-wrapper {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 .editor-toolbar {
@@ -854,6 +1133,83 @@ body {
 .toolbar-spacer {
   flex: 1;
 }
+
+/* ─── Rewrite button group ─────────────── */
+
+.rewrite-btn-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar-btn.rewrite-btn,
+.toolbar-btn.expand-btn,
+.toolbar-btn.polish-btn {
+  width: auto;
+  padding: 0 8px;
+  font-size: 0.78rem;
+}
+
+.toolbar-btn.rewrite-btn:disabled,
+.toolbar-btn.expand-btn:disabled,
+.toolbar-btn.polish-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.toolbar-btn.rewrite-btn:disabled:hover,
+.toolbar-btn.expand-btn:disabled:hover,
+.toolbar-btn.polish-btn:disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+/* ─── Right-click context menu ────────── */
+
+.selection-context-menu {
+  position: fixed;
+  z-index: 10000;
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--border, #ddd);
+  border-radius: var(--radius-sm, 6px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  padding: 4px 0;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+}
+
+.selection-context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 16px;
+  text-align: left;
+  font-size: 0.85rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--text, #333);
+}
+
+.selection-context-menu-item:hover:not(:disabled) {
+  background: var(--accent-light, #e8f0fe);
+}
+
+.selection-context-menu-item:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.selection-context-menu-empty {
+  padding: 8px 16px;
+  font-size: 0.82rem;
+  color: var(--text-muted, #999);
+}
+
+/* ─── Save button ─────────────────────── */
 
 .save-btn {
   width: auto;
@@ -992,7 +1348,7 @@ body {
 
 .panel-layout {
   display: flex;
-  height: calc(100vh - 110px);
+  flex: 1;
 }
 
 .panel-sidebar {
@@ -1091,6 +1447,24 @@ body {
   color: #fff;
 }
 
+.panel-item.active .btn-text {
+  color: #fff;
+  opacity: 0.7;
+}
+
+.panel-item.active .btn-text:hover {
+  opacity: 1;
+}
+
+.panel-item.dragging {
+  opacity: 0.5;
+  background: rgba(0,0,0,0.06);
+}
+
+.panel-item.drag-over {
+  border-top: 2px solid var(--accent);
+}
+
 .panel-item-add {
   background: none;
   border: none;
@@ -1165,6 +1539,7 @@ body {
   flex: 1;
   overflow-y: auto;
   padding: 20px 24px;
+  min-height: 0;
 }
 
 .panel-editor-header {
@@ -1274,7 +1649,7 @@ body {
 
 .sub-field-textarea {
   width: 100%;
-  min-height: 100px;
+  min-height: 120px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1327,7 +1702,7 @@ body {
 .notes-panel {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 110px);
+  flex: 1;
   width: 100%;
   padding: 24px;
 }
@@ -1533,7 +1908,7 @@ body {
 .foreshadow-panel {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 110px);
+  flex: 1;
   width: 100%;
   padding: 24px;
 }

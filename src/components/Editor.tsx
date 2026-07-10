@@ -6,30 +6,46 @@ import Underline from '@tiptap/extension-underline'
 import { saveChapterContent } from '../api/tauri'
 import { buildContext } from '../contextEngine'
 import { generateChapter, stopGeneration } from '../services/aiProvider'
+import {
+  resolveChapterWordCount,
+  saveChapterWordCountOverride,
+  deleteChapterWordCountOverride,
+} from '../services/settings'
+import type { ChapterWordCountResolution } from '../services/settings'
 import type { CheckResult } from '../services/bannedWords'
 import RewritePreview from './RewritePreview'
+import RewriteButtons from './RewriteButtons'
 import { analyzeChapter } from '../services/chapterIngest'
 import { saveChapterSnapshot } from '../services/memorySync'
 import { logAIGenerated, logSessionStart } from '../services/stats'
 import { runSavePipeline } from '../services/savePipeline'
+import { type RewriteMode } from '../services/rewriteService'
+import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
 
 interface Props {
   projectId: string
   volume: string
   chapterId: string
   initialContent: string
-  targetWords?: number
   onContentChange?: (content: string) => void
   chapterNumber?: number
+  onNavigateToReview?: (chapterId: string) => void
 }
 
 const AUTOSAVE_DELAY = 3000
+
+const SourceLabel: Record<string, string> = {
+  manual: '📝 手动',
+  outline: '📋 大纲',
+  system: '⚙ 系统',
+  fallback: '📦 默认',
+}
 
 export interface EditorHandle {
   insertAtCursor: (text: string) => void
 }
 
-const Editor = forwardRef<EditorHandle, Props>(({ projectId, volume, chapterId, initialContent, targetWords = 1200, onContentChange, chapterNumber = 1 }, ref) => {
+const Editor = forwardRef<EditorHandle, Props>(({ projectId, volume, chapterId, initialContent, onContentChange, chapterNumber = 1, onNavigateToReview }, ref) => {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSaved = useRef(initialContent)
   const generateStartTime = useRef(0)
@@ -41,8 +57,31 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, volume, chapterId, 
     selectedText: string
     beforeText: string
     afterText: string
+    mode: RewriteMode
   } | null>(null)
   const [lastLightCheckResult, setLastLightCheckResult] = useState<{ passed: boolean; issues: number } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+
+  // ─── Word count resolution ──────────────────────
+
+  const [effectiveWordCount, setEffectiveWordCount] = useState(4000)
+  const [wordCountSource, setWordCountSource] = useState<ChapterWordCountResolution['source']>('system')
+  const wordCountTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const refreshWordCount = useCallback(async () => {
+    try {
+      const resolved = await resolveChapterWordCount(projectId, chapterId)
+      setEffectiveWordCount(resolved.value)
+      setWordCountSource(resolved.source)
+    } catch {
+      setEffectiveWordCount(4000)
+      setWordCountSource('fallback')
+    }
+  }, [projectId, chapterId])
+
+  useEffect(() => {
+    void refreshWordCount()
+  }, [refreshWordCount])
 
   const editor = useEditor({
     extensions: [StarterKit, Underline, Placeholder.configure({ placeholder: '开始写作…' })],
@@ -130,7 +169,7 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, volume, chapterId, 
     generateStartTime.current = Date.now()
     editor.commands.focus()
     try {
-      const ctx = await buildContext(projectId, volume, chapterId, targetWords)
+      const ctx = await buildContext(projectId, volume, chapterId, effectiveWordCount)
       const { from } = editor.state.selection
       editor.commands.insertContentAt(from, '<p></p>')
       await generateChapter(ctx.systemPrompt, {
@@ -147,11 +186,11 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, volume, chapterId, 
       console.error('Generation failed:', e)
       setGenerating(false)
     }
-  }, [editor, generating, projectId, chapterId, targetWords, handleSaveNow])
+  }, [editor, generating, projectId, chapterId, effectiveWordCount, handleSaveNow, chapterNumber])
 
   const handleStop = useCallback(() => { stopGeneration(); setGenerating(false) }, [])
 
-  const handleRewrite = useCallback(() => {
+  const handleRewrite = useCallback((mode: RewriteMode) => {
     if (!editor) return
     const { from, to } = editor.state.selection
     if (from === to) return // no selection
@@ -160,7 +199,8 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, volume, chapterId, 
     const fullText = editor.state.doc.textBetween(0, editor.state.doc.content.size)
     const beforeText = fullText.slice(Math.max(0, from - 200), from)
     const afterText = fullText.slice(to, Math.min(fullText.length, to + 200))
-    setRewriteState({ selectedText, beforeText, afterText })
+    // Store mode + selection info for the pending rewrite
+    setRewriteState({ selectedText, beforeText, afterText, mode })
   }, [editor])
 
   const handleRewriteAccept = useCallback((newText: string) => {
@@ -171,6 +211,12 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, volume, chapterId, 
     // Trigger save
     handleSaveNow()
   }, [editor, handleSaveNow])
+
+  const menuItems: ContextMenuAction[] = contextMenu ? [
+    { label: '✏️ AI 改写', onClick: () => handleRewrite('rewrite') },
+    { label: '📝 AI 扩写', onClick: () => handleRewrite('expand') },
+    { label: '✨ AI 润色', onClick: () => handleRewrite('polish') },
+  ] : []
 
   useImperativeHandle(ref, () => ({
     insertAtCursor: (text: string) => {
@@ -183,7 +229,12 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, volume, chapterId, 
   if (!editor) return <div className="editor-loading">加载编辑器…</div>
 
   return (
-    <div className="editor-wrapper">
+    <div className="editor-wrapper" onContextMenu={(e) => {
+        if (editor.state.selection.from !== editor.state.selection.to) {
+          e.preventDefault()
+          setContextMenu({ x: e.clientX, y: e.clientY })
+        }
+      }}>
       <div className="editor-toolbar">
         <button className="toolbar-btn" onClick={() => { editor.chain().focus().toggleBold().run() }} data-active={editor.isActive('bold')} title="加粗">B</button>
         <button className="toolbar-btn" onClick={() => { editor.chain().focus().toggleItalic().run() }} data-active={editor.isActive('italic')} title="斜体">I</button>
@@ -196,10 +247,49 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, volume, chapterId, 
         <button className="toolbar-btn" onClick={() => { editor.chain().focus().toggleBlockquote().run() }} data-active={editor.isActive('blockquote')} title="引用">"</button>
         <div className="toolbar-spacer" />
 
-        {/* Rewrite - only visible when text is selected */}
-        {editor.state.selection.from !== editor.state.selection.to && (
-          <button className="toolbar-btn" onClick={handleRewrite} title="AI 改写/扩写">✏️ 改写</button>
-        )}
+        <div className="wordcount-input-group" title={`来源: ${SourceLabel[wordCountSource]}`}>
+          <span className="wordcount-label">预计字数:</span>
+          <input
+            type="number"
+            className="wordcount-input"
+            value={effectiveWordCount}
+            min={500}
+            max={50000}
+            step={100}
+            onChange={(e) => {
+              const v = Math.max(500, parseInt(e.target.value, 10) || 500)
+              setEffectiveWordCount(v)
+              setWordCountSource('manual')
+              // Debounce save
+              if (wordCountTimer.current) clearTimeout(wordCountTimer.current)
+              wordCountTimer.current = setTimeout(() => {
+                saveChapterWordCountOverride(projectId, chapterId, v).catch(console.error)
+              }, 600)
+            }}
+            onBlur={() => {
+              if (wordCountTimer.current) clearTimeout(wordCountTimer.current)
+              saveChapterWordCountOverride(projectId, chapterId, effectiveWordCount).catch(console.error)
+            }}
+          />
+          {wordCountSource === 'manual' && (
+            <button
+              className="wordcount-reset-btn"
+              title="重置为默认字数"
+              onClick={async () => {
+                await deleteChapterWordCountOverride(projectId, chapterId)
+                void refreshWordCount()
+              }}
+            >↩</button>
+          )}
+        </div>
+
+        <RewriteButtons
+          enabled={editor.state.selection.from !== editor.state.selection.to}
+          loading={rewriteState !== null}
+          onRewrite={() => handleRewrite('rewrite')}
+          onExpand={() => handleRewrite('expand')}
+          onPolish={() => handleRewrite('polish')}
+        />
 
         {/* Banned words indicator */}
         {bannedCheck && (
@@ -210,13 +300,14 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, volume, chapterId, 
         )}
 
         {/* Light check indicator */}
-        {lastLightCheckResult && (
-          <span
+        {lastLightCheckResult && !lastLightCheckResult.passed && (
+          <button
             className={`light-check-indicator ${lastLightCheckResult.passed ? 'passed' : 'failed'}`}
-            title={`轻量检查：${lastLightCheckResult.passed ? '通过' : `${lastLightCheckResult.issues} 个问题`}`}
+            title={`轻量检查发现 ${lastLightCheckResult.issues} 个问题，点击查看详情`}
+            onClick={() => onNavigateToReview?.(chapterId)}
           >
-            {lastLightCheckResult.passed ? '✓' : '⚠'} 检查
-          </span>
+            ⚠ 检查
+          </button>
         )}
 
         {generating ? (
@@ -258,8 +349,18 @@ const Editor = forwardRef<EditorHandle, Props>(({ projectId, volume, chapterId, 
           selectedText={rewriteState.selectedText}
           beforeText={rewriteState.beforeText}
           afterText={rewriteState.afterText}
+          defaultMode={rewriteState.mode}
           onAccept={handleRewriteAccept}
           onReject={() => setRewriteState(null)}
+        />
+      )}
+
+      {contextMenu && (
+        <SelectionContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={menuItems}
+          onClose={() => setContextMenu(null)}
         />
       )}
     </div>

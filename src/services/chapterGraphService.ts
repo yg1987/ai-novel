@@ -1,5 +1,6 @@
 // src/services/chapterGraphService.ts
 import { listChapters, getChapterContent, readProjectFile } from '../api/tauri'
+import { estimateWordCount } from '../utils/cjkCount'
 
 export interface ChapterNode {
   id: string
@@ -36,7 +37,7 @@ export async function loadChapterGraph(projectId: string): Promise<ChapterGraph>
       id: ch.id,
       order: ch.order,
       title: ch.title,
-      wordCount: plain.length,
+      wordCount: estimateWordCount(plain),
       characterCount: (plain.match(/[\u4e00-\u9fff]/g) || []).length,
     })
   }

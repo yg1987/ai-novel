@@ -1,5 +1,6 @@
 import { appendStatEvent as apiAppend } from '../api/tauri'
 import type { StatEvent } from '../api/tauri'
+import { estimateWordCount } from '../utils/cjkCount'
 
 const lastChapterContent = new Map<string, number>()
 
@@ -53,10 +54,4 @@ export function logSessionStart(projectId: string): void {
     event_type: 'session_start',
   }
   apiAppend(projectId, event).catch(console.error)
-}
-
-function estimateWordCount(text: string): number {
-  const chinese = (text.match(/[\u4e00-\u9fff]/g) || []).length
-  const english = text.split(/\s+/).filter((w) => /[a-zA-Z]/.test(w)).length
-  return chinese + english
 }

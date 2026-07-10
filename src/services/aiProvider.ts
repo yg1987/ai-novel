@@ -69,7 +69,7 @@ async function streamFromProvider(
       ],
       stream: true,
       temperature: 0.8,
-      max_tokens: 4096,
+      max_tokens: 16384,
     }),
     signal: controller.signal,
   })
