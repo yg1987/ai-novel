@@ -495,6 +495,37 @@ export default function WorldviewPanel({ projectId }: Props) {
 
   return (
     <div className="panel-layout">
+      {/* Genre mismatch banner — top of worldview tab */}
+      {genreMismatch && (
+        <div style={{
+          padding: '8px 16px',
+          background: 'var(--bg-sidebar)',
+          borderBottom: '1px solid var(--border)',
+          fontSize: '0.82rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}>
+          <span style={{ flex: 1 }}>
+            项目类型已改为「{genre}」，世界观栏目还是「{savedGenre}」的默认预设。重置将替换栏目配置为新品类的预设（不影响已填内容）。
+          </span>
+          <button
+            className="btn-text"
+            style={{ fontWeight: 600, fontSize: '0.82rem' }}
+            onClick={() => { setShowResetConfirm(true) }}
+          >
+            重置
+          </button>
+          <button
+            className="btn-text"
+            style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}
+            onClick={() => { setGenreMismatchDismissed(true) }}
+          >
+            忽略
+          </button>
+        </div>
+      )}
+
       {/* Left sidebar: sections */}
       <div className="panel-sidebar">
         <div className="panel-sidebar-header">
@@ -613,40 +644,6 @@ export default function WorldviewPanel({ projectId }: Props) {
             )}
           </div>
         </div>
-
-        {/* Genre mismatch banner */}
-        {genreMismatch && (
-          <div style={{
-            margin: '8px 16px 0',
-            padding: '8px 12px',
-            background: 'var(--bg-sidebar)',
-            border: '1px solid var(--border)',
-            borderRadius: 6,
-            fontSize: '0.82rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            flexWrap: 'wrap',
-          }}>
-            <span style={{ flex: 1 }}>
-              项目类型已改为「{genre}」，但世界观栏目还是「{savedGenre}」的默认配置。
-            </span>
-            <button
-              className="btn-small"
-              style={{ fontSize: '0.8rem' }}
-              onClick={() => { setShowResetConfirm(true) }}
-            >
-              重置为 {genre} 默认
-            </button>
-            <button
-              className="btn-text"
-              style={{ fontSize: '0.8rem' }}
-              onClick={() => { setGenreMismatchDismissed(true) }}
-            >
-              忽略
-            </button>
-          </div>
-        )}
 
         {showPrompt && editing && (
           <div className="prompt-editor">
