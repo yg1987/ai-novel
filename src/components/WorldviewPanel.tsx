@@ -13,6 +13,7 @@ import {
   type SectionDef,
   type SubField,
   loadSections,
+  loadSectionsGenre,
   saveSections,
   getDefaultSections,
   getExample,
@@ -114,8 +115,13 @@ export default function WorldviewPanel({ projectId }: Props) {
 
   // Delete confirm
   const [deletingSectionId, setDeletingSectionId] = useState<string | null>(null)
-
   const [genre, setGenre] = useState<string>('玄幻')
+
+  // Genre mismatch detection — project genre changed after worldview was initialized
+  const [savedGenre, setSavedGenre] = useState<string | null>(null)
+  const [genreMismatchDismissed, setGenreMismatchDismissed] = useState(false)
+  const genreMismatch = savedGenre !== null && savedGenre !== genre && !genreMismatchDismissed
+
   const [configLoaded, setConfigLoaded] = useState(false)
   const rewriteTextareaRef = useRef<HTMLTextAreaElement>(null)
   const checkSelection = useCallback((e: React.MouseEvent | React.KeyboardEvent) => {
@@ -150,9 +156,14 @@ export default function WorldviewPanel({ projectId }: Props) {
       let secs = await loadSections(projectId)
       if (!secs || secs.length === 0) {
         secs = getDefaultSections(g)
-        await saveSections(projectId, secs)
+        await saveSections(projectId, secs, g)
       }
       setSections(secs)
+
+      // Detect genre mismatch
+      const storedGenre = await loadSectionsGenre(projectId)
+      setSavedGenre(storedGenre)
+
       if (secs.length > 0) {
         setActiveSection(secs[0]!)
       }
@@ -352,6 +363,8 @@ export default function WorldviewPanel({ projectId }: Props) {
   const handleResetToDefaults = () => {
     const defaults = getDefaultSections(genre)
     setSections(defaults)
+    setSavedGenre(genre) // dismiss mismatch after reset
+    setGenreMismatchDismissed(false)
     if (defaults.length > 0) setActiveSection(defaults[0]!)
     setEditing(false)
     setDirty(false)
@@ -600,6 +613,40 @@ export default function WorldviewPanel({ projectId }: Props) {
             )}
           </div>
         </div>
+
+        {/* Genre mismatch banner */}
+        {genreMismatch && (
+          <div style={{
+            margin: '8px 16px 0',
+            padding: '8px 12px',
+            background: 'var(--bg-sidebar)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            fontSize: '0.82rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}>
+            <span style={{ flex: 1 }}>
+              项目类型已改为「{genre}」，但世界观栏目还是「{savedGenre}」的默认配置。
+            </span>
+            <button
+              className="btn-small"
+              style={{ fontSize: '0.8rem' }}
+              onClick={() => { setShowResetConfirm(true) }}
+            >
+              重置为 {genre} 默认
+            </button>
+            <button
+              className="btn-text"
+              style={{ fontSize: '0.8rem' }}
+              onClick={() => { setGenreMismatchDismissed(true) }}
+            >
+              忽略
+            </button>
+          </div>
+        )}
 
         {showPrompt && editing && (
           <div className="prompt-editor">
