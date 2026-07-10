@@ -1,6 +1,13 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { listProjectFiles, readProjectFile, writeProjectFile, deleteProjectFile, loadProviderConfig } from '../api/tauri'
+import { buildAIContext } from '../services/aiContext'
 import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
+import type { TextareaSelection } from '../services/rewriteUtils'
+import { getTextareaSelection, applyTextareaRewrite } from '../services/rewriteUtils'
+import { type RewriteMode } from '../services/rewriteService'
+import RewriteButtons from './RewriteButtons'
+import RewritePreview from './RewritePreview'
+import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
 import ConfirmDialog from './ConfirmDialog'
 
 interface Props {
@@ -145,6 +152,14 @@ export default function OutlinePanel({ projectId }: Props) {
   const [editingPrompt, setEditingPrompt] = useState('')
   const [savingPrompt, setSavingPrompt] = useState(false)
   const [showExample, setShowExample] = useState(false)
+  const [rewriteState, setRewriteState] = useState<(TextareaSelection & { mode: RewriteMode }) | null>(null)
+  const [hasSelection, setHasSelection] = useState(false)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const rewriteTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const checkSelection = useCallback(() => {
+    const ta = rewriteTextareaRef.current
+    if (ta) setHasSelection(ta.selectionStart !== ta.selectionEnd)
+  }, [])
 
   // ─── Data loading ──────────────────────────────────
 
@@ -306,12 +321,7 @@ export default function OutlinePanel({ projectId }: Props) {
       if (!provider) throw new Error('未配置 AI Provider')
       if (!provider.models.analysis) throw new Error('未配置分析模型，请在 AI 配置中设置')
 
-      let context = ''
-      try {
-        const metaRaw = await readProjectFile(projectId, '', 'project.json')
-        const meta = JSON.parse(metaRaw) as { name?: string; genre?: string; description?: string }
-        context = `小说名称：${meta.name ?? ''}\n类型：${meta.genre ?? ''}\n简介：${meta.description ?? ''}`
-      } catch { /* ignore */ }
+      let context = await buildAIContext(projectId)
 
       const systemPrompt = editingPrompt.trim() || getActiveDefaultPrompt()
 
@@ -349,6 +359,27 @@ export default function OutlinePanel({ projectId }: Props) {
   // Volume chapters grouped
   const chaptersByVolume = (volLabel: string) =>
     chapters.filter((c) => c.volumeLabel === volLabel)
+
+  // ─── Rewrite handlers ──────────────────────────
+
+  const handleRewriteMode = (mode: RewriteMode) => {
+    const sel = getTextareaSelection(rewriteTextareaRef.current, content)
+    if (!sel) return
+    setRewriteState({ ...sel, mode })
+  }
+
+  const handleRewriteAccept = (newText: string) => {
+    if (!rewriteState) return
+    setContent((prev) => applyTextareaRewrite(prev, rewriteState.start, rewriteState.end, newText))
+    setDirty(true)
+    setRewriteState(null)
+  }
+
+  const menuItems: ContextMenuAction[] = contextMenu ? [
+    { label: '✏️ AI 改写', onClick: () => handleRewriteMode('rewrite') },
+    { label: '📝 AI 扩写', onClick: () => handleRewriteMode('expand') },
+    { label: '✨ AI 润色', onClick: () => handleRewriteMode('polish') },
+  ] : []
 
   return (
     <div className="panel-layout">
@@ -446,6 +477,13 @@ export default function OutlinePanel({ projectId }: Props) {
                     >
                       {generatingAi ? '⏳ 生成中…' : '✨ AI 辅助'}
                     </button>
+                    <RewriteButtons
+                      enabled={hasSelection}
+                      loading={rewriteState !== null}
+                      onRewrite={() => handleRewriteMode('rewrite')}
+                      onExpand={() => handleRewriteMode('expand')}
+                      onPolish={() => handleRewriteMode('polish')}
+                    />
                     <button
                       className="btn-text"
                       onClick={() => { setShowExample(!showExample) }}
@@ -529,9 +567,19 @@ export default function OutlinePanel({ projectId }: Props) {
 
             {editing ? (
               <textarea
+                ref={rewriteTextareaRef}
                 className="panel-textarea"
                 value={content}
                 onChange={(e) => { setContent(e.target.value); setDirty(true) }}
+                onMouseUp={checkSelection}
+                onKeyUp={checkSelection}
+                onContextMenu={(e) => {
+                  const ta = e.currentTarget as HTMLTextAreaElement
+                  if (ta.selectionStart !== ta.selectionEnd) {
+                    e.preventDefault()
+                    setContextMenu({ x: e.clientX, y: e.clientY })
+                  }
+                }}
                 placeholder={
                   activeType === 'outline' ? '撰写全书总纲…' :
                   activeType === 'volume' ? '撰写本卷大纲…' :
@@ -546,6 +594,26 @@ export default function OutlinePanel({ projectId }: Props) {
           <div className="panel-placeholder">选择或创建大纲</div>
         )}
       </div>
+
+      {rewriteState && (
+        <RewritePreview
+          selectedText={rewriteState.selectedText}
+          beforeText={rewriteState.beforeText}
+          afterText={rewriteState.afterText}
+          defaultMode={rewriteState.mode}
+          onAccept={handleRewriteAccept}
+          onReject={() => setRewriteState(null)}
+        />
+      )}
+
+      {contextMenu && (
+        <SelectionContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={menuItems}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   )
 }

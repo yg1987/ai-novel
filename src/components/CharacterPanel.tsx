@@ -1,6 +1,13 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { listProjectFiles, readProjectFile, writeProjectFile, deleteProjectFile, loadProviderConfig } from '../api/tauri'
 import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
+import { buildAIContext } from '../services/aiContext'
+import type { TextareaSelection } from '../services/rewriteUtils'
+import { getTextareaSelection, applyTextareaRewrite } from '../services/rewriteUtils'
+import { type RewriteMode } from '../services/rewriteService'
+import RewriteButtons from './RewriteButtons'
+import RewritePreview from './RewritePreview'
+import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
 
 interface Props {
   projectId: string
@@ -95,6 +102,14 @@ export default function CharacterPanel({ projectId }: Props) {
   const [showPrompt, setShowPrompt] = useState(false)
   const [editingPrompt, setEditingPrompt] = useState('')
   const [savingPrompt, setSavingPrompt] = useState(false)
+  const [rewriteState, setRewriteState] = useState<(TextareaSelection & { mode: RewriteMode }) | null>(null)
+  const [hasSelection, setHasSelection] = useState(false)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const rewriteTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const checkSelection = useCallback(() => {
+    const ta = rewriteTextareaRef.current
+    if (ta) setHasSelection(ta.selectionStart !== ta.selectionEnd)
+  }, [])
 
   const promptKey = 'character_create'
 
@@ -177,13 +192,8 @@ export default function CharacterPanel({ projectId }: Props) {
       if (!provider) throw new Error('未配置 AI Provider')
       if (!provider.models.analysis) throw new Error('未配置分析模型，请在 AI 配置中设置')
 
-      // Read project info
-      let projectInfo = ''
-      try {
-        const metaRaw = await readProjectFile(projectId, '', 'project.json')
-        const meta = JSON.parse(metaRaw) as { name?: string; genre?: string; description?: string }
-        projectInfo = `小说名称：${meta.name ?? ''}\n类型：${meta.genre ?? ''}\n简介：${meta.description ?? ''}`
-      } catch { /* ignore */ }
+      // Read project info + worldview context
+      let projectInfo = await buildAIContext(projectId)
 
       const defaultPromptObj = buildAIPrompt(newName, projectInfo)
       const system = editingPrompt.trim() || defaultPromptObj.system
@@ -234,6 +244,26 @@ export default function CharacterPanel({ projectId }: Props) {
   }
 
   const isNameDuplicate = newName.trim().length > 0 && files.includes(newName.trim())
+
+  // ─── Rewrite handlers ──────────────────────────
+
+  const handleRewriteMode = (mode: RewriteMode) => {
+    const sel = getTextareaSelection(rewriteTextareaRef.current, content)
+    if (!sel) return
+    setRewriteState({ ...sel, mode })
+  }
+
+  const handleRewriteAccept = (newText: string) => {
+    if (!rewriteState) return
+    setContent((prev) => applyTextareaRewrite(prev, rewriteState.start, rewriteState.end, newText))
+    setRewriteState(null)
+  }
+
+  const menuItems: ContextMenuAction[] = contextMenu ? [
+    { label: '✏️ AI 改写', onClick: () => handleRewriteMode('rewrite') },
+    { label: '📝 AI 扩写', onClick: () => handleRewriteMode('expand') },
+    { label: '✨ AI 润色', onClick: () => handleRewriteMode('polish') },
+  ] : []
 
   return (
     <div className="panel-layout">
@@ -305,16 +335,18 @@ export default function CharacterPanel({ projectId }: Props) {
                     >
                       {generating ? '⏳ 生成中…' : '✨ AI 辅助'}
                     </button>
+                    <RewriteButtons
+                      enabled={hasSelection}
+                      loading={rewriteState !== null}
+                      onRewrite={() => handleRewriteMode('rewrite')}
+                      onExpand={() => handleRewriteMode('expand')}
+                      onPolish={() => handleRewriteMode('polish')}
+                    />
                     <button
                       className="btn-text"
                       onClick={async () => {
                         if (!showPrompt && !editingPrompt.trim()) {
-                          let info = ''
-                          try {
-                            const metaRaw = await readProjectFile(projectId, '', 'project.json')
-                            const meta = JSON.parse(metaRaw) as { name?: string; genre?: string; description?: string }
-                            info = `小说名称：${meta.name ?? ''}\n类型：${meta.genre ?? ''}\n简介：${meta.description ?? ''}`
-                          } catch { /* ignore */ }
+                          let info = await buildAIContext(projectId)
                           const def = buildAIPrompt(newName, info)
                           setEditingPrompt(def.system + '\n\n---\n\n' + def.user)
                         }
@@ -391,10 +423,20 @@ export default function CharacterPanel({ projectId }: Props) {
                     </div>
                   )}
                   <textarea
+                    ref={rewriteTextareaRef}
                     className="sub-field-textarea"
                     style={{ minHeight: 350 }}
                     value={content}
                     onChange={(e) => { setContent(e.target.value) }}
+                    onMouseUp={checkSelection}
+                    onKeyUp={checkSelection}
+                    onContextMenu={(e) => {
+                      const ta = e.currentTarget as HTMLTextAreaElement
+                      if (ta.selectionStart !== ta.selectionEnd) {
+                        e.preventDefault()
+                        setContextMenu({ x: e.clientX, y: e.clientY })
+                      }
+                    }}
                     placeholder={`角色：${activeFile}\n身份/职业：\n外貌特征：\n性格特点：\n背景经历：\n动机目标：\n说话风格：\n标签：[标签1, 标签2, ...]\n\n💡 每行填一项就行，不确定的可以空着，或者点 ✨ AI 辅助 一键生成`}
                   />
                 </div>
@@ -412,6 +454,26 @@ export default function CharacterPanel({ projectId }: Props) {
           </div>
         )}
       </div>
+
+      {rewriteState && (
+        <RewritePreview
+          selectedText={rewriteState.selectedText}
+          beforeText={rewriteState.beforeText}
+          afterText={rewriteState.afterText}
+          defaultMode={rewriteState.mode}
+          onAccept={handleRewriteAccept}
+          onReject={() => setRewriteState(null)}
+        />
+      )}
+
+      {contextMenu && (
+        <SelectionContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={menuItems}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   )
 }
