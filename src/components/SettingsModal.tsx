@@ -64,7 +64,7 @@ export default function SettingsModal({ visible, onClose }: Props) {
   if (!visible) return null
 
   return (
-    <div className="dialog-overlay" onClick={handleCancel}>
+    <div className="dialog-overlay">
       <div className="dialog" onClick={(e) => { e.stopPropagation() }}>
         <div className="dialog-header">
           <h2>🛠 系统设置</h2>

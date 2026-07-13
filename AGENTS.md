@@ -97,11 +97,13 @@
 .panel-layout {
   display: flex;
   flex: 1;
+  overflow: hidden;
 }
 
 .chapter-manager {
   display: flex;
   flex: 1;
+  overflow: hidden;
 }
 
 /* 不需要左右分栏的 panel 同理 */

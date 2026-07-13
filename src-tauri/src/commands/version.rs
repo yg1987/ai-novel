@@ -155,10 +155,6 @@ pub fn delete_chapter_version(
     let idx_path = index_path(&dir, &volume, &chapter_id);
     let mut index = load_index(&idx_path);
 
-    if index.versions.len() <= 1 {
-        return Err("Cannot delete the last version".to_string());
-    }
-
     let file_path = version_file_path(&dir, &volume, &chapter_id, version);
     if file_path.exists() {
         fs::remove_file(&file_path).map_err(|e| format!("Delete error: {}", e))?;

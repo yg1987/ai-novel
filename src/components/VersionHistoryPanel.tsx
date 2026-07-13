@@ -132,7 +132,6 @@ export default function VersionHistoryPanel({ projectId, volume, chapterId, onRe
                   className="btn-text"
                   style={{ color: 'var(--danger)' }}
                   onClick={(e) => { e.stopPropagation(); handleDelete(v.version) }}
-                  disabled={versions.length <= 1}
                 >
                   删除
                 </button>

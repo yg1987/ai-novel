@@ -1,15 +1,13 @@
 // src/services/savePipeline.ts
 //
-// Encapsulates all post-save side effects into a single pipeline.
-// Editor.tsx calls runSavePipeline() — it no longer imports 8 individual services.
+// Split into two independent operations:
+//   - runSavePipeline  — pure save (persist + stats + vector index), no review
+//   - runReview        — review only (banned words + light check + deep review)
 //
-// Pipeline order (sequential, each step awaits the previous):
+// Save pipeline order (sequential):
 //   1. saveChapterContent    — persist HTML to filesystem
-//   2. checkBannedWords      — synchronous AI-味 detection
-//   3. logChapterSaved       — stats event log
-//   4. chunk + embed + index — vector store upsert
-//   5. runAndSaveLightCheck  — deterministic rule checks
-//   6. runDeepReview         — AI consistency check (throttled)
+//   2. logChapterSaved       — stats event log
+//   3. chunk + embed + index — vector store upsert
 
 import { saveChapterContent, vectorUpsertChunks } from '../api/tauri'
 import { checkBannedWords, type CheckResult } from './bannedWords'
@@ -28,12 +26,9 @@ export interface SavePipelineInput {
   html: string
 }
 
-export interface SavePipelineResult {
-  /** Banned-words check result (always present; synchronous) */
+export interface ReviewResult {
   bannedCheck: CheckResult
-  /** Light-check outcome — null when chapter is too short (< 50 chars) */
   lightCheckResult: { passed: boolean; issues: number } | null
-  /** Whether a deep AI review was triggered this save */
   deepReviewTriggered: boolean
 }
 
@@ -133,19 +128,9 @@ async function maybeRunDeepReview(
 // ─── Public API ──────────────────────────────────
 
 /**
- * Execute the full save pipeline.
- *
- * Steps run **sequentially** (each awaits the previous), which is a
- * deliberate simplification over the original fire-and-forget `.then()`
- * chain.  No functional outcome changes — all side effects are identical;
- * only the internal ordering of stats-logging vs. ingest vs. vector-index
- * is now deterministic instead of race-condition-dependent.
- *
- * Chapter **ingest** (AI analysis + memory sync) is intentionally NOT
- * part of this pipeline — it has its own UI state (`ingesting` spinner)
- * and is triggered separately by the caller.
+ * Execute the save pipeline — persist only, no review.
  */
-export async function runSavePipeline(input: SavePipelineInput): Promise<SavePipelineResult> {
+export async function runSavePipeline(input: SavePipelineInput): Promise<void> {
   const { projectId, volume, chapterId, chapterNumber, html } = input
 
   // 1. Persist chapter content to disk
@@ -153,24 +138,33 @@ export async function runSavePipeline(input: SavePipelineInput): Promise<SavePip
 
   const plainText = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
 
-  // 2. Banned-words check (synchronous)
-  const bannedCheck = checkBannedWords(plainText)
-
-  // 3. Log stat event (fire-and-forget in original code; now awaited for determinism)
+  // 2. Log stat event
   logChapterSaved(projectId, chapterNumber, html)
 
-  // 4. Vector indexing (only when content is substantial)
+  // 3. Vector indexing (only when content is substantial)
   if (plainText.trim().length > 100) {
     await indexChapterContent(projectId, chapterId, plainText)
   }
+}
 
-  // 5. Light check
-  let lightCheckResult: SavePipelineResult['lightCheckResult'] = null
+/**
+ * Run review checks only — banned words, light check, deep review.
+ * Does NOT save content. Call runSavePipeline separately for that.
+ */
+export async function runReview(input: SavePipelineInput): Promise<ReviewResult> {
+  const { projectId, chapterId, html } = input
+  const plainText = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+
+  // Banned-words check (synchronous)
+  const bannedCheck = checkBannedWords(plainText)
+
+  // Light check
+  let lightCheckResult: ReviewResult['lightCheckResult'] = null
   if (plainText.trim().length > 50) {
     lightCheckResult = await performLightCheck(projectId, chapterId, html)
   }
 
-  // 6. Auto deep review (throttled)
+  // Deep review (throttled)
   const deepReviewTriggered = await maybeRunDeepReview(projectId, chapterId, html, plainText)
 
   return { bannedCheck, lightCheckResult, deepReviewTriggered }

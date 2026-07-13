@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChapterMeta } from '../types/chapter'
 import {
   listChapters,
-  getChapterContent,
   saveChapterContent,
   deleteProjectFile,
   readProjectFile,
@@ -24,7 +23,7 @@ interface Props {
 export default function ChapterManager({ projectId, projectName, onNavigateToReview }: Props) {
   const [chapters, setChapters] = useState<ChapterMeta[]>([])
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null)
-  const [chapterContent, setChapterContent] = useState('')
+  const [contentVersion, setContentVersion] = useState(0)
   const [loading, setLoading] = useState(true)
   const [showVersionHistory, setShowVersionHistory] = useState(false)
   const [showMaterial, setShowMaterial] = useState(false)
@@ -103,17 +102,6 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
       .catch(() => { setLoading(false) })
   }, [refresh, loadMeta])
 
-  // Load chapter content
-  useEffect(() => {
-    if (!activeChapterId || !activeVolume) {
-      setChapterContent('')
-      return
-    }
-    getChapterContent(projectId, activeVolume, activeChapterId)
-      .then((content) => { setChapterContent(content) })
-      .catch((e: unknown) => { console.error('Failed to load content:', e) })
-  }, [projectId, activeVolume, activeChapterId])
-
   // Focus inputs
   useEffect(() => {
     if (editingVolumeName) setTimeout(() => volumeNameInputRef.current?.focus(), 50)
@@ -156,7 +144,6 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
       const newMeta: ChapterMeta = { id, title: `第${String(nextNum)}章`, order: nextNum, volume }
       setChapters((prev) => [...prev, newMeta])
       setActiveChapterId(id)
-      setChapterContent('')
       setShowVersionHistory(false)
     }).catch((e: unknown) => {
       console.error('Failed to create chapter:', e)
@@ -182,7 +169,6 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
         setChapters((prev) => prev.filter((c) => c.id !== id))
         if (id === activeChapterId) {
           setActiveChapterId(null)
-          setChapterContent('')
           setShowVersionHistory(false)
         }
       } catch (e) {
@@ -208,7 +194,6 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
       // Clear active chapter if needed
       if (activeChapter?.volume === volume) {
         setActiveChapterId(null)
-        setChapterContent('')
         setShowVersionHistory(false)
       }
     }
@@ -388,11 +373,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
             chapterId={activeChapterId}
             onRestore={() => {
               setShowVersionHistory(false)
-              if (activeChapterId && activeVolume) {
-                getChapterContent(projectId, activeVolume, activeChapterId)
-                  .then((content) => setChapterContent(content))
-                  .catch(console.error)
-              }
+              setContentVersion((v) => v + 1)
             }}
           />
         ) : activeChapterId ? (
@@ -425,11 +406,10 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <Editor
                   ref={editorRef}
-                  key={`${activeVolume}-${activeChapterId}`}
+                  key={`${activeVolume}-${activeChapterId}-${contentVersion}`}
                   projectId={projectId}
                   volume={activeVolume}
                   chapterId={activeChapterId}
-                  initialContent={chapterContent}
                   chapterNumber={Number(activeChapterId.replace('ch', ''))}
                   onNavigateToReview={onNavigateToReview}
                   onContentChange={(html) => {
@@ -443,6 +423,8 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
               )}
             </div>
           </div>
+        ) : activeChapterId ? (
+          <div className="editor-loading">加载章节…</div>
         ) : (
           <div className="editor-placeholder">
             <p>选择或创建一个章节开始写作</p>

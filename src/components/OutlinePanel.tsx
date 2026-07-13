@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { listProjectFiles, readProjectFile, writeProjectFile, deleteProjectFile, loadProviderConfig } from '../api/tauri'
 import { buildAIContext } from '../services/aiContext'
 import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
-import { loadChapterExpectedWords, saveChapterExpectedWords } from '../services/settings'
+import { loadChapterExpectedWords, saveChapterExpectedWords, loadSettings } from '../services/settings'
 import type { TextareaSelection } from '../services/rewriteUtils'
 import { getTextareaSelection, applyTextareaRewrite } from '../services/rewriteUtils'
 import { type RewriteMode } from '../services/rewriteService'
@@ -186,7 +186,16 @@ export default function OutlinePanel({ projectId }: Props) {
       return
     }
     loadChapterExpectedWords(projectId, activeChapterId)
-      .then((v) => { setExpectedWords(v) })
+      .then((v) => {
+        if (v != null) {
+          setExpectedWords(v)
+        } else {
+          // No outline value set — use system default
+          loadSettings()
+            .then((s) => { setExpectedWords(s.default_word_count) })
+            .catch(() => { setExpectedWords(4000) })
+        }
+      })
       .catch(() => { setExpectedWords(null) })
   }, [projectId, activeChapterId])
 

@@ -722,6 +722,7 @@ body {
 .chapter-manager {
   display: flex;
   flex: 1;
+  overflow: hidden;
 }
 
 .chapter-loading,
@@ -1226,6 +1227,36 @@ body {
   color: #fff;
 }
 
+.save-btn.saving {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.save-feedback {
+  font-size: 0.8rem;
+  color: #27ae60;
+  white-space: nowrap;
+  margin-left: 4px;
+}
+
+.review-btn {
+  width: auto;
+  padding: 0 10px;
+  font-size: 0.8rem;
+}
+
+.review-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.generation-complete-badge {
+  font-size: 0.78rem;
+  color: #27ae60;
+  white-space: nowrap;
+  padding: 0 4px;
+}
+
 .generate-btn {
   width: auto;
   padding: 0 12px;
@@ -1254,9 +1285,14 @@ body {
   background: #c0392b;
 }
 
-.editor-content {
+.editor-content-wrapper {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+}
+
+.editor-content {
+  min-height: 0;
   padding: 32px 48px;
   outline: none;
   font-size: 1.05rem;
@@ -1349,6 +1385,7 @@ body {
 .panel-layout {
   display: flex;
   flex: 1;
+  overflow: hidden;
 }
 
 .panel-sidebar {
