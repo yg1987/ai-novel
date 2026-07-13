@@ -86,7 +86,7 @@ export default function ReviewRulesEditor({ projectId, onClose, onSaved }: Props
     setRules((prev) => {
       if (!prev) return prev
       const words = [...prev.bannedWords]
-      words[index] = { ...words[index], [field]: value }
+      words[index] = { ...words[index], [field]: value } as BannedWordRule
       return { ...prev, bannedWords: words }
     })
   }
@@ -112,7 +112,7 @@ export default function ReviewRulesEditor({ projectId, onClose, onSaved }: Props
     setRules((prev) => {
       if (!prev) return prev
       const dims = [...prev.reviewDimensions]
-      dims[index] = { ...dims[index], [field]: value }
+      dims[index] = { ...dims[index], [field]: value } as ReviewDimensionConfig
       return { ...prev, reviewDimensions: dims }
     })
   }
@@ -202,7 +202,6 @@ export default function ReviewRulesEditor({ projectId, onClose, onSaved }: Props
                 pointerEvents: 'none',
                 fontSize: '0.72rem',
                 fontWeight: 600,
-                color: SEVERITY_COLORS[rule.severity] ?? '#999',
                 background: SEVERITY_COLORS[rule.severity] ?? '#999',
                 color: '#fff',
                 borderRadius: 10,

@@ -129,7 +129,6 @@ export default function WorldviewPanel({ projectId }: Props) {
     setHasSelection(ta.selectionStart !== ta.selectionEnd)
   }, [])
 
-  const editorInnerRef = useRef<HTMLDivElement>(null)
   const subFieldEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToNewSubField = useCallback(() => {

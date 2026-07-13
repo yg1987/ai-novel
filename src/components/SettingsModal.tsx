@@ -26,7 +26,7 @@ export default function SettingsModal({ visible, onClose }: Props) {
       .then((saved) => {
         const resolved: Record<string, number | string | boolean> = {}
         for (const def of SETTINGS_REGISTRY) {
-          const savedVal = (saved as Record<string, unknown>)[def.key]
+          const savedVal = (saved as unknown as Record<string, unknown>)[def.key]
           resolved[def.key] = savedVal != null ? (savedVal as string | number | boolean) : def.default
         }
         setValues(resolved)

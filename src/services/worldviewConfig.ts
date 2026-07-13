@@ -553,7 +553,7 @@ const GENERIC_EXAMPLES: Record<string, Record<string, string>> = {
  * Get the built-in default sections for a given genre.
  */
 export function getDefaultSections(genre: string): SectionDef[] {
-  return GENRE_SECTIONS[genre] ?? GENRE_SECTIONS['玄幻']
+  return (GENRE_SECTIONS[genre] ?? GENRE_SECTIONS['玄幻'])!
 }
 
 /**
@@ -569,7 +569,7 @@ export function getExample(genre: string, sectionKey: string, subKey: string): s
     }
   }
   // Fallback: try generic
-  return GENERIC_EXAMPLES._section._default
+  return GENERIC_EXAMPLES._section?._default
 }
 
 /**

@@ -322,7 +322,7 @@ export default function CharacterPanel({ projectId }: Props) {
         // Apply reorder using latest order from ref
         const newOrder = [...orderRef.current]
         const [moved] = newOrder.splice(dragItemRef.current.index, 1)
-        newOrder.splice(targetIndex, 0, moved)
+        if (moved) newOrder.splice(targetIndex, 0, moved)
         orderRef.current = newOrder
         setOrder(newOrder)
         setFiles(newOrder)
