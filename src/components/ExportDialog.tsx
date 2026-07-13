@@ -69,7 +69,7 @@ export default function ExportDialog({ projectId, projectName, onClose }: Props)
   }, [projectId, publishPlatform])
 
   return (
-    <div className="rewrite-overlay" onClick={onClose}>
+    <div className="rewrite-overlay">
       <div className="export-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="export-header">
           <h3>导出项目</h3>

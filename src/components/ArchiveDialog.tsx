@@ -41,7 +41,7 @@ export default function ArchiveDialog({ projectId, projectName, onClose, onImpor
   }
 
   return (
-    <div className="rewrite-overlay" onClick={onClose}>
+    <div className="rewrite-overlay">
       <div className="export-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="export-header">
           <h3>项目存档</h3>

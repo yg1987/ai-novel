@@ -30,7 +30,7 @@ export async function exportAsPlainText(
     onProgress?.({ current: i + 1, total: chapters.length, chapterId: ch.id })
     const html = await getChapterContent(projectId, ch.volume, ch.id)
     const text = htmlToPlainText(html)
-    lines.push(`第${ch.order}章 ${ch.title}`, '', text, '')
+    lines.push(ch.title, '', text, '')
   }
 
   const content = lines.join('\n')
@@ -73,7 +73,7 @@ export async function exportAsMarkdown(
     const ch = chapters[i]!
     onProgress?.({ current: i + 1, total: chapters.length, chapterId: ch.id })
     const html = await getChapterContent(projectId, ch.volume, ch.id)
-    const md = htmlToMarkdown(html, `第${ch.order}章 ${ch.title}`)
+    const md = htmlToMarkdown(html, ch.title)
     lines.push(md, '', '---', '')
   }
 
