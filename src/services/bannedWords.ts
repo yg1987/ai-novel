@@ -1,11 +1,19 @@
 import type { BannedWordMatch } from '../types/novel'
+import type { BannedWordRule } from './reviewRules'
+
+// ─── Compiled pattern type (internal) ─────────────
+
+type CompiledPattern = { pattern: RegExp; severity: 1 | 2 | 3 | 4 | 5; label: string; suggestion?: string }
+
+// ─── Default patterns (kept for backward compat) ──
 
 /**
- * Banned word patterns for Chinese web novel AI flavor detection.
+ * Built-in banned word patterns for Chinese web novel AI flavor detection.
  * Adapted from oh-story-claudecode's banned-words.md.
  * Severity: 5 = highest toxicity, 1 = mild.
+ * These serve as fallback when no custom rules are provided.
  */
-const PATTERNS: Array<{ pattern: RegExp; severity: 1 | 2 | 3 | 4 | 5; label: string; suggestion?: string }> = [
+const DEFAULT_PATTERNS: CompiledPattern[] = [
   // ─── Level 5: Extreme AI flavor ─────────────────
   { pattern: /不是[^，。]*，而是[^，。]*[，。]/g, severity: 5, label: '"不是A而是B"句式', suggestion: '直接陈述，不要用否定+转折结构' },
   { pattern: /仿佛[^，。]*一般/g, severity: 5, label: '"仿佛…一般"句式', suggestion: '用具体动作描写代替' },
@@ -45,6 +53,18 @@ const PATTERNS: Array<{ pattern: RegExp; severity: 1 | 2 | 3 | 4 | 5; label: str
   { pattern: /无法[^，。]+[，。]/g, severity: 1, label: '"无法X"否定式' },
 ]
 
+/**
+ * Compile BannedWordRule[] from review-rules.json into internal RegExp format.
+ */
+function compilePatterns(rules: BannedWordRule[]): CompiledPattern[] {
+  return rules.map((r) => ({
+    pattern: new RegExp(r.pattern, 'g'),
+    severity: r.severity,
+    label: r.label,
+    suggestion: r.suggestion,
+  }))
+}
+
 export interface CheckResult {
   matches: BannedWordMatch[]
   score: number          // 0-100, higher = more AI flavor
@@ -53,15 +73,19 @@ export interface CheckResult {
 
 /**
  * Scan text for banned word patterns.
+ * @param text     Plain-text chapter content
+ * @param customRules Optional custom patterns from review-rules.json.
+ *                   If omitted, built-in defaults are used.
  * Returns matches with severity and overall score.
  */
-export function checkBannedWords(text: string): CheckResult {
+export function checkBannedWords(text: string, customRules?: BannedWordRule[]): CheckResult {
+  const patterns = customRules ? compilePatterns(customRules) : DEFAULT_PATTERNS
   const lines = text.split('\n')
   const matches: BannedWordMatch[] = []
 
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const line = lines[lineIdx]!
-    for (const p of PATTERNS) {
+    for (const p of patterns) {
       const regex = new RegExp(p.pattern.source, 'g')
       let m: RegExpExecArray | null
       while ((m = regex.exec(line)) !== null) {
@@ -91,6 +115,44 @@ export function checkBannedWords(text: string): CheckResult {
 export function getSeverityLabel(severity: number): string {
   const map: Record<number, string> = { 1: '轻微', 2: '轻度', 3: '中度', 4: '重度', 5: '极重' }
   return map[severity] ?? '未知'
+}
+
+// ─── Grouped matches for display ─────────────────
+
+export interface GroupedBannedMatch {
+  pattern: string
+  severity: 1 | 2 | 3 | 4 | 5
+  count: number
+  suggestion?: string
+  /** First few context snippets showing where the pattern was found */
+  samples: string[]
+}
+
+/**
+ * Group raw banned-word matches by pattern label.
+ * Same pattern appearing multiple times is collapsed into one entry
+ * with a count and sample locations so the user can locate the issues.
+ */
+export function groupBannedMatches(matches: BannedWordMatch[]): GroupedBannedMatch[] {
+  const map = new Map<string, { severity: 1 | 2 | 3 | 4 | 5; suggestion?: string; contexts: string[] }>()
+  for (const m of matches) {
+    const entry = map.get(m.pattern)
+    if (entry) {
+      entry.contexts.push(m.context)
+    } else {
+      map.set(m.pattern, { severity: m.severity, suggestion: m.suggestion, contexts: [m.context] })
+    }
+  }
+  // Sort by severity desc, then by count desc
+  return [...map.entries()]
+    .map(([pattern, v]) => ({
+      pattern,
+      severity: v.severity,
+      count: v.contexts.length,
+      suggestion: v.suggestion,
+      samples: v.contexts.slice(0, 5),
+    }))
+    .sort((a, b) => b.severity - a.severity || b.count - a.count)
 }
 
 function extractContext(line: string, index: number, length: number): string {

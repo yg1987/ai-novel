@@ -1,8 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { ReviewReportMeta, LightCheckResult, DeepCheckResult, ConsistencyCheckResult } from '../types/review'
-import { listReviewReports, getReviewReport, runAndSaveLightCheck, runDeepReview } from '../services/reviewService'
+import type { ConsistencyCheckResult, ReviewIssue, ConsistencyIssue } from '../types/review'
+import { runAndSaveLightCheck, runDeepReview, loadChapterReviews } from '../services/reviewService'
+import type { ChapterReviewData } from '../services/reviewService'
 import { runConsistencyChecks } from '../services/consistencyCheck'
-import ReviewReportCard from './ReviewReportCard'
+import { loadReviewRules } from '../services/reviewRules'
+import type { ReviewRules } from '../services/reviewRules'
+import type { GroupedBannedMatch } from '../services/bannedWords'
+import { listChapters, getChapterContent } from '../api/tauri'
+import ReviewRulesEditor from './ReviewRulesEditor'
+
+// ─── Props ───────────────────────────────────────
 
 interface Props {
   projectId: string
@@ -10,230 +17,444 @@ interface Props {
   chapterHtml?: string
 }
 
+// ─── Severity helpers ────────────────────────────
+
+type AnyIssue = ReviewIssue | ConsistencyIssue
+
+function isConsistencyIssue(i: AnyIssue): i is ConsistencyIssue {
+  return 'type' in i && (i.type === 'dormant_foreshadow' || i.type === 'absent_character' || i.type === 'timeline_order' || i.type === 'overdue_foreshadow')
+}
+
+function issueSeverity(i: AnyIssue): string {
+  if (isConsistencyIssue(i)) return i.severity
+  return (i as ReviewIssue).severity
+}
+
+function issueDesc(i: AnyIssue): string {
+  if (isConsistencyIssue(i)) return i.description
+  return (i as ReviewIssue).desc
+}
+
+function issueSuggestion(i: AnyIssue): string | undefined {
+  if (isConsistencyIssue(i)) return i.suggestion
+  return (i as ReviewIssue).suggestion
+}
+
+function severityColor(s: string): string {
+  switch (s) {
+    case 'error': case 'S1': case 'S2': return '#e74c3c'
+    case 'warning': case 'S3': return '#e67e22'
+    default: return '#888'
+  }
+}
+
+function severityLabel(s: string): string {
+  const map: Record<string, string> = { error: '错误', warning: '警告', hint: '提示', S1: '硬伤', S2: '破坏叙事', S3: '细节差异', S4: '优化建议' }
+  return map[s] ?? s
+}
+
+// ─── Component ───────────────────────────────────
+
+const inputBase: React.CSSProperties = {
+  fontFamily: 'inherit',
+  fontSize: '0.85rem',
+  color: 'var(--text)',
+}
+
 export default function ReviewPanel({ projectId, currentChapterId, chapterHtml = '' }: Props) {
-  const [reports, setReports] = useState<ReviewReportMeta[]>([])
-  const [selectedReport, setSelectedReport] = useState<{ type: 'light' | 'full'; filename: string } | null>(null)
-  const [reportContent, setReportContent] = useState<string>('')
+  const [chapters, setChapters] = useState<ChapterReviewData[]>([])
+  const [expandedChapter, setExpandedChapter] = useState<string | null>(null)
   const [runningReview, setRunningReview] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [consistencyResult, setConsistencyResult] = useState<ConsistencyCheckResult | null>(null)
   const [runningConsistency, setRunningConsistency] = useState(false)
-  const noChapter = !currentChapterId
+  const [consistencyResult, setConsistencyResult] = useState<ConsistencyCheckResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [showRulesEditor, setShowRulesEditor] = useState(false)
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
+  const [rules, setRules] = useState<ReviewRules | null>(null)
+  const noExpandedChapter = !expandedChapter
 
   const refresh = useCallback(async () => {
-    const list = await listReviewReports(projectId)
-    setReports(list)
+    const data = await loadChapterReviews(projectId)
+    setChapters(data)
   }, [projectId])
 
   useEffect(() => { refresh().catch(console.error) }, [refresh])
 
-  const handleSelectReport = async (type: 'light' | 'full', filename: string) => {
-    setSelectedReport({ type, filename })
-    try {
-      const content = await getReviewReport(projectId, type, filename)
-      setReportContent(content)
-    } catch (e) {
-      setError(String(e))
+  // Auto-expand chapter when navigating from writing tab
+  useEffect(() => {
+    if (currentChapterId) setExpandedChapter(currentChapterId)
+  }, [currentChapterId])
+
+  useEffect(() => { loadReviewRules(projectId).then(setRules).catch(console.error) }, [projectId])
+
+  const dimLabelMap: Record<string, string> = {}
+  if (rules) {
+    for (const d of rules.reviewDimensions) {
+      dimLabelMap[d.id] = d.label
     }
   }
 
+  // ─── Toggle helpers ────────────────────────────
+
+  const toggleChapter = (chapterId: string) => {
+    setExpandedChapter((prev) => prev === chapterId ? null : chapterId)
+    setConsistencyResult(null)
+  }
+
+  const toggleSection = (section: string) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(section)) next.delete(section)
+      else next.add(section)
+      return next
+    })
+  }
+
+  const isCollapsed = (section: string) => collapsedSections.has(section)
+
+  // ─── Chapter HTML resolver ──────────────────────
+
+  /** Load chapter HTML from disk (writing tab may have provided it, otherwise load). */
+  const resolveChapterHtml = useCallback(async (): Promise<string | null> => {
+    if (!expandedChapter) return null
+    // If the expanded chapter is the same as writing tab's current chapter, use prop
+    if (expandedChapter === currentChapterId && chapterHtml) return chapterHtml
+    try {
+      const allChapters = await listChapters(projectId)
+      const meta = allChapters.find((c) => c.id === expandedChapter)
+      if (!meta) return null
+      return await getChapterContent(projectId, meta.volume, expandedChapter)
+    } catch { return null }
+  }, [projectId, expandedChapter, currentChapterId, chapterHtml])
+
+  // ─── Actions ────────────────────────────────────
+
   const handleRunLightCheck = async () => {
-    if (!currentChapterId || !chapterHtml) return
+    const html = await resolveChapterHtml()
+    if (!html) return
     setRunningReview(true)
     setError(null)
     try {
-      await runAndSaveLightCheck(projectId, currentChapterId, chapterHtml)
+      await runAndSaveLightCheck(projectId, expandedChapter!, html)
       await refresh()
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setRunningReview(false)
-    }
+    } catch (e) { setError(String(e)) }
+    finally { setRunningReview(false) }
   }
 
   const handleRunDeepReview = async () => {
-    if (!currentChapterId || !chapterHtml) return
+    const html = await resolveChapterHtml()
+    if (!html) return
     setRunningReview(true)
     setError(null)
     try {
-      await runDeepReview(projectId, currentChapterId, chapterHtml)
+      const rules = await loadReviewRules(projectId)
+      await runDeepReview(projectId, expandedChapter!, html, rules.reviewDimensions)
       await refresh()
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setRunningReview(false)
-    }
+    } catch (e) { setError(String(e)) }
+    finally { setRunningReview(false) }
   }
 
   const handleRunConsistency = async () => {
-    if (!currentChapterId || !chapterHtml) return
+    const html = await resolveChapterHtml()
+    if (!html) return
     setRunningConsistency(true)
     setError(null)
     try {
-      const text = chapterHtml.replace(/<[^>]*>/g, '').trim()
+      const text = html.replace(/<[^>]*>/g, '').trim()
       const charFiles = text.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]{2,4}/g) ?? []
-      const chapterNum = parseInt(currentChapterId.replace(/\D/g, ''), 10) || 1
-      const result = await runConsistencyChecks(projectId, chapterNum, charFiles)
+      const chapterNum = parseInt(expandedChapter!.replace(/\D/g, ''), 10) || 1
+      const rules = await loadReviewRules(projectId)
+      const result = await runConsistencyChecks(projectId, chapterNum, charFiles, rules.consistency)
       setConsistencyResult(result)
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setRunningConsistency(false)
-    }
+    } catch (e) { setError(String(e)) }
+    finally { setRunningConsistency(false) }
   }
 
-  let parsedReport: LightCheckResult | DeepCheckResult | null = null
-  if (reportContent) {
-    try { parsedReport = JSON.parse(reportContent) as LightCheckResult | DeepCheckResult } catch { /* ignore */ }
+  // ─── Derived ────────────────────────────────────
+
+  const activeChapter = chapters.find((c) => c.chapterId === expandedChapter)
+  const issueColor = (n: number) => n > 0 ? '#e74c3c' : '#27ae60'
+
+  // ─── Sub-components ─────────────────────────────
+
+  const IssueRow = ({ issue }: { issue: AnyIssue }) => {
+    const s = issueSeverity(issue)
+    return (
+      <div style={{ padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: '0.84rem' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 2 }}>
+          <span style={{
+            ...inputBase, fontSize: '0.72rem', fontWeight: 600, color: '#fff',
+            background: severityColor(s), borderRadius: 3, padding: '1px 6px', flexShrink: 0,
+          }}>
+            {severityLabel(s)}
+          </span>
+          <span style={{ flex: 1, color: 'var(--text)' }}>{issueDesc(issue)}</span>
+        </div>
+        {issueSuggestion(issue) && (
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', paddingLeft: 4 }}>
+            → {issueSuggestion(issue)}
+          </div>
+        )}
+      </div>
+    )
   }
+
+  const SectionHeader = ({ title, extra }: { title: string; extra?: React.ReactNode }) => (
+    <div onClick={() => toggleSection(title)} style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '10px 14px', background: 'var(--bg-sidebar)', cursor: 'pointer',
+      borderRadius: 'var(--radius-sm)', userSelect: 'none', marginBottom: 8,
+    }}>
+      <span style={{ ...inputBase, fontWeight: 500 }}>
+        {isCollapsed(title) ? '▶' : '▼'} {title}
+      </span>
+      {extra}
+    </div>
+  )
+
+  // ─── RENDER ─────────────────────────────────────
 
   return (
     <div className="review-panel panel-layout">
+
+      {/* ====== SIDEBAR ====== */}
       <div className="panel-sidebar review-sidebar">
-        <div className="review-sidebar-header">
+        <div className="review-sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h3>审查报告</h3>
+          <button className="btn-icon" onClick={() => setShowRulesEditor(true)} title="审查规则配置"
+            style={{ fontSize: '1.1rem', padding: '2px 6px' }}>⚙</button>
         </div>
+
+        {/* Action buttons */}
         <div className="review-actions-panel">
-          {noChapter ? (
-            <p className="review-hint" style={{ fontSize: '0.82rem', padding: '8px 0', color: 'var(--text-muted)' }}>
-              切换到写作 tab 选择一个章节后，保存时会自动运行审查
+          {noExpandedChapter && (
+            <p style={{ fontSize: '0.78rem', padding: '4px 0 8px', color: 'var(--text-muted)' }}>
+              💡 展开左侧章节后可运行检查
             </p>
-          ) : (
-            <>
-              <button
-                className="btn-primary"
-                onClick={handleRunLightCheck}
-                disabled={runningReview}
-                style={{ width: '100%', marginBottom: 6 }}
-              >
-                {runningReview ? '检查中…' : '⚡ 轻量检查'}
-              </button>
-              <button
-                className="btn-primary"
-                onClick={handleRunDeepReview}
-                disabled={runningReview}
-                style={{ width: '100%', marginBottom: 6 }}
-              >
-                {runningReview ? '审查中…' : '🔍 AI 深度审查'}
-              </button>
-              <div className="review-section-separator" />
-              <button
-                className="btn-secondary"
-                onClick={handleRunConsistency}
-                disabled={runningConsistency}
-                style={{ width: '100%' }}
-              >
-                {runningConsistency ? '检查中…' : '🔗 一致性检查（Tier 1）'}
-              </button>
-            </>
           )}
+          <button className="btn-primary" onClick={handleRunLightCheck}
+            disabled={runningReview || noExpandedChapter}
+            title={noExpandedChapter ? '请先展开左侧章节' : undefined}
+            style={{ width: '100%', marginBottom: 6 }}>
+            {runningReview ? '检查中…' : '⚡ 轻量检查'}
+          </button>
+          <button className="btn-primary" onClick={handleRunDeepReview}
+            disabled={runningReview || noExpandedChapter}
+            title={noExpandedChapter ? '请先展开左侧章节' : undefined}
+            style={{ width: '100%', marginBottom: 6 }}>
+            {runningReview ? '审查中…' : '🔍 AI 深度审查'}
+          </button>
+          <div className="review-section-separator" />
+          <button className="btn-secondary" onClick={handleRunConsistency}
+            disabled={runningConsistency || noExpandedChapter}
+            title={noExpandedChapter ? '请先展开左侧章节' : undefined}
+            style={{ width: '100%' }}>
+            {runningConsistency ? '检查中…' : '🔗 一致性检查（Tier 1）'}
+          </button>
         </div>
-        {consistencyResult && consistencyResult.issues.length > 0 && (
-          <div className="consistency-quick-summary">
-            {(['S1', 'S2', 'S3', 'S4'] as const).map((s) =>
-              consistencyResult.summary[s] > 0 ? (
-                <span key={s} className={`severity-badge-sm severity-${s.toLowerCase()}`}>
-                  {s}: {consistencyResult.summary[s]}
-                </span>
-              ) : null
-            )}
-          </div>
-        )}
+
         {error && <div className="error-bar">{error}</div>}
+
+        {/* Chapter accordion */}
         <div className="review-report-list">
-          {reports.length === 0 && <p className="review-empty">暂无审查报告</p>}
-          {reports.map((r) => (
-            <div
-              key={`${r.type}-${r.filename}`}
-              className={`review-report-item${
-                selectedReport?.filename === r.filename ? ' active' : ''
-              }`}
-              onClick={() => handleSelectReport(r.type, r.filename)}
-            >
-              <div className="report-item-header">
-                <span className={`report-type-badge type-${r.type}`}>
-                  {r.type === 'light' ? '轻量' : '深度'}
+          {chapters.length === 0 && <p className="review-empty">暂无审查报告</p>}
+          {chapters.map((ch) => {
+            const isExpanded = expandedChapter === ch.chapterId
+            return (
+              <div key={ch.chapterId}
+                onClick={() => toggleChapter(ch.chapterId)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '9px 12px', cursor: 'pointer', userSelect: 'none',
+                  borderLeft: isExpanded ? '3px solid var(--accent)' : '3px solid transparent',
+                  background: isExpanded ? 'var(--bg-card)' : 'transparent',
+                  borderRadius: 'var(--radius-sm)', marginBottom: 2,
+                }}
+                onMouseEnter={(e) => { if (!isExpanded) (e.currentTarget as HTMLElement).style.background = 'var(--bg-sidebar)' }}
+                onMouseLeave={(e) => { if (!isExpanded) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+              >
+                <span style={{ ...inputBase, fontSize: '0.85rem' }}>
+                  {isExpanded ? '▼' : '▶'} {ch.chapterLabel}
                 </span>
-                <span className="report-chapter">{r.chapterId}</span>
+                <span style={{
+                  ...inputBase, fontSize: '0.72rem', fontWeight: 600, color: '#fff',
+                  background: issueColor(ch.totalIssues), borderRadius: 10, padding: '1px 8px',
+                  lineHeight: '18px',
+                }}>
+                  {ch.totalIssues} 个问题
+                </span>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
-      <div className="panel-editor review-content">
-        {consistencyResult ? (
-          <div className="consistency-section">
-            <h3 className="consistency-section-title">一致性检查结果（Tier 1 确定性规则）</h3>
-            <div className="consistency-summary-bar">
-              <span>共 {consistencyResult.summary.total} 个问题</span>
-              {(['S1', 'S2', 'S3', 'S4'] as const).map((s) =>
-                consistencyResult.summary[s] > 0 ? (
-                  <span key={s} className={`severity-count severity-${s.toLowerCase()}`}>
-                    {s}: {consistencyResult.summary[s]}
-                  </span>
-                ) : null
-              )}
-              <span className="consistency-time">
-                {consistencyResult.checkedAt.slice(11, 19)}
-              </span>
-            </div>
-            <div className="consistency-issues-list">
-              {consistencyResult.issues.map((issue) => (
-                <div key={issue.id} className={`consistency-issue severity-${issue.severity.toLowerCase()}`}>
-                  <span className="severity-badge">{issue.severity}</span>
-                  <span className="issue-type">{issue.type}</span>
-                  <span className="issue-desc">{issue.description}</span>
-                  {issue.suggestion && <span className="issue-suggestion">→ {issue.suggestion}</span>}
-                </div>
-              ))}
-            </div>
+      {/* ====== CONTENT ====== */}
+      <div className="panel-editor review-content" style={{ padding: '12px 16px', overflowY: 'auto' }}>
+        {!activeChapter ? (
+          <div className="review-empty">
+            <p>{chapters.length === 0 ? '暂无审查报告，对当前章节运行检查即可生成' : '选择左侧章节查看审查详情'}</p>
           </div>
-        ) : parsedReport ? (
-          <>
-            {'checks' in parsedReport ? (
-              (parsedReport as LightCheckResult).checks.map((check, i) => (
-                <ReviewReportCard
-                  key={i}
-                  title={check.name}
-                  passed={check.passed}
-                  issues={check.issues}
-                />
-              ))
-            ) : (
-              <>
-                <div className="review-overall-score">
-                  综合评分：<span className={`score-${(parsedReport as DeepCheckResult).overall_score >= 7 ? 'good' : 'mid'}`}>
-                    {(parsedReport as DeepCheckResult).overall_score}/10
-                  </span>
-                </div>
-                {(parsedReport as DeepCheckResult).dimensions.map((d, i) => (
-                  <ReviewReportCard
-                    key={i}
-                    title={d.name}
-                    score={d.score}
-                    issues={d.issues}
-                  />
-                ))}
-                {(parsedReport as DeepCheckResult).suggestions.length > 0 && (
-                  <div className="review-suggestions">
-                    <h4>改进建议</h4>
-                    <ul>
-                      {(parsedReport as DeepCheckResult).suggestions.map((s, i) => (
-                        <li key={i}>{s}</li>
-                      ))}
-                    </ul>
+        ) : (
+          <div>
+            <h3 style={{ margin: '0 0 16px', fontSize: '1.05rem' }}>{activeChapter.chapterLabel} 审查详情</h3>
+
+            {/* ── Light Check ── */}
+            {activeChapter.lightCheck && (
+              <div style={{ marginBottom: 16 }}>
+                <SectionHeader title="禁用词检测" />
+                {!isCollapsed('禁用词检测') && (
+                  <div style={{ padding: '0 4px 12px' }}>
+                    {activeChapter.lightCheck.checks.map((check, i) => {
+                      // Banned words: use grouped display with context samples
+                      if (check.name === '禁用词检查') {
+                        const grouped = check.meta?.groupedMatches as GroupedBannedMatch[] | undefined
+                        if (grouped && grouped.length > 0) {
+                          return (
+                            <div key={i}>
+                              {grouped.map((g, gi) => (
+                                <div key={gi} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 4 }}>
+                                    <span style={{
+                                      ...inputBase, fontSize: '0.72rem', fontWeight: 600, color: '#fff',
+                                      background: severityColor(
+                                        g.severity >= 4 ? 'error' : g.severity >= 2 ? 'warning' : 'hint'
+                                      ), borderRadius: 3, padding: '1px 6px', flexShrink: 0,
+                                    }}>
+                                      {g.severity >= 4 ? '错误' : g.severity >= 2 ? '警告' : '提示'}
+                                    </span>
+                                    <span style={{ flex: 1, color: 'var(--text)', fontSize: '0.84rem' }}>
+                                      {g.pattern}（共 {g.count} 处）
+                                    </span>
+                                  </div>
+                                  {g.suggestion && (
+                                    <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', paddingLeft: 4, marginBottom: 4 }}>
+                                      → {g.suggestion}
+                                    </div>
+                                  )}
+                                  <div style={{ paddingLeft: 4 }}>
+                                    {g.samples.map((ctx, si) => (
+                                      <div key={si} style={{
+                                        fontSize: '0.78rem', color: 'var(--text-secondary)',
+                                        fontFamily: 'monospace', background: 'var(--bg-sidebar)',
+                                        padding: '2px 6px', borderRadius: 3, marginBottom: 2,
+                                      }}>
+                                        {ctx}
+                                      </div>
+                                    ))}
+                                    {g.count > g.samples.length && (
+                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', paddingLeft: 6 }}>
+                                        (+{g.count - g.samples.length} 处)
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        }
+                        // Fallback to flat issue list
+                        return check.issues.map((issue, j) => (
+                          <IssueRow key={`${i}-${j}`} issue={issue} />
+                        ))
+                      }
+                      // Character presence
+                      if (check.name === '角色出场') {
+                        const chars = (check.meta?.appearedCharacters as string[]) ?? []
+                        return (
+                          <div key={i} style={{ padding: '6px 0', fontSize: '0.84rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>
+                            角色出场: {chars.length > 0 ? chars.join('、') : '（无已知角色出场）'}
+                          </div>
+                        )
+                      }
+                      // Health / other checks
+                      return check.issues.map((issue, j) => (
+                        <IssueRow key={`${i}-${j}`} issue={issue} />
+                      ))
+                    })}
                   </div>
                 )}
-              </>
+              </div>
             )}
-          </>
-        ) : (
-          <div className="review-empty">
-            <p>选择左侧报告查看详情，或点击按钮对当前章节运行检查</p>
+
+            {/* ── Deep Review ── */}
+            {activeChapter.deepReviews.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <SectionHeader
+                  title="AI 深度审查"
+                  extra={
+                    <span style={{
+                      ...inputBase, fontWeight: 600, fontSize: '0.9rem',
+                      color: (activeChapter.deepReviews[0]?.overall_score ?? 0) >= 7 ? '#27ae60' : '#e67e22',
+                    }}>
+                      综合评分: {activeChapter.deepReviews[0]?.overall_score}/10
+                    </span>
+                  }
+                />
+                {!isCollapsed('AI 深度审查') && (
+                  <div style={{ padding: '0 4px 12px' }}>
+                    {activeChapter.deepReviews[0]?.dimensions.map((dim, i) => (
+                      <div key={i} style={{ marginBottom: 10 }}>
+                        <div style={{ ...inputBase, fontWeight: 500, marginBottom: 4, fontSize: '0.88rem' }}>
+                          {dimLabelMap[dim.name] ?? dim.name}
+                          <span style={{
+                            marginLeft: 8, fontWeight: 600,
+                            color: dim.score >= 7 ? '#27ae60' : dim.score >= 4 ? '#e67e22' : '#e74c3c',
+                          }}>
+                            ({dim.score}/10)
+                          </span>
+                        </div>
+                        {dim.issues.map((issue, j) => (
+                          <IssueRow key={j} issue={issue} />
+                        ))}
+                      </div>
+                    ))}
+                    {(activeChapter.deepReviews[0]?.suggestions?.length ?? 0) > 0 && (
+                      <div style={{ marginTop: 8, padding: '8px 10px', background: 'var(--bg-sidebar)', borderRadius: 'var(--radius-sm)' }}>
+                        <div style={{ ...inputBase, fontWeight: 500, marginBottom: 4 }}>改进建议</div>
+                        {activeChapter.deepReviews[0]!.suggestions.map((s, i) => (
+                          <div key={i} style={{ fontSize: '0.83rem', color: 'var(--text-secondary)', padding: '2px 0' }}>
+                            • {s}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Consistency ── */}
+            {consistencyResult && (
+              <div style={{ marginBottom: 16 }}>
+                <SectionHeader
+                  title="一致性检查"
+                  extra={<span style={{ ...inputBase, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    {consistencyResult.summary.total} 个问题
+                  </span>}
+                />
+                {!isCollapsed('一致性检查') && (
+                  <div style={{ padding: '0 4px 12px' }}>
+                    {consistencyResult.issues.map((issue) => (
+                      <IssueRow key={issue.id} issue={issue} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
         )}
       </div>
+
+      {/* Modal */}
+      {showRulesEditor && (
+        <ReviewRulesEditor
+          projectId={projectId}
+          onClose={() => setShowRulesEditor(false)}
+          onSaved={() => {}}
+        />
+      )}
     </div>
   )
 }

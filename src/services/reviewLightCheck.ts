@@ -1,5 +1,6 @@
 import { listProjectFiles } from '../api/tauri'
-import { checkBannedWords } from './bannedWords'
+import { checkBannedWords, groupBannedMatches } from './bannedWords'
+import { loadReviewRules } from './reviewRules'
 import type { LightCheckResult, ReviewIssue, LightCheckItem } from '../types/review'
 
 const HTML_TAG_RE = /<[^>]*>/g
@@ -35,9 +36,10 @@ export async function runLightCheck(
   chapterHtml: string,
 ): Promise<LightCheckResult> {
   const text = stripHtml(chapterHtml)
+  const rules = await loadReviewRules(projectId)
 
   // Check 1: Banned words
-  const bannedResult = checkBannedWords(text)
+  const bannedResult = checkBannedWords(text, rules.bannedWords)
   const bannedIssues: ReviewIssue[] = bannedResult.matches.map((m) => {
     const offset = text.indexOf(m.context)
     return {
@@ -71,6 +73,7 @@ export async function runLightCheck(
       name: '禁用词检查',
       passed: bannedIssues.length === 0,
       issues: bannedIssues,
+      meta: { groupedMatches: groupBannedMatches(bannedResult.matches) },
     },
     {
       name: '角色出场',

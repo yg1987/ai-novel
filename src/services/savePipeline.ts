@@ -2,7 +2,7 @@
 //
 // Split into two independent operations:
 //   - runSavePipeline  — pure save (persist + stats + vector index), no review
-//   - runReview        — review only (banned words + light check + deep review)
+//   - runReview        — review only (banned words + light check + consistency + deep review)
 //
 // Save pipeline order (sequential):
 //   1. saveChapterContent    — persist HTML to filesystem
@@ -11,10 +11,12 @@
 
 import { saveChapterContent, vectorUpsertChunks } from '../api/tauri'
 import { checkBannedWords, type CheckResult } from './bannedWords'
+import { loadReviewRules } from './reviewRules'
 import { logChapterSaved } from './stats'
 import { chunkMarkdown } from './textChunker'
 import { embedChunks } from './embeddings'
 import { runAndSaveLightCheck } from './reviewService'
+import { runConsistencyChecks } from './consistencyCheck'
 
 // ─── Public types ─────────────────────────────────
 
@@ -30,6 +32,7 @@ export interface ReviewResult {
   bannedCheck: CheckResult
   lightCheckResult: { passed: boolean; issues: number } | null
   deepReviewTriggered: boolean
+  consistencyIssues: number
 }
 
 // ─── Throttle state (module-level, survives re-renders) ──
@@ -155,8 +158,11 @@ export async function runReview(input: SavePipelineInput): Promise<ReviewResult>
   const { projectId, chapterId, html } = input
   const plainText = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
 
+  // Load project-level review rules
+  const rules = await loadReviewRules(projectId)
+
   // Banned-words check (synchronous)
-  const bannedCheck = checkBannedWords(plainText)
+  const bannedCheck = checkBannedWords(plainText, rules.bannedWords)
 
   // Light check
   let lightCheckResult: ReviewResult['lightCheckResult'] = null
@@ -164,8 +170,18 @@ export async function runReview(input: SavePipelineInput): Promise<ReviewResult>
     lightCheckResult = await performLightCheck(projectId, chapterId, html)
   }
 
+  // Consistency check (deterministic, no AI cost)
+  let consistencyIssues = 0
+  if (plainText.trim().length > 50) {
+    try {
+      const charFiles = plainText.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]{2,4}/g) ?? []
+      const result = await runConsistencyChecks(projectId, input.chapterNumber, charFiles, rules.consistency)
+      consistencyIssues = result.summary.total
+    } catch (e) { console.error('Consistency check failed:', e) }
+  }
+
   // Deep review (throttled)
   const deepReviewTriggered = await maybeRunDeepReview(projectId, chapterId, html, plainText)
 
-  return { bannedCheck, lightCheckResult, deepReviewTriggered }
+  return { bannedCheck, lightCheckResult, deepReviewTriggered, consistencyIssues }
 }

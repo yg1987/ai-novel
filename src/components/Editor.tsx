@@ -157,10 +157,6 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
     if (saveTimer.current) clearTimeout(saveTimer.current)
     if (!editor) return
     const html = editor.getHTML()
-    if (html === lastSaved.current) {
-      showFeedback('内容未变化')
-      return
-    }
     lastSaved.current = html
     setSaving(true)
     setGenerationComplete(false)
@@ -407,7 +403,7 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
           <button className="toolbar-btn generate-btn" onClick={() => { void handleGenerate() }} title="AI 生成">✨ 生成</button>
         )}
         <button className={`toolbar-btn save-btn${saving ? ' saving' : ''}`} onClick={handleSaveNow} disabled={saving} title="保存">
-          {saving ? '保存中…' : ingesting ? '分析中…' : '保存'}
+          {saving ? '保存中…' : '保存'}
         </button>
         {saveFeedback && <span className="save-feedback">{saveFeedback}</span>}
       </div>

@@ -1,6 +1,8 @@
 import { writeProjectFile, readProjectFile, listProjectFiles, loadProviderConfig } from '../api/tauri'
 import { runLightCheck } from './reviewLightCheck'
 import type { LightCheckResult, DeepCheckResult, ReviewReportMeta, DeepCheckDimension } from '../types/review'
+import type { ReviewDimensionConfig } from './reviewRules'
+import { getDefaultReviewRules } from './reviewRules'
 
 const LIGHT_DIR = 'tracks/review-reports/light'
 const FULL_DIR = 'tracks/review-reports/full'
@@ -28,6 +30,7 @@ export async function runDeepReview(
   projectId: string,
   chapterId: string,
   chapterHtml: string,
+  dimensions?: ReviewDimensionConfig[],
 ): Promise<DeepCheckResult> {
   const text = chapterHtml.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
 
@@ -58,13 +61,16 @@ export async function runDeepReview(
   const provider = config.providers.find((p) => p.name === config.active_profile)
   if (!provider) throw new Error('No AI provider configured')
 
-  const systemPrompt = `你是一个小说一致性审查专家。分析以下章节内容，从4个维度检查问题。
+  const dims = dimensions?.length ? dimensions : getDefaultReviewRules().reviewDimensions
+  const dimListText = dims.map((d, i) => `${i + 1}. ${d.id} — ${d.description}`).join('\n')
+  const dimJsonExample = dims.map((d) =>
+    `    {\n      "name": "${d.id}",\n      "score": 0-10,\n      "issues": []\n    }`
+  ).join(',\n')
+
+  const systemPrompt = `你是一个小说一致性审查专家。分析以下章节内容，从${dims.length}个维度检查问题。
 
 ## 审查维度
-1. timeline — 时间顺序是否矛盾、跳跃是否合理
-2. character_cognition — 角色是否知道不应知道的信息
-3. foreshadow_health — 未解伏笔是否过久未回收
-4. setting_consistency — 世界观规则是否被违反
+${dimListText}
 
 只输出JSON，不要解释。`
 
@@ -87,28 +93,7 @@ ${styleRaw.slice(0, 500) || '（无数据）'}${worldviewText}
 {
   "overall_score": 0-10,
   "dimensions": [
-    {
-      "name": "timeline",
-      "score": 0-10,
-      "issues": [
-        { "severity": "error|warning|hint", "desc": "问题描述", "location": null, "suggestion": "修改建议" }
-      ]
-    },
-    {
-      "name": "character_cognition",
-      "score": 0-10,
-      "issues": []
-    },
-    {
-      "name": "foreshadow_health",
-      "score": 0-10,
-      "issues": []
-    },
-    {
-      "name": "setting_consistency",
-      "score": 0-10,
-      "issues": []
-    }
+${dimJsonExample}
   ],
   "suggestions": ["建议1"]
 }`
@@ -265,4 +250,106 @@ export async function getReviewReport(
 ): Promise<string> {
   const dir = type === 'light' ? LIGHT_DIR : FULL_DIR
   return readProjectFile(projectId, dir, filename)
+}
+
+// ─── Chapter-review aggregate ──────────────────
+
+/** Combined review data for a single chapter (loaded from saved reports). */
+export interface ChapterReviewData {
+  chapterId: string
+  /** Readable label, e.g. "第1章" */
+  chapterLabel: string
+  /** Most recent light-check result (banned words / character presence / health) */
+  lightCheck: LightCheckResult | null
+  /** Deep-review runs for this chapter (most recent first) */
+  deepReviews: DeepCheckResult[]
+  /** Total issue count across light + deep reviews */
+  totalIssues: number
+  /** ISO timestamp of the most recent review */
+  lastReviewedAt: string | null
+}
+
+function chapterIdToLabel(chapterId: string): string {
+  const m = chapterId.match(/\d+/)
+  return m ? `第${parseInt(m[0], 10)}章` : chapterId
+}
+
+function countIssues(light: LightCheckResult | null, deeps: DeepCheckResult[]): number {
+  let n = 0
+  if (light) n += light.checks.reduce((sum, c) => sum + c.issues.length, 0)
+  for (const d of deeps) {
+    n += d.dimensions.reduce((sum, dim) => sum + dim.issues.length, 0)
+  }
+  return n
+}
+
+function latestTimestamp(light: LightCheckResult | null, deeps: DeepCheckResult[]): string | null {
+  let latest = light?.timestamp ?? null
+  for (const d of deeps) {
+    if (!latest || d.timestamp > latest) latest = d.timestamp
+  }
+  return latest
+}
+
+/**
+ * Load and group all review data by chapter.
+ * Returns chapters sorted by chapter number, each with combined review data.
+ */
+export async function loadChapterReviews(
+  projectId: string,
+): Promise<ChapterReviewData[]> {
+  const allReports = await listReviewReports(projectId)
+
+  // Group reports by chapter
+  const groups = new Map<string, ReviewReportMeta[]>()
+  for (const r of allReports) {
+    const list = groups.get(r.chapterId) ?? []
+    list.push(r)
+    groups.set(r.chapterId, list)
+  }
+
+  // Load and parse content for each chapter
+  const results: ChapterReviewData[] = []
+  for (const [chapterId, reports] of groups) {
+    const lightMeta = reports.find((r) => r.type === 'light')
+    const fullMetas = reports.filter((r) => r.type === 'full')
+
+    let lightCheck: LightCheckResult | null = null
+    const deepReviews: DeepCheckResult[] = []
+
+    // Load light check
+    if (lightMeta) {
+      try {
+        const raw = await getReviewReport(projectId, 'light', lightMeta.filename)
+        lightCheck = JSON.parse(raw) as LightCheckResult
+      } catch { /* ignore corrupt files */ }
+    }
+
+    // Load deep reviews (most recent first by filename sort)
+    fullMetas.sort((a, b) => b.filename.localeCompare(a.filename))
+    for (const meta of fullMetas) {
+      try {
+        const raw = await getReviewReport(projectId, 'full', meta.filename)
+        deepReviews.push(JSON.parse(raw) as DeepCheckResult)
+      } catch { /* ignore corrupt files */ }
+    }
+
+    results.push({
+      chapterId,
+      chapterLabel: chapterIdToLabel(chapterId),
+      lightCheck,
+      deepReviews,
+      totalIssues: countIssues(lightCheck, deepReviews),
+      lastReviewedAt: latestTimestamp(lightCheck, deepReviews),
+    })
+  }
+
+  // Sort by chapter number ascending
+  results.sort((a, b) => {
+    const na = parseInt(a.chapterId.match(/\d+/)?.[0] ?? '0', 10)
+    const nb = parseInt(b.chapterId.match(/\d+/)?.[0] ?? '0', 10)
+    return na - nb
+  })
+
+  return results
 }

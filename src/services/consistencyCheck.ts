@@ -1,11 +1,11 @@
 import { readProjectFile } from '../api/tauri'
 import type { ForeshadowStore, CognitionState, TimelineEntry } from '../types/novel'
 import type { ConsistencyIssue, ConsistencyCheckResult, ConsistencySeverity } from '../types/review'
+import type { ConsistencyThresholds } from './reviewRules'
+import { getDefaultReviewRules } from './reviewRules'
 
-const DORMANT_CHAPTER_THRESHOLD = 5  // 沉寂超过 5 章 → S4
-const DORMANT_CHAPTER_WARN = 8       // 超过 8 章 → S3
-const OVERDUE_CHAPTER_HIGH = 8       // 重要性 >= 0.8 的伏笔超过 8 章 → S2
-const OVERDUE_CHAPTER_LOW = 12       // 其他伏笔超过 12 章 → S2
+// Default thresholds (used as fallback when no custom rules provided)
+const DEFAULT_THRESHOLDS: ConsistencyThresholds = getDefaultReviewRules().consistency
 
 let _issueCounter = 0
 function nextId(): string {
@@ -17,6 +17,7 @@ function nextId(): string {
 function checkDormantForeshadow(
   foreshadows: ForeshadowStore | null,
   currentChapter: number,
+  t: ConsistencyThresholds,
 ): ConsistencyIssue[] {
   if (!foreshadows?.entries?.length) return []
 
@@ -29,10 +30,10 @@ function checkDormantForeshadow(
       : entry.plantedChapter
     const dormantFor = currentChapter - lastActiveChapter
 
-    if (dormantFor >= DORMANT_CHAPTER_THRESHOLD) {
+    if (dormantFor >= t.dormantForeshadowWarn) {
       let severity: ConsistencySeverity
-      if (dormantFor >= 10) severity = 'S2'
-      else if (dormantFor >= DORMANT_CHAPTER_WARN) severity = 'S3'
+      if (dormantFor >= t.dormantForeshadowCritical) severity = 'S2'
+      else if (dormantFor >= t.dormantForeshadowAlert) severity = 'S3'
       else severity = 'S4'
 
       issues.push({
@@ -41,7 +42,7 @@ function checkDormantForeshadow(
         severity,
         chapter: currentChapter,
         description: `伏笔「${entry.name}」已沉寂 ${dormantFor} 章（第${entry.plantedChapter}章埋设）`,
-        suggestion: dormantFor >= 10 ? '需尽快推进或回收此伏笔' : '考虑在后续章节推进此伏笔',
+        suggestion: dormantFor >= t.dormantForeshadowCritical ? '需尽快推进或回收此伏笔' : '考虑在后续章节推进此伏笔',
         detail: `category=${entry.category} importance=${entry.importance} last_active=ch${lastActiveChapter}`,
       })
     }
@@ -106,6 +107,7 @@ function checkTimelineOrder(
 function checkOverdueForeshadow(
   foreshadows: ForeshadowStore | null,
   currentChapter: number,
+  t: ConsistencyThresholds,
 ): ConsistencyIssue[] {
   if (!foreshadows?.entries?.length) return []
 
@@ -113,7 +115,7 @@ function checkOverdueForeshadow(
   for (const entry of foreshadows.entries) {
     if (entry.status !== 'planted' && entry.status !== 'advanced') continue
 
-    const threshold = entry.importance >= 0.8 ? OVERDUE_CHAPTER_HIGH : OVERDUE_CHAPTER_LOW
+    const threshold = entry.importance >= 0.8 ? t.overdueHighImportance : t.overdueDefault
     const dormantFor = currentChapter - entry.plantedChapter
     if (dormantFor > threshold) {
       issues.push({
@@ -135,7 +137,9 @@ export async function runConsistencyChecks(
   projectId: string,
   currentChapter: number,
   presentCharacterNames: string[],
+  thresholds?: Partial<ConsistencyThresholds>,
 ): Promise<ConsistencyCheckResult> {
+  const t: ConsistencyThresholds = { ...DEFAULT_THRESHOLDS, ...thresholds }
   _issueCounter = 0
 
   const [foreshadowJson, cognitionJson, timelineJson] = await Promise.all([
@@ -150,10 +154,10 @@ export async function runConsistencyChecks(
 
   // Run all 4 checks (deterministic, no AI cost)
   const allIssues: ConsistencyIssue[] = [
-    ...checkDormantForeshadow(foreshadows, currentChapter),
+    ...checkDormantForeshadow(foreshadows, currentChapter, t),
     ...checkAbsentCharacter(cognition, currentChapter, presentCharacterNames),
     ...checkTimelineOrder(timeline),
-    ...checkOverdueForeshadow(foreshadows, currentChapter),
+    ...checkOverdueForeshadow(foreshadows, currentChapter, t),
   ]
 
   const summary = { S1: 0, S2: 0, S3: 0, S4: 0, total: allIssues.length }
