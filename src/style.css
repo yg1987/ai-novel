@@ -15,6 +15,14 @@
   --shadow-lg: 0 4px 12px rgba(0,0,0,0.12);
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans SC',
     sans-serif;
+  --urgency-critical: #e53e3e;
+  --urgency-critical-bg: #fff5f5;
+  --urgency-upcoming: #d69e2e;
+  --urgency-upcoming-bg: #fffff0;
+  --urgency-active: #3182ce;
+  --urgency-active-bg: #ebf8ff;
+  --urgency-background: #a0aec0;
+  --urgency-background-bg: #f7fafc;
 }
 
 *,
@@ -2688,10 +2696,10 @@ body {
 }
 
 /* ─── Urgency levels ──────────── */
-.urgency-critical { border-left: 3px solid #e53e3e; background: #fff5f5; }
-.urgency-upcoming { border-left: 3px solid #d69e2e; background: #fffff0; }
-.urgency-active { border-left: 3px solid #3182ce; background: #ebf8ff; }
-.urgency-background { border-left: 3px solid #a0aec0; background: #f7fafc; }
+.urgency-critical { border-left: 3px solid var(--urgency-critical); background: var(--urgency-critical-bg); }
+.urgency-upcoming { border-left: 3px solid var(--urgency-upcoming); background: var(--urgency-upcoming-bg); }
+.urgency-active { border-left: 3px solid var(--urgency-active); background: var(--urgency-active-bg); }
+.urgency-background { border-left: 3px solid var(--urgency-background); background: var(--urgency-background-bg); }
 .foreshadow-highlight { box-shadow: 0 0 0 3px #3182ce; transition: box-shadow 0.3s; }
 
 /* ─── Character dropdown ──────── */

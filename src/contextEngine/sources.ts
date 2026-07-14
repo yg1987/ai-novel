@@ -22,14 +22,6 @@ function cognitionToText(state: CognitionState): string {
   return lines.join('\n')
 }
 
-export function foreshadowToText(entries: { name: string; description: string; status: string; plantedChapterId: string }[]): string {
-  if (entries.length === 0) return ''
-  return entries.map((f) => {
-    const statusLabel = f.status === 'advanced' ? '推进中' : '已埋设'
-    return `· [${statusLabel}] ${f.name}：${f.description}（${f.plantedChapterId}埋设）`
-  }).join('\n')
-}
-
 // ─── Data Sources ───────────────────────────
 
 export const cognitionDS: DataSource<string> = {

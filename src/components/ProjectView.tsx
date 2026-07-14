@@ -109,7 +109,7 @@ export default function ProjectView({ project, onBack }: Props) {
         {tab === 'worldview' && <WorldviewPanel projectId={project.id} />}
         {tab === 'outline' && <OutlinePanel projectId={project.id} />}
         {tab === 'notes' && <NotesPanel projectId={project.id} onNavigateToChapter={handleNavigateToChapter} />}
-        {tab === 'foreshadow' && <ForeshadowPanel projectId={project.id} currentChapterId={currentChapterId} onNavigateToCharacter={handleNavigateToCharacter} highlightId={navigateForeshadowId} />}
+        {tab === 'foreshadow' && <ForeshadowPanel projectId={project.id} currentChapterId={currentChapterId} onNavigateToCharacter={handleNavigateToCharacter} highlightId={navigateForeshadowId} onHighlightComplete={() => setNavigateForeshadowId(null)} />}
         {tab === 'search' && <SearchPanel projectId={project.id} />}
         {tab === 'stats' && <StatisticsPanel projectId={project.id} targetWords={project.target_words} />}
         {tab === 'review' && <ReviewPanel projectId={project.id} currentChapterId={reviewChapterId} />}

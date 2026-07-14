@@ -21,6 +21,7 @@ interface Props {
   currentChapterId: string | null
   onNavigateToCharacter?: (name: string) => void
   highlightId?: string | null
+  onHighlightComplete?: () => void
 }
 
 const CATEGORY_LABELS: Record<ForeshadowCategory, string> = {
@@ -41,6 +42,23 @@ const IMPORTANCE_OPTIONS = [
   { value: 0.8, label: '★★★★☆' },
   { value: 1.0, label: '★★★★★' },
 ]
+
+const URGENCY_LABELS: Record<ForeshadowUrgency, string> = {
+  critical: '🔴 必须回收',
+  upcoming: '🟡 即将到期',
+  active: '🔵 推进中',
+  background: '⚪ 已埋设',
+}
+
+function getForeshadowUrgency(
+  entry: ForeshadowEntry,
+  classified: Record<ForeshadowUrgency, ForeshadowEntry[]>,
+): ForeshadowUrgency {
+  for (const level of ['critical', 'upcoming', 'active', 'background'] as ForeshadowUrgency[]) {
+    if (classified[level].some((e) => e.id === entry.id)) return level
+  }
+  return 'background'
+}
 
 function getChapterLabel(chapterId: string, chapters: ChapterMeta[]): string {
   const meta = chapters.find((c) => c.id === chapterId)
@@ -92,7 +110,7 @@ function entryToForm(entry: ForeshadowEntry): FormData {
   }
 }
 
-export default function ForeshadowPanel({ projectId, currentChapterId, onNavigateToCharacter, highlightId }: Props) {
+export default function ForeshadowPanel({ projectId, currentChapterId, onNavigateToCharacter, highlightId, onHighlightComplete }: Props) {
   const [entries, setEntries] = useState<ForeshadowEntry[]>([])
   const [chapters, setChapters] = useState<ChapterMeta[]>([])
   const [characterNames, setCharacterNames] = useState<string[]>([])
@@ -141,7 +159,10 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       el.classList.add('foreshadow-highlight')
-      const timer = setTimeout(() => el.classList.remove('foreshadow-highlight'), 3000)
+      const timer = setTimeout(() => {
+        el.classList.remove('foreshadow-highlight')
+        onHighlightComplete?.()
+      }, 3000)
       return () => clearTimeout(timer)
     }
   }, [highlightId])
@@ -280,25 +301,6 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
       ))}
     </select>
   )
-
-  // ─── Urgency classification ──────────────
-
-  const URGENCY_LABELS: Record<ForeshadowUrgency, string> = {
-    critical: '🔴 必须回收',
-    upcoming: '🟡 即将到期',
-    active: '🔵 推进中',
-    background: '⚪ 已埋设',
-  }
-
-  function getForeshadowUrgency(
-    entry: ForeshadowEntry,
-    classified: Record<ForeshadowUrgency, ForeshadowEntry[]>,
-  ): ForeshadowUrgency {
-    for (const level of ['critical', 'upcoming', 'active', 'background'] as ForeshadowUrgency[]) {
-      if (classified[level].some((e) => e.id === entry.id)) return level
-    }
-    return 'background'
-  }
 
   // ─── Render ─────────────────────────────
   return (

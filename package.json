@@ -26,6 +26,7 @@
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "playwright": "^1.61.1",
     "prettier": "^3.9.4",
     "sharp": "^0.35.3",
     "typescript": "~6.0.2",
