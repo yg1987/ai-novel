@@ -1,8 +1,9 @@
-import { writeProjectFile, readProjectFile, listProjectFiles, loadProviderConfig } from '../api/tauri'
+import { writeProjectFile, readProjectFile, listProjectFiles, loadProviderConfig, listChapters } from '../api/tauri'
 import { runLightCheck } from './reviewLightCheck'
 import type { LightCheckResult, DeepCheckResult, ReviewReportMeta, DeepCheckDimension } from '../types/review'
 import type { ReviewDimensionConfig } from './reviewRules'
 import { getDefaultReviewRules } from './reviewRules'
+import type { ChapterMeta } from '../types/chapter'
 
 const LIGHT_DIR = 'tracks/review-reports/light'
 const FULL_DIR = 'tracks/review-reports/full'
@@ -269,9 +270,8 @@ export interface ChapterReviewData {
   lastReviewedAt: string | null
 }
 
-function chapterIdToLabel(chapterId: string): string {
-  const m = chapterId.match(/\d+/)
-  return m ? `第${parseInt(m[0], 10)}章` : chapterId
+function chapterIdToLabel(chapterId: string, chapters: ChapterMeta[]): string {
+  return chapters.find(c => c.id === chapterId)?.title ?? chapterId
 }
 
 function countIssues(light: LightCheckResult | null, deeps: DeepCheckResult[]): number {
@@ -299,6 +299,7 @@ export async function loadChapterReviews(
   projectId: string,
 ): Promise<ChapterReviewData[]> {
   const allReports = await listReviewReports(projectId)
+  const chapters = await listChapters(projectId)
 
   // Group reports by chapter
   const groups = new Map<string, ReviewReportMeta[]>()
@@ -336,7 +337,7 @@ export async function loadChapterReviews(
 
     results.push({
       chapterId,
-      chapterLabel: chapterIdToLabel(chapterId),
+      chapterLabel: chapterIdToLabel(chapterId, chapters),
       lightCheck,
       deepReviews,
       totalIssues: countIssues(lightCheck, deepReviews),
@@ -344,10 +345,10 @@ export async function loadChapterReviews(
     })
   }
 
-  // Sort by chapter number ascending
+  // Sort by chapter order ascending
   results.sort((a, b) => {
-    const na = parseInt(a.chapterId.match(/\d+/)?.[0] ?? '0', 10)
-    const nb = parseInt(b.chapterId.match(/\d+/)?.[0] ?? '0', 10)
+    const na = chapters.find(c => c.id === a.chapterId)?.order ?? 0
+    const nb = chapters.find(c => c.id === b.chapterId)?.order ?? 0
     return na - nb
   })
 

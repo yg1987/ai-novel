@@ -175,7 +175,7 @@ export async function runReview(input: SavePipelineInput): Promise<ReviewResult>
   if (plainText.trim().length > 50) {
     try {
       const charFiles = plainText.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]{2,4}/g) ?? []
-      const result = await runConsistencyChecks(projectId, input.chapterNumber, charFiles, rules.consistency)
+      const result = await runConsistencyChecks(projectId, input.chapterId, charFiles, rules.consistency)
       consistencyIssues = result.summary.total
     } catch (e) { console.error('Consistency check failed:', e) }
   }

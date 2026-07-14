@@ -162,9 +162,8 @@ export default function ReviewPanel({ projectId, currentChapterId, chapterHtml =
     try {
       const text = html.replace(/<[^>]*>/g, '').trim()
       const charFiles = text.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]{2,4}/g) ?? []
-      const chapterNum = parseInt(expandedChapter!.replace(/\D/g, ''), 10) || 1
       const rules = await loadReviewRules(projectId)
-      const result = await runConsistencyChecks(projectId, chapterNum, charFiles, rules.consistency)
+      const result = await runConsistencyChecks(projectId, expandedChapter!, charFiles, rules.consistency)
       setConsistencyResult(result)
     } catch (e) { setError(String(e)) }
     finally { setRunningConsistency(false) }

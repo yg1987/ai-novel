@@ -19,12 +19,14 @@ interface SimLink extends SimulationLinkDatum<SimNode> {
 
 const EDGE_COLORS: Record<string, string> = {
   foreshadow: '#e74c3c',
+  'foreshadow-first': '#95a5a6',
   continuity: '#3498db',
   adjacent: '#bdc3c7',
 }
 
 const EDGE_LABELS: Record<string, string> = {
   foreshadow: '伏笔关联',
+  'foreshadow-first': '首次推进',
   continuity: '角色延续',
   adjacent: '顺序',
 }
@@ -86,7 +88,7 @@ export default function ChapterGraph({ projectId }: Props) {
       el.setAttribute('stroke', EDGE_COLORS[l.type] || '#bdc3c7')
       el.setAttribute('stroke-width', l.type === 'adjacent' ? '1' : '2')
       el.setAttribute('stroke-opacity', l.type === 'adjacent' ? '0.3' : '0.6')
-      if (l.type === 'foreshadow') {
+      if (l.type === 'foreshadow' || l.type === 'foreshadow-first') {
         el.setAttribute('stroke-dasharray', '5,3')
       }
       el.addEventListener('mouseenter', () => setSelectedEdge(l))

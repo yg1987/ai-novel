@@ -215,6 +215,58 @@ banner 放在外层，下面的 sidebar + editor 包在一个 `display: flex; fl
 | 备注 | `.notes-panel` (`overflow: hidden`) | `.notes-list` (`flex: 1; overflow-y: auto`) |
 | 伏笔 | `.foreshadow-panel` (`overflow: hidden`) | `.foreshadow-list` (`flex: 1; overflow-y: auto`) |
 
+## 通用组件强制复用
+
+项目已有通用组件，**任何新增功能涉及分页或弹窗时，必须使用以下通用组件，严禁自行实现**：
+
+### Pagination — `src/components/Pagination.tsx`
+
+分页组件，接口如下：
+
+```ts
+interface PaginationProps {
+  currentPage: number           // 当前页码（1-based）
+  totalPages: number            // 总页数
+  totalItems: number            // 总条数
+  pageSize?: number             // 当前每页条数
+  pageSizeOptions?: number[]    // 可选条数列表（不传不显示下拉框）
+  onPageChange: (page: number) => void
+  onPageSizeChange?: (pageSize: number) => void
+}
+```
+
+- 列表为空时组件自动返回 `null`，调用方无需额外判断
+- 上一页/下一页按钮自动根据边界禁用
+
+### Modal — `src/components/Modal.tsx`
+
+通用弹窗遮罩，接口如下：
+
+```ts
+interface ModalProps {
+  children: ReactNode
+  className?: string            // 可选，附加到 .modal-content 上
+}
+```
+
+- 提供 `.modal-overlay` 遮罩层 + `.modal-content` 内容区
+- 具体对话框（确认框、表单弹窗等）用 Modal 包裹内容即可，不要自己写遮罩
+
+### 检查清单
+
+新增功能涉及以下场景时，Code Review 必须检查：
+
+| 场景 | 必须使用 |
+|------|---------|
+| 任何列表/表格的分页 | `<Pagination>` |
+| 任何弹窗/对话框的遮罩层 | `<Modal>` |
+
+**反例：**
+- 在列表底部手写「上一页 / 下一页」按钮和控制逻辑 → 用 `<Pagination>` 替代
+- 自己写 `position: fixed` 全屏半透明遮罩 → 用 `<Modal>` 包裹内容
+
+---
+
 ## 设计原则
 
 ### 新手友好 + 老手可控（Preset + Customize）

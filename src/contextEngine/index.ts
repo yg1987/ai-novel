@@ -1,4 +1,4 @@
-import { getChapterOutline, getChapterContent, readProjectFile } from '../api/tauri'
+import { getChapterOutline, getChapterContent, readProjectFile, listChapters } from '../api/tauri'
 import { DataSourceRegistry } from './dataSource'
 import { cognitionDS, foreshadowDS, styleDS, recentSummaryDS, notesDS } from './sources'
 import { estimateTokens, truncateToBudget, getDefaultSystemPrompt } from './budget'
@@ -22,7 +22,8 @@ export async function buildContext(
   chapterId: string,
   targetWords: number,
 ): Promise<ContextPack> {
-  const chapterNumber = Number(chapterId.replace('ch', ''))
+  const chapters = await listChapters(projectId)
+  const chapterNumber = chapters.find(c => c.id === chapterId)?.order ?? 0
   const ctx: ContextLoadContext = { projectId, volume, chapterId, chapterNumber, targetWords }
 
   // 1. Load outline. If empty, fall back to project metadata
@@ -41,8 +42,8 @@ export async function buildContext(
   }
 
   let previousEnding = ''
-  if (chapterNumber > 1) {
-    const prevId = `ch${String(chapterNumber - 1).padStart(3, '0')}`
+  const prevId = chapters.find(c => c.order === chapterNumber - 1)?.id
+  if (prevId) {
     try {
       const prevContent = await getChapterContent(projectId, volume, prevId)
       const text = stripHtml(prevContent)

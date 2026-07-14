@@ -510,7 +510,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
                   projectId={projectId}
                   volume={activeVolume}
                   chapterId={activeChapterId}
-                  chapterNumber={Number(activeChapterId.replace('ch', ''))}
+                  chapterNumber={activeChapter?.order ?? 1}
                   onNavigateToReview={onNavigateToReview}
                   onContentChange={(html) => {
                     const text = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')

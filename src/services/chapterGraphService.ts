@@ -14,7 +14,7 @@ export interface ChapterNode {
 export interface ChapterEdge {
   source: string   // chapter id
   target: string   // chapter id
-  type: 'foreshadow' | 'continuity' | 'adjacent'
+  type: 'foreshadow' | 'foreshadow-first' | 'continuity' | 'adjacent'
   label: string
 }
 
@@ -71,13 +71,17 @@ export async function loadChapterGraph(projectId: string): Promise<ChapterGraph>
         }
       }
       // Planted/advanced → push clues as edges
-      for (const clue of entry.clues) {
+      const sortedClues = [...entry.clues].sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      )
+      for (let ci = 0; ci < sortedClues.length; ci++) {
+        const clue = sortedClues[ci]!
         if (nodeMap.has(clue.chapterId)) {
           edges.push({
             source: entry.plantedChapterId,
             target: clue.chapterId,
-            type: 'foreshadow',
-            label: `推进: ${entry.name}`,
+            type: ci === 0 ? 'foreshadow-first' : 'foreshadow',
+            label: `推进: ${entry.name} — ${clue.description.slice(0, 20)}`,
           })
         }
       }

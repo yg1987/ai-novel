@@ -11,8 +11,10 @@ import {
   deleteForeshadow,
   createForeshadowId,
   loadForeshadowConfig,
+  saveForeshadowConfig,
 } from '../services/foreshadowStorage'
 import { classifyForeshadows, type ForeshadowUrgency } from '../services/foreshadowContext'
+import { calcForeshadowHealth, getHealthLabel, calcForeshadowDensity } from '../services/foreshadowHealth'
 import Pagination from './Pagination'
 import Modal from './Modal'
 import { usePagination } from '../hooks/usePagination'
@@ -133,6 +135,8 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [foreshadowConfig, setForeshadowConfig] = useState(DEFAULT_FORESHADOW_CONFIG)
   const [showCharDropdown, setShowCharDropdown] = useState(false)
+  const [showConfig, setShowConfig] = useState(false)
+  const [configForm, setConfigForm] = useState(foreshadowConfig)
 
   const refresh = useCallback(async () => {
     const [store, chList, charFiles, cfg] = await Promise.all([
@@ -279,6 +283,13 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
     await refresh()
   }
 
+  const handleSaveConfig = async () => {
+    await saveForeshadowConfig(projectId, configForm)
+    setForeshadowConfig(configForm)
+    setShowConfig(false)
+    await refresh()
+  }
+
   // ─── Character multi-select ────────────
 
   const toggleCharacter = (name: string) => {
@@ -321,7 +332,80 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
         <span className="stat-done">已回收 {counts.resolved}</span>
         <span className="stat-abandoned">已废弃 {counts.abandoned}</span>
         <button className="btn-add" onClick={openAdd}>+ 新增伏笔</button>
+        <button className="btn-icon" onClick={() => { setConfigForm(foreshadowConfig); setShowConfig(!showConfig); }} title="伏笔配置">⚙</button>
       </div>
+
+      {/* ─── Health Card ──────────────────────── */}
+      {entries.length > 0 && (() => {
+        const healthScore = calcForeshadowHealth(filtered, currentChapterId, chapters, foreshadowConfig)
+        const healthLabel = getHealthLabel(healthScore)
+        const resolvedCount = counts.resolved
+        const activeCount = counts.planted + counts.advanced
+        const recoveryRate = entries.length > 0 ? Math.round((resolvedCount / entries.length) * 100) : 0
+        const classified = classifyForeshadows(filtered, currentChapterId, chapters, foreshadowConfig)
+        const densityInfo = calcForeshadowDensity(filtered, currentChapterId, chapters)
+        const densityStatus = densityInfo.density > foreshadowConfig.densityWarningThreshold
+          ? '⚠️ 偏高'
+          : densityInfo.totalChapters > 20 && densityInfo.density < foreshadowConfig.densityLowThreshold
+            ? '📉 偏低'
+            : '✅ 正常'
+        return (
+          <div className="foreshadow-health-card">
+            <div className="foreshadow-health-score">
+              📊 伏笔健康度 {healthScore}/100 {healthLabel}
+            </div>
+            <div>
+              总数 {entries.length} | 已回收 {resolvedCount} | 活跃 {activeCount}
+            </div>
+            <div className="foreshadow-health-bar">
+              <div className="foreshadow-health-bar-fill" style={{ width: `${recoveryRate}%` }} />
+            </div>
+            <div>
+              {recoveryRate}% 回收率
+            </div>
+            <div className="foreshadow-health-row">
+              <span>🔴 必须处理 {classified.critical.length}</span>
+              <span>🟡 即将到期 {classified.upcoming.length}</span>
+              <span>🔵 近期活跃 {classified.active.length}</span>
+              <span>⚪ 已埋设 {classified.background.length}</span>
+            </div>
+            <div>
+              密度：{densityInfo.unresolved}条活跃 / {densityInfo.totalChapters}章 = {densityInfo.density}/章 {densityStatus}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ─── Config Panel ─────────────────────── */}
+      {showConfig && (
+        <div className="foreshadow-config-panel">
+          <div className="form-group">
+            <label>沉寂阈值（章）</label>
+            <input type="number" min={5} max={50} step={1} value={configForm.dormantThreshold} onChange={(e) => setConfigForm({ ...configForm, dormantThreshold: Number(e.target.value) })} />
+            <div className="config-hint">多少章无活动视为沉寂</div>
+          </div>
+          <div className="form-group">
+            <label>近期预警窗口（章）</label>
+            <input type="number" min={3} max={30} step={1} value={configForm.upcomingWindow} onChange={(e) => setConfigForm({ ...configForm, upcomingWindow: Number(e.target.value) })} />
+            <div className="config-hint">未来多少章内视为即将到期</div>
+          </div>
+          <div className="form-group">
+            <label>密度警告阈值</label>
+            <input type="number" min={0.1} max={1.0} step={0.05} value={configForm.densityWarningThreshold} onChange={(e) => setConfigForm({ ...configForm, densityWarningThreshold: Number(e.target.value) })} />
+            <div className="config-hint">活跃伏笔/总章节超过此值显示警告</div>
+          </div>
+          <div className="form-group">
+            <label>密度偏低阈值</label>
+            <input type="number" min={0.01} max={0.2} step={0.01} value={configForm.densityLowThreshold} onChange={(e) => setConfigForm({ ...configForm, densityLowThreshold: Number(e.target.value) })} />
+            <div className="config-hint">低于此值建议增加伏笔（仅&gt;20章时）</div>
+          </div>
+          <div className="foreshadow-config-actions">
+            <button className="btn-primary" onClick={handleSaveConfig}>保存</button>
+            <button className="btn-text" onClick={() => { setConfigForm(foreshadowConfig); setShowConfig(false); }}>取消</button>
+            <button className="btn-text" onClick={() => setConfigForm(DEFAULT_FORESHADOW_CONFIG)}>恢复默认</button>
+          </div>
+        </div>
+      )}
 
       {/* ─── Filters ───────────────────────── */}
       <div className="foreshadow-filters">

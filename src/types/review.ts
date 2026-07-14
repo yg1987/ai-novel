@@ -75,6 +75,8 @@ export type ConsistencyCheckType =
   | 'absent_character'
   | 'timeline_order'
   | 'overdue_foreshadow'
+  | 'resolution_delay'
+  | 'foreshadow_density'
 
 export interface ConsistencyIssue {
   id: string

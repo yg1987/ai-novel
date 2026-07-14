@@ -33,6 +33,10 @@ export interface ConsistencyThresholds {
   overdueHighImportance: number
   /** 其他伏笔超 N 章 → S2 */
   overdueDefault: number
+  /** 活跃伏笔/总章节超过此值 → 密度警告 (default 0.3) */
+  densityWarningThreshold?: number
+  /** 活跃伏笔/总章节低于此值 → 建议增加 (default 0.05, only effective when >20 chapters) */
+  densityLowThreshold?: number
 }
 
 export interface ReviewDimensionConfig {
@@ -102,6 +106,8 @@ export function getDefaultReviewRules(): ReviewRules {
       dormantForeshadowCritical: 10,
       overdueHighImportance: 8,
       overdueDefault: 12,
+      densityWarningThreshold: 0.3,
+      densityLowThreshold: 0.05,
     },
     reviewDimensions: [
       { id: 'timeline', label: '时间线', description: '时间顺序是否矛盾、跳跃是否合理' },
