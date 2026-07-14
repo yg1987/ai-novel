@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { exportAsPlainText, exportAsMarkdown, exportAsEpub, type ExportFormat, type ExportProgress } from '../services/exportService'
+import { loadAllNotes } from '../services/notesStorage'
 
 interface Props {
   projectId: string
@@ -13,6 +14,18 @@ export default function ExportDialog({ projectId, projectName, onClose }: Props)
   const [progress, setProgress] = useState<ExportProgress | null>(null)
   const [done, setDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pendingTodoCount, setPendingTodoCount] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    loadAllNotes(projectId)
+      .then((notes) => {
+        if (cancelled) return
+        setPendingTodoCount(notes.filter((n) => n.type === 'todo' && !n.done).length)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [projectId])
 
   const handleExport = useCallback(async () => {
     setExporting(true)
@@ -88,6 +101,12 @@ export default function ExportDialog({ projectId, projectName, onClose }: Props)
               )}
 
               {error && <div className="error-bar">{error}</div>}
+
+              {pendingTodoCount > 0 && (
+                <div className="export-warning">
+                  ⚠️ 该项目还有 {pendingTodoCount} 条未完成待办，确定导出？
+                </div>
+              )}
             </>
           )}
         </div>

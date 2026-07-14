@@ -1,6 +1,6 @@
 import { getChapterOutline, getChapterContent, readProjectFile } from '../api/tauri'
 import { DataSourceRegistry } from './dataSource'
-import { cognitionDS, foreshadowDS, styleDS, recentSummaryDS } from './sources'
+import { cognitionDS, foreshadowDS, styleDS, recentSummaryDS, notesDS } from './sources'
 import { estimateTokens, truncateToBudget, getDefaultSystemPrompt } from './budget'
 import type { ContextLoadContext } from './dataSource'
 
@@ -23,7 +23,7 @@ export async function buildContext(
   targetWords: number,
 ): Promise<ContextPack> {
   const chapterNumber = Number(chapterId.replace('ch', ''))
-  const ctx: ContextLoadContext = { projectId, chapterId, chapterNumber, targetWords }
+  const ctx: ContextLoadContext = { projectId, volume, chapterId, chapterNumber, targetWords }
 
   // 1. Load outline. If empty, fall back to project metadata
   const outline = await getChapterOutline(projectId, chapterId)
@@ -52,7 +52,7 @@ export async function buildContext(
 
   // 2. Load context sources via DataSourceRegistry
   const registry = new DataSourceRegistry()
-  registry.registerAll([recentSummaryDS, cognitionDS, foreshadowDS, styleDS])
+  registry.registerAll([recentSummaryDS, cognitionDS, foreshadowDS, notesDS, styleDS])
   const loaded = await registry.loadAll(ctx)
   const assembled = registry.assemble(loaded)
 

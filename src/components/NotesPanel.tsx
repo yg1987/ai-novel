@@ -1,124 +1,442 @@
-import { useState, useEffect, useCallback } from 'react'
-import { readProjectFile, writeProjectFile } from '../api/tauri'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { listChapters } from '../api/tauri'
+import type { ChapterMeta } from '../types/chapter'
+import {
+  loadAllNotes,
+  saveNote,
+  deleteNote,
+  applyFilter,
+  generateId,
+  parseChapterRef,
+  buildChapterRef,
+  type NoteEntry,
+  type NoteType,
+  type FilterView,
+} from '../services/notesStorage'
+import ConfirmDialog from './ConfirmDialog'
+
+type ViewMode = 'timeline' | 'grouped'
 
 interface Props {
   projectId: string
+  onNavigateToChapter?: (chapterRef: string) => void
 }
 
-interface NoteEntry {
-  id: string
-  content: string
-  type: 'note' | 'todo'
-  chapterRef: string
-  done: boolean
-  createdAt: string
+const PAGE_SIZE = 20
+
+const FILTER_OPTIONS: { value: FilterView; label: string }[] = [
+  { value: 'all', label: '全部' },
+  { value: 'note', label: '备注' },
+  { value: 'todo', label: '待办⏳' },
+  { value: 'done', label: '已办✓' },
+  { value: 'question', label: '疑问❓' },
+  { value: 'resolved', label: '已解决✅' },
+]
+
+function countFiltered(notes: NoteEntry[], filter: FilterView): number {
+  return applyFilter(notes, filter).length
 }
 
-const NOTES_FILE = 'notes.json'
-const NOTES_DIR = 'notes'
-
-function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+function groupChaptersByVolume(chapters: ChapterMeta[]): Map<string, ChapterMeta[]> {
+  const map = new Map<string, ChapterMeta[]>()
+  for (const ch of chapters) {
+    const list = map.get(ch.volume) ?? []
+    list.push(ch)
+    if (!map.has(ch.volume)) map.set(ch.volume, list)
+  }
+  return map
 }
 
-function loadNotes(raw: string): NoteEntry[] {
-  if (!raw.trim()) return []
-  try { return JSON.parse(raw) as NoteEntry[] }
-  catch { return [] }
+function resolveChapterName(chapterRef: string, chapters: ChapterMeta[]): string {
+  const parsed = parseChapterRef(chapterRef)
+  if (!parsed) return chapterRef
+  const found = chapters.find((c) => c.volume === parsed.volume && c.id === parsed.chapterId)
+  return found ? found.title : chapterRef
 }
 
-export default function NotesPanel({ projectId }: Props) {
+export default function NotesPanel({ projectId, onNavigateToChapter }: Props) {
   const [notes, setNotes] = useState<NoteEntry[]>([])
+  const [chapterList, setChapterList] = useState<ChapterMeta[]>([])
   const [newContent, setNewContent] = useState('')
-  const [newType, setNewType] = useState<'note' | 'todo'>('note')
-  const [filter, setFilter] = useState<'all' | 'note' | 'todo'>('all')
+  const [newType, setNewType] = useState<NoteType>('note')
+  const [newChapterRef, setNewChapterRef] = useState('')
+  const [filter, setFilter] = useState<FilterView>('all')
+  const [viewMode, setViewMode] = useState<ViewMode>('timeline')
+  const [page, setPage] = useState(1)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editContent, setEditContent] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [deleteTarget, setDeleteTarget] = useState<NoteEntry | null>(null)
 
   const refresh = useCallback(async () => {
-    const raw = await readProjectFile(projectId, NOTES_DIR, NOTES_FILE)
-    setNotes(loadNotes(raw))
+    setLoading(true)
+    const [all, chs] = await Promise.all([
+      loadAllNotes(projectId),
+      listChapters(projectId).catch(() => [] as ChapterMeta[]),
+    ])
+    setNotes(all)
+    setChapterList(chs)
+    setLoading(false)
   }, [projectId])
 
-  useEffect(() => {
-    refresh().catch((e: unknown) => { console.error(e) })
-  }, [refresh])
+  useEffect(() => { refresh().catch(console.error) }, [refresh])
 
-  const saveNotes = async (updated: NoteEntry[]) => {
-    setNotes(updated)
-    await writeProjectFile(projectId, NOTES_DIR, NOTES_FILE, JSON.stringify(updated, null, 2))
-  }
+  // ─── CRUD ───────────────────────────────────────
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!newContent.trim()) return
     const entry: NoteEntry = {
       id: generateId(),
       content: newContent.trim(),
       type: newType,
-      chapterRef: '',
+      chapterRef: newChapterRef,
       done: false,
+      resolved: false,
       createdAt: new Date().toISOString().slice(0, 16),
     }
-    saveNotes([entry, ...notes]).catch((e: unknown) => { console.error(e) })
+    await saveNote(projectId, entry)
     setNewContent('')
+    await refresh()
   }
 
-  const handleToggleDone = (id: string) => {
-    const updated = notes.map((n) => n.id === id ? { ...n, done: !n.done } : n)
-    saveNotes(updated).catch((e: unknown) => { console.error(e) })
+  const handleToggleDone = async (id: string) => {
+    const note = notes.find((n) => n.id === id)
+    if (!note) return
+    await saveNote(projectId, { ...note, done: !note.done })
+    await refresh()
   }
 
-  const handleDelete = (id: string) => {
-    saveNotes(notes.filter((n) => n.id !== id)).catch((e: unknown) => { console.error(e) })
+  const handleToggleResolved = async (id: string) => {
+    const note = notes.find((n) => n.id === id)
+    if (!note) return
+    await saveNote(projectId, { ...note, resolved: !note.resolved })
+    await refresh()
   }
 
-  const filtered = filter === 'all' ? notes : notes.filter((n) => n.type === filter)
+  const handleDelete = async (id: string) => {
+    await deleteNote(projectId, id)
+    setDeleteTarget(null)
+    await refresh()
+  }
+
+  // ─── Inline editing ─────────────────────────────
+
+  const startEdit = (note: NoteEntry) => {
+    setEditingId(note.id)
+    setEditContent(note.content)
+  }
+
+  const saveEdit = async () => {
+    if (editingId === null) return
+    const note = notes.find((n) => n.id === editingId)
+    if (!note || !editContent.trim()) { setEditingId(null); return }
+    await saveNote(projectId, { ...note, content: editContent.trim() })
+    setEditingId(null)
+    await refresh()
+  }
+
+  const cancelEdit = () => setEditingId(null)
+
+  // ─── Filter & Pagination ────────────────────────
+
+  const filtered = useMemo(() => applyFilter(notes, filter), [notes, filter])
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  const handleFilterChange = (f: FilterView) => { setFilter(f); setPage(1) }
+  const handleViewModeChange = (mode: ViewMode) => { setViewMode(mode); setPage(1) }
+
+  // ─── Overdue banner ─────────────────────────────
+
+  const overdueCount = useMemo(() => {
+    const now = Date.now()
+    const week = 7 * 24 * 60 * 60 * 1000
+    return notes.filter((n) => {
+      if (n.type !== 'todo' || n.done) return false
+      const created = new Date(n.createdAt).getTime()
+      return !isNaN(created) && (now - created) > week
+    }).length
+  }, [notes])
+
+  // ─── Grouped view ───────────────────────────────
+
+  const groupedNotes = useMemo(() => {
+    if (viewMode !== 'grouped') return null
+    const groups = new Map<string, { ref: string; volume: string; chapterId: string; title: string; notes: NoteEntry[] }>()
+
+    for (const note of filtered) {
+      if (!note.chapterRef) {
+        const g = groups.get('__project__') ?? { ref: '__project__', volume: '', chapterId: '', title: '📌 项目级', notes: [] }
+        g.notes.push(note)
+        if (!groups.has('__project__')) groups.set('__project__', g)
+      } else {
+        const key = note.chapterRef
+        if (!groups.has(key)) {
+          groups.set(key, {
+            ref: key,
+            volume: parseChapterRef(key)?.volume ?? '',
+            chapterId: parseChapterRef(key)?.chapterId ?? '',
+            title: resolveChapterName(key, chapterList),
+            notes: [],
+          })
+        }
+        groups.get(key)!.notes.push(note)
+      }
+    }
+
+    const entries = [...groups.entries()]
+    entries.sort(([, a], [, b]) => {
+      if (!a.chapterId && !b.chapterId) return 0
+      if (!a.chapterId) return -1
+      if (!b.chapterId) return 1
+      return a.volume.localeCompare(b.volume) || a.chapterId.localeCompare(b.chapterId)
+    })
+    return entries.map(([, g]) => g)
+  }, [viewMode, filtered, chapterList])
+
+  const toggleGroupCollapse = (key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
+  }
+
+  const groupedPaged = useMemo(() => {
+    if (!groupedNotes) return null
+    const allItems: Array<
+      { kind: 'group-header'; key: string; title: string; count: number }
+      | { kind: 'note'; note: NoteEntry }
+    > = []
+
+    for (const g of groupedNotes) {
+      allItems.push({ kind: 'group-header', key: g.ref, title: g.title, count: g.notes.length })
+      if (!collapsedGroups.has(g.ref)) {
+        for (const n of g.notes) allItems.push({ kind: 'note', note: n })
+      }
+    }
+
+    const start = (safePage - 1) * PAGE_SIZE
+    return allItems.slice(start, start + PAGE_SIZE)
+  }, [groupedNotes, collapsedGroups, safePage])
+
+  // ─── Render helpers ─────────────────────────────
+
+  const typeIcon = (n: NoteEntry): string => {
+    if (n.type === 'question') return '❓'
+    if (n.type === 'todo') return '☐'
+    return '📝'
+  }
+
+  const stateButton = (n: NoteEntry) => {
+    if (n.type === 'todo') {
+      return (
+        <button className="btn-text" onClick={() => { handleToggleDone(n.id).catch(console.error) }}>
+          {n.done ? '↩ 重开' : '✓ 完成'}
+        </button>
+      )
+    }
+    if (n.type === 'question') {
+      return (
+        <button className="btn-text" onClick={() => { handleToggleResolved(n.id).catch(console.error) }}>
+          {n.resolved ? '↩ 重开' : '✓ 解决'}
+        </button>
+      )
+    }
+    return null
+  }
+
+  const filterEmptyLabel = (): string => {
+    switch (filter) {
+      case 'note': return '备注'
+      case 'todo': return '待办'
+      case 'done': return '已完成待办'
+      case 'question': return '疑问'
+      case 'resolved': return '已解决疑问'
+      default: return ''
+    }
+  }
+
+  const chapterVolumes = useMemo(() => groupChaptersByVolume(chapterList), [chapterList])
+
+  const renderNoteItem = (n: NoteEntry) => (
+    <div key={n.id} className={`note-item ${n.type}${n.done ? ' done' : ''}${n.resolved ? ' resolved' : ''}`}>
+      <div className="note-item-header">
+        <span className="note-type-badge">{typeIcon(n)}</span>
+        {n.chapterRef && (
+          <span
+            className="note-chapter-tag"
+            onClick={(e) => { e.stopPropagation(); onNavigateToChapter?.(n.chapterRef) }}
+            title="点击跳转到该章节"
+          >
+            📖 {resolveChapterName(n.chapterRef, chapterList)}
+          </span>
+        )}
+        <span className="note-date">{n.createdAt}</span>
+        <div className="note-item-actions">
+          {stateButton(n)}
+          <button className="btn-text" onClick={(e) => { e.stopPropagation(); setDeleteTarget(n) }} style={{ color: 'var(--danger)' }}>✕</button>
+        </div>
+      </div>
+      {editingId === n.id ? (
+        <div className="note-edit-area">
+          <textarea
+            className="note-edit-textarea"
+            value={editContent}
+            onChange={(e) => { setEditContent(e.target.value) }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit().catch(console.error) }
+              if (e.key === 'Escape') cancelEdit()
+            }}
+            autoFocus
+            rows={3}
+          />
+          <div className="note-edit-actions">
+            <button className="btn-text" onClick={() => { saveEdit().catch(console.error) }}>保存</button>
+            <button className="btn-text" onClick={cancelEdit}>取消</button>
+          </div>
+        </div>
+      ) : (
+        <div
+          className={`note-content${n.done ? ' done-text' : ''}${n.resolved ? ' resolved-text' : ''}`}
+          onClick={() => { startEdit(n) }}
+          title="点击编辑"
+        >
+          {n.content}
+        </div>
+      )}
+    </div>
+  )
+
+  // ─── Render ─────────────────────────────────────
 
   return (
     <div className="notes-panel">
       <div className="notes-input-area">
         <div className="notes-input-row">
-          <input
+          <textarea
             className="notes-input"
             value={newContent}
             onChange={(e) => { setNewContent(e.target.value) }}
-            placeholder="添加备注或待办…"
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { handleAdd() } }}
+            placeholder="添加备注、待办或疑问…"
+            rows={2}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAdd().catch(console.error) }
+            }}
           />
-          <select value={newType} onChange={(e) => { setNewType(e.target.value as 'note' | 'todo') }}>
+          <select value={newType} onChange={(e) => { setNewType(e.target.value as NoteType) }}>
             <option value="note">备注</option>
             <option value="todo">待办</option>
+            <option value="question">疑问</option>
           </select>
-          <button className="btn-primary" onClick={() => { handleAdd() }}>添加</button>
+          <button className="btn-primary" onClick={() => { handleAdd().catch(console.error) }}>添加</button>
+        </div>
+        {chapterVolumes.size > 0 && (
+          <div className="notes-chapter-row">
+            <select value={newChapterRef} onChange={(e) => { setNewChapterRef(e.target.value) }}>
+              <option value="">项目级（不关联章节）</option>
+              {[...chapterVolumes.entries()].map(([volume, chs]) => (
+                <optgroup key={volume} label={volume}>
+                  {chs.map((ch) => (
+                    <option key={buildChapterRef(ch.volume, ch.id)} value={buildChapterRef(ch.volume, ch.id)}>
+                      {ch.title}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div className="notes-toolbar">
+        <div className="notes-filter">
+          {FILTER_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              className={`tab-btn${filter === opt.value ? ' active' : ''}`}
+              onClick={() => { handleFilterChange(opt.value) }}
+            >
+              {opt.label}
+              <span className="notes-filter-count">
+                {' '}{opt.value === 'all' ? notes.length : countFiltered(notes, opt.value)}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="notes-view-toggle">
+          <button
+            className={`tab-btn${viewMode === 'timeline' ? ' active' : ''}`}
+            onClick={() => { handleViewModeChange('timeline') }}
+          >📋 时间线</button>
+          <button
+            className={`tab-btn${viewMode === 'grouped' ? ' active' : ''}`}
+            onClick={() => { handleViewModeChange('grouped') }}
+          >📂 按章节</button>
         </div>
       </div>
 
-      <div className="notes-filter">
-        <button className={`tab-btn${filter === 'all' ? ' active' : ''}`} onClick={() => { setFilter('all') }}>全部</button>
-        <button className={`tab-btn${filter === 'note' ? ' active' : ''}`} onClick={() => { setFilter('note') }}>备注</button>
-        <button className={`tab-btn${filter === 'todo' ? ' active' : ''}`} onClick={() => { setFilter('todo') }}>待办</button>
-      </div>
+      {overdueCount > 0 && (
+        <div className="notes-overdue-banner">
+          ⚠️ {overdueCount} 条待办超过 7 天未完成
+        </div>
+      )}
 
       <div className="notes-list">
-        {filtered.map((n) => (
-          <div key={n.id} className={`note-item ${n.type}${n.done ? ' done' : ''}`}>
-            <div className="note-item-header">
-              <span className="note-type-badge">{n.type === 'todo' ? '☐' : '📝'}</span>
-              <span className="note-date">{n.createdAt}</span>
-              <div className="note-item-actions">
-                {n.type === 'todo' && (
-                  <button className="btn-text" onClick={() => { handleToggleDone(n.id) }}>
-                    {n.done ? '↩ 重开' : '✓ 完成'}
-                  </button>
-                )}
-                <button className="btn-text" onClick={() => { handleDelete(n.id) }} style={{ color: 'var(--danger)' }}>✕</button>
-              </div>
-            </div>
-            <div className={`note-content${n.done ? ' done-text' : ''}`}>{n.content}</div>
-          </div>
-        ))}
-        {filtered.length === 0 && (
-          <p className="notes-empty">暂无{filter === 'all' ? '' : filter === 'note' ? '备注' : '待办'}</p>
+        {loading ? (
+          <p className="notes-empty">加载中…</p>
+        ) : viewMode === 'grouped' && groupedPaged ? (
+          groupedPaged.length === 0 ? (
+            <p className="notes-empty">暂无{filterEmptyLabel()}</p>
+          ) : (
+            groupedPaged.map((item) => {
+              if (item.kind === 'group-header') {
+                const isCollapsed = collapsedGroups.has(item.key)
+                return (
+                  <div
+                    key={`gh-${item.key}`}
+                    className="notes-group-header"
+                    onClick={() => { toggleGroupCollapse(item.key) }}
+                  >
+                    <span className="notes-group-caret">{isCollapsed ? '▶' : '▼'}</span>
+                    <span className="notes-group-title">{item.title}</span>
+                    <span className="notes-group-count">{item.count}</span>
+                  </div>
+                )
+              }
+              return renderNoteItem(item.note)
+            })
+          )
+        ) : (
+          <>
+            {paged.map(renderNoteItem)}
+            {filtered.length === 0 && !loading && (
+              <p className="notes-empty">暂无{filterEmptyLabel()}</p>
+            )}
+          </>
         )}
       </div>
+
+      {totalPages > 1 && (
+        <div className="notes-pagination">
+          <button className="btn-text" disabled={safePage <= 1} onClick={() => { setPage((p) => Math.max(1, p - 1)) }}>← 上一页</button>
+          <span className="notes-page-info">{safePage} / {totalPages}</span>
+          <button className="btn-text" disabled={safePage >= totalPages} onClick={() => { setPage((p) => Math.min(totalPages, p + 1)) }}>下一页 →</button>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="确认删除"
+          message={`确定要删除这条${deleteTarget.type === 'todo' ? '待办' : deleteTarget.type === 'question' ? '疑问' : '备注'}吗？\n\n"${deleteTarget.content.length > 60 ? deleteTarget.content.slice(0, 60) + '…' : deleteTarget.content}"\n\n删除后无法恢复。`}
+          confirmText="删除"
+          danger
+          onConfirm={() => { handleDelete(deleteTarget.id).catch(console.error) }}
+          onCancel={() => { setDeleteTarget(null) }}
+        />
+      )}
     </div>
   )
 }

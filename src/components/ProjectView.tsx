@@ -29,10 +29,16 @@ export default function ProjectView({ project, onBack }: Props) {
   const [showExport, setShowExport] = useState(false)
   const [showArchive, setShowArchive] = useState(false)
   const [reviewChapterId, setReviewChapterId] = useState<string | null>(null)
+  const [navigateChapterRef, setNavigateChapterRef] = useState<string | null>(null)
 
   const handleNavigateToReview = (chapterId: string) => {
     setReviewChapterId(chapterId)
     setTab('review')
+  }
+
+  const handleNavigateToChapter = (chapterRef: string) => {
+    setNavigateChapterRef(chapterRef)
+    setTab('writing')
   }
 
   return (
@@ -85,11 +91,11 @@ export default function ProjectView({ project, onBack }: Props) {
       </div>
 
       <div className="project-tab-content">
-        {tab === 'writing' && <ChapterManager projectId={project.id} projectName={project.name} onNavigateToReview={handleNavigateToReview} />}
+        {tab === 'writing' && <ChapterManager projectId={project.id} projectName={project.name} onNavigateToReview={handleNavigateToReview} initialChapterRef={navigateChapterRef} />}
         {tab === 'characters' && <CharacterPanel projectId={project.id} />}
         {tab === 'worldview' && <WorldviewPanel projectId={project.id} />}
         {tab === 'outline' && <OutlinePanel projectId={project.id} />}
-        {tab === 'notes' && <NotesPanel projectId={project.id} />}
+        {tab === 'notes' && <NotesPanel projectId={project.id} onNavigateToChapter={handleNavigateToChapter} />}
         {tab === 'foreshadow' && <ForeshadowPanel projectId={project.id} currentChapter={1} />}
         {tab === 'search' && <SearchPanel projectId={project.id} />}
         {tab === 'stats' && <StatisticsPanel projectId={project.id} targetWords={project.target_words} />}

@@ -2,6 +2,8 @@
 import { readProjectFile } from '../api/tauri'
 import type { DataSource, ContextLoadContext } from './dataSource'
 import type { CognitionState, ForeshadowStore } from '../types/novel'
+import { loadAllNotes, buildChapterRef } from '../services/notesStorage'
+import type { NoteEntry } from '../services/notesStorage'
 
 const SNAPSHOT_DIR = 'memory/snapshots'
 const FORESHADOW_DIR = 'memory'
@@ -86,5 +88,60 @@ export const recentSummaryDS: DataSource<string> = {
       } catch { /* snapshot may not exist */ }
     }
     return summaries.join('\n')
+  },
+}
+
+// ─── Notes source ──────────────────────────
+
+function notesToText(notes: NoteEntry[], chapterRef: string): string {
+  const chapterNotes = notes.filter((n) => n.chapterRef === chapterRef)
+  const projectTodos = notes.filter((n) => !n.chapterRef && n.type === 'todo' && !n.done)
+
+  const sections: string[] = []
+
+  const plainNotes = chapterNotes.filter((n) => n.type === 'note')
+  if (plainNotes.length > 0) {
+    sections.push(plainNotes.map((n) => `- ${n.content}`).join('\n'))
+  }
+
+  const todos = [
+    ...chapterNotes.filter((n) => n.type === 'todo' && !n.done),
+    ...projectTodos,
+  ]
+  if (todos.length > 0) {
+    sections.push(todos.map((n) => {
+      const label = n.chapterRef ? '（关联本章）' : '（项目级）'
+      return `- ☐ ${n.content} ${label}`
+    }).join('\n'))
+  }
+
+  const questions = chapterNotes.filter((n) => n.type === 'question' && !n.resolved)
+  if (questions.length > 0) {
+    sections.push(questions.map((n) => `- ❓ ${n.content}`).join('\n'))
+  }
+
+  if (sections.length === 0) return ''
+
+  const labels = [
+    plainNotes.length > 0 ? '写作笔记' : '',
+    todos.length > 0 ? '待办事项' : '',
+    questions.length > 0 ? '疑问待确认' : '',
+  ].filter(Boolean)
+
+  return labels.map((label, i) => {
+    if (!sections[i]) return ''
+    return `【${label}】\n${sections[i]}`
+  }).filter(Boolean).join('\n\n')
+}
+
+export const notesDS: DataSource<string> = {
+  name: '写作笔记',
+  priority: 9,
+  async load(ctx: ContextLoadContext): Promise<string> {
+    try {
+      const all = await loadAllNotes(ctx.projectId)
+      const chapterRef = buildChapterRef(ctx.volume, ctx.chapterId)
+      return notesToText(all, chapterRef)
+    } catch { return '' }
   },
 }

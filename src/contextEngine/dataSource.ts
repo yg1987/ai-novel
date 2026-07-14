@@ -1,6 +1,7 @@
 // src/contextEngine/dataSource.ts
 export interface ContextLoadContext {
   projectId: string
+  volume: string
   chapterId: string
   chapterNumber: number
   targetWords: number
