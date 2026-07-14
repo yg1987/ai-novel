@@ -14,6 +14,7 @@ import {
 } from '../services/foreshadowStorage'
 import { classifyForeshadows, type ForeshadowUrgency } from '../services/foreshadowContext'
 import Pagination from './Pagination'
+import Modal from './Modal'
 import { usePagination } from '../hooks/usePagination'
 
 interface Props {
@@ -46,8 +47,15 @@ const IMPORTANCE_OPTIONS = [
 const URGENCY_LABELS: Record<ForeshadowUrgency, string> = {
   critical: '🔴 必须回收',
   upcoming: '🟡 即将到期',
-  active: '🔵 推进中',
+  active: '🔵 近期活跃',
   background: '⚪ 已埋设',
+}
+
+const URGENCY_TIPS: Record<ForeshadowUrgency, string> = {
+  critical: '已超期，需尽快回收。编辑 → 展开高级选项 → 修改「计划回收章节」可调整',
+  upcoming: '即将到期，应提前铺垫。编辑 → 展开高级选项 → 修改「计划回收章节」可调整',
+  active: '近期有推进记录，保持活跃。超过20章无推进将自动变为「已埋设」',
+  background: '暂无计划回收章节或长期未推进。编辑 → 展开高级选项 → 设置「计划回收章节」，或点击「推进」按钮记录一次推进',
 }
 
 function getForeshadowUrgency(
@@ -361,7 +369,7 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
                 <span className="foreshadow-importance">
                   {IMPORTANCE_OPTIONS.find((o) => o.value === entry.importance)?.label ?? '★★★☆☆'}
                 </span>
-                <span className={`urgency-badge urgency-${urgency}`}>{URGENCY_LABELS[urgency]}</span>
+                <span className={`urgency-badge urgency-${urgency}`} title={URGENCY_TIPS[urgency]}>{URGENCY_LABELS[urgency]}</span>
               </div>
               <div className="foreshadow-desc">{entry.description}</div>
               <div className="foreshadow-meta">
@@ -449,8 +457,7 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
 
       {/* ─── Add/Edit Modal ─────────────────── */}
       {showForm && (
-        <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="modal-content foreshadow-form" onClick={(e) => e.stopPropagation()}>
+        <Modal className="foreshadow-form">
             <h3>{editingId ? '编辑伏笔' : '新增伏笔'}</h3>
             <div className="modal-scroll-body">
               {/* ── basic fields ─────────────────── */}
@@ -567,14 +574,12 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
               <button className="btn-primary" disabled={!form.name.trim() || !form.description.trim()} onClick={handleSave}>保存</button>
               <button className="btn-text" onClick={() => setShowForm(false)}>取消</button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* ─── Advance prompt modal ──────────── */}
       {advancePrompt && (
-        <div className="modal-overlay" onClick={() => setAdvancePrompt(null)}>
-          <div className="modal-content foreshadow-advance-modal" onClick={(e) => e.stopPropagation()}>
+        <Modal className="foreshadow-advance-modal">
             <h3>推进伏笔</h3>
             <p>记录推进内容（可选）：</p>
             <textarea
@@ -588,14 +593,12 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
               <button className="btn-primary" onClick={handleAdvanceConfirm}>确认推进</button>
               <button className="btn-text" onClick={() => setAdvancePrompt(null)}>取消</button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* ─── Delete confirm modal ──────────── */}
       {deleteTarget && (
-        <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
-          <div className="modal-content foreshadow-delete-modal" onClick={(e) => e.stopPropagation()}>
+        <Modal className="foreshadow-delete-modal">
             <h3>删除伏笔</h3>
             <p>
               确定删除「{deleteTarget.name}」？
@@ -606,8 +609,7 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
               <button className="btn-danger" onClick={handleDelete}>确定删除</button>
               <button className="btn-text" onClick={() => setDeleteTarget(null)}>取消</button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   )
