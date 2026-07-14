@@ -112,6 +112,7 @@
   display: flex;
   flex-direction: column;
   flex: 1;
+  overflow: hidden;
 }
 
 /* ─── 左侧侧栏：背景色 + border-right 自动延伸到底 */
@@ -143,6 +144,35 @@
 4. **左侧栏用 `flex-direction: column`** — 让内部 header / list / footer 垂直排列。
 5. **右侧内容区用 `flex: 1; overflow: hidden`** — 自适应剩余宽度，内容不溢出。
 6. **分割线用 `border-right` 而非额外元素。**
+
+### 滚动容器规则（单列 panel 必检）
+
+所有单列 panel（备注、伏笔、审查、统计等）遵循两层滚动模式。**每次新增/修改 panel 样式必须逐条核对。**
+
+```
+根容器 (.xxx-panel)
+  flex: 1, flex column, overflow: hidden    ← 外层：裁剪溢出
+  │
+  ├─ header/stats/filters 区域
+  │   flex-shrink: 0                         ← 不被列表挤扁
+  │
+  └─ 列表/内容区域 (.xxx-list)
+      flex: 1, overflow-y: auto              ← 内层：独立滚动
+```
+
+**检查清单（缺一条就滚不动）：**
+
+| # | 检查项 | 位置 |
+|---|--------|------|
+| 1 | 根容器有没有 `overflow: hidden`？ | panel 根 class |
+| 2 | 头部/工具栏有没有 `flex-shrink: 0`？ | stats / filters / toolbar |
+| 3 | 列表容器有没有 `flex: 1` + `overflow-y: auto`？ | list class |
+| 4 | 展开/折叠子区域有没有 `min-height: 0`？（flex 子元素高度溢出时不撑大父容器） | 动态内容区 |
+
+**反例（会崩）：**
+- 根容器写了 `flex: 1` 但没写 `overflow: hidden` → 列表撑破视口，整个页面跟着滚
+- 列表写了 `flex: 1` 但没写 `overflow-y: auto` → 内容溢出不可见，无法滚动
+- header/stats 没写 `flex-shrink: 0` → 列表撑开时 header 被挤压变形
 
 ### 需要 banner（顶部提示条）的特殊情况
 
@@ -177,6 +207,13 @@ banner 放在外层，下面的 sidebar + editor 包在一个 `display: flex; fl
 | 世界观 | 外层 column wrapper + 内层 row | `.panel-sidebar` | `.panel-editor` |
 | 大纲 | `.panel-layout` | `.panel-sidebar` | `.panel-editor` |
 | 搜索 | `.panel-layout` | `.panel-sidebar` | `.panel-editor` |
+
+单列 panel 参考（无侧栏，全宽）：
+
+| Tab | 根容器 class | 滚动容器 |
+|---|---|---|
+| 备注 | `.notes-panel` (`overflow: hidden`) | `.notes-list` (`flex: 1; overflow-y: auto`) |
+| 伏笔 | `.foreshadow-panel` (`overflow: hidden`) | `.foreshadow-list` (`flex: 1; overflow-y: auto`) |
 
 ## 设计原则
 

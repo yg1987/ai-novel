@@ -2,6 +2,8 @@ import { useState, useCallback } from 'react'
 import type { SearchSource } from '../services/search'
 import { hybridSearch } from '../services/search'
 import type { SearchResult } from '../api/tauri'
+import Pagination from './Pagination'
+import { usePagination } from '../hooks/usePagination'
 
 interface Props {
   projectId: string
@@ -17,12 +19,17 @@ const SOURCE_LABELS: Record<string, string> = {
   resources: '素材',
 }
 
+const DEFAULT_PAGE_SIZE = 15
+
 export default function SearchPanel({ projectId }: Props) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Array<SearchResult & { rrfScore: number }>>([])
   const [searching, setSearching] = useState(false)
   const [includeVector, setIncludeVector] = useState(true)
   const [sourceFilter, setSourceFilter] = useState<string>('all')
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
+
+  const { paged, page, setPage, totalPages, reset } = usePagination(results, pageSize)
 
   const doSearch = useCallback(async () => {
     if (!query.trim()) return
@@ -31,12 +38,16 @@ export default function SearchPanel({ projectId }: Props) {
       const sources = sourceFilter === 'all' ? [] : [sourceFilter as SearchSource]
       const res = await hybridSearch(projectId, query.trim(), { sources, includeVector, topK: 30 })
       setResults(res)
+      reset()
     } catch (e) {
       console.error('Search failed:', e)
     } finally {
       setSearching(false)
     }
-  }, [query, projectId, sourceFilter, includeVector])
+  }, [query, projectId, sourceFilter, includeVector, reset])
+
+  const handleSourceChange = (s: string) => { setSourceFilter(s); reset() }
+  const handlePageSizeChange = (ps: number) => { setPageSize(ps); reset() }
 
   return (
     <div className="panel-layout">
@@ -49,7 +60,7 @@ export default function SearchPanel({ projectId }: Props) {
             <div
               key={s}
               className={`panel-item${sourceFilter === s ? ' active' : ''}`}
-              onClick={() => { setSourceFilter(s) }}
+              onClick={() => handleSourceChange(s)}
             >
               {s === 'all' ? '全部' : SOURCE_LABELS[s] ?? s}
             </div>
@@ -80,7 +91,7 @@ export default function SearchPanel({ projectId }: Props) {
           {results.length === 0 && !searching && (
             <div className="panel-placeholder" style={{ height: 200 }}>输入关键词开始搜索</div>
           )}
-          {results.map((r, i) => (
+          {paged.map((r, i) => (
             <div key={`${r.path}-${i}`} className="foreshadow-item normal" style={{ marginBottom: 8 }}>
               <div className="foreshadow-item-header">
                 <span className="note-type-badge">{SOURCE_LABELS[r.source] ?? r.source}</span>
@@ -91,6 +102,18 @@ export default function SearchPanel({ projectId }: Props) {
             </div>
           ))}
           {searching && <div className="panel-placeholder">搜索中…</div>}
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            totalItems={results.length}
+            pageSize={pageSize}
+            pageSizeOptions={[15, 30, 50]}
+            onPageChange={(p) => {
+              setPage(p)
+              document.querySelector('.panel-editor')?.scrollTo(0, 0)
+            }}
+            onPageSizeChange={handlePageSizeChange}
+          />
         </div>
       </div>
     </div>

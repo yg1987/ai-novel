@@ -24,9 +24,10 @@ interface Props {
   projectName: string
   onNavigateToReview?: (chapterId: string) => void
   initialChapterRef?: string | null
+  onChapterSelect?: (chapterId: string) => void
 }
 
-export default function ChapterManager({ projectId, projectName, onNavigateToReview, initialChapterRef }: Props) {
+export default function ChapterManager({ projectId, projectName, onNavigateToReview, initialChapterRef, onChapterSelect }: Props) {
   const [chapters, setChapters] = useState<ChapterMeta[]>([])
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null)
   const [contentVersion, setContentVersion] = useState(0)
@@ -104,6 +105,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
       .then(([list]) => {
         if (list.length > 0 && !activeChapterId) {
           setActiveChapterId(list[0]!.id)
+          onChapterSelect?.(list[0]!.id)
         }
         setLoading(false)
       })
@@ -118,6 +120,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
     const target = chapters.find((c) => c.volume === parsed.volume && c.id === parsed.chapterId)
     if (target) {
       setActiveChapterId(target.id)
+      onChapterSelect?.(target.id)
       // Expand the volume so the chapter is visible
       setCollapsedVolumes((prev) => ({ ...prev, [target.volume]: false }))
     }
@@ -199,6 +202,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
   const handleClickChapter = (ch: ChapterMeta) => {
     setActiveChapterId(ch.id)
     setShowVersionHistory(false)
+    onChapterSelect?.(ch.id)
   }
 
   const handleViewVersionHistory = (ch: ChapterMeta) => {

@@ -14,6 +14,8 @@ import {
   type FilterView,
 } from '../services/notesStorage'
 import ConfirmDialog from './ConfirmDialog'
+import Pagination from './Pagination'
+import { usePagination } from '../hooks/usePagination'
 
 type ViewMode = 'timeline' | 'grouped'
 
@@ -22,7 +24,7 @@ interface Props {
   onNavigateToChapter?: (chapterRef: string) => void
 }
 
-const PAGE_SIZE = 20
+const DEFAULT_PAGE_SIZE = 15
 
 const FILTER_OPTIONS: { value: FilterView; label: string }[] = [
   { value: 'all', label: '全部' },
@@ -62,7 +64,7 @@ export default function NotesPanel({ projectId, onNavigateToChapter }: Props) {
   const [newChapterRef, setNewChapterRef] = useState('')
   const [filter, setFilter] = useState<FilterView>('all')
   const [viewMode, setViewMode] = useState<ViewMode>('timeline')
-  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
   const [loading, setLoading] = useState(true)
@@ -141,12 +143,11 @@ export default function NotesPanel({ projectId, onNavigateToChapter }: Props) {
   // ─── Filter & Pagination ────────────────────────
 
   const filtered = useMemo(() => applyFilter(notes, filter), [notes, filter])
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const safePage = Math.min(page, totalPages)
-  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+  const { paged, page, setPage, totalPages, reset } = usePagination(filtered, pageSize)
 
-  const handleFilterChange = (f: FilterView) => { setFilter(f); setPage(1) }
-  const handleViewModeChange = (mode: ViewMode) => { setViewMode(mode); setPage(1) }
+  const handleFilterChange = (f: FilterView) => { setFilter(f); reset() }
+  const handleViewModeChange = (mode: ViewMode) => { setViewMode(mode); reset() }
+  const handlePageSizeChange = (ps: number) => { setPageSize(ps); reset() }
 
   // ─── Overdue banner ─────────────────────────────
 
@@ -218,9 +219,11 @@ export default function NotesPanel({ projectId, onNavigateToChapter }: Props) {
       }
     }
 
-    const start = (safePage - 1) * PAGE_SIZE
-    return allItems.slice(start, start + PAGE_SIZE)
-  }, [groupedNotes, collapsedGroups, safePage])
+    const groupedTotalPages = Math.max(1, Math.ceil(allItems.length / pageSize))
+    const groupedSafePage = Math.min(page, groupedTotalPages)
+    const start = (groupedSafePage - 1) * pageSize
+    return { items: allItems.slice(start, start + pageSize), totalPages: groupedTotalPages }
+  }, [groupedNotes, collapsedGroups, page, pageSize])
 
   // ─── Render helpers ─────────────────────────────
 
@@ -388,10 +391,10 @@ export default function NotesPanel({ projectId, onNavigateToChapter }: Props) {
         {loading ? (
           <p className="notes-empty">加载中…</p>
         ) : viewMode === 'grouped' && groupedPaged ? (
-          groupedPaged.length === 0 ? (
+          groupedPaged.items.length === 0 ? (
             <p className="notes-empty">暂无{filterEmptyLabel()}</p>
           ) : (
-            groupedPaged.map((item) => {
+            groupedPaged.items.map((item) => {
               if (item.kind === 'group-header') {
                 const isCollapsed = collapsedGroups.has(item.key)
                 return (
@@ -419,13 +422,20 @@ export default function NotesPanel({ projectId, onNavigateToChapter }: Props) {
         )}
       </div>
 
-      {totalPages > 1 && (
-        <div className="notes-pagination">
-          <button className="btn-text" disabled={safePage <= 1} onClick={() => { setPage((p) => Math.max(1, p - 1)) }}>← 上一页</button>
-          <span className="notes-page-info">{safePage} / {totalPages}</span>
-          <button className="btn-text" disabled={safePage >= totalPages} onClick={() => { setPage((p) => Math.min(totalPages, p + 1)) }}>下一页 →</button>
-        </div>
-      )}
+      <Pagination
+        currentPage={page}
+        totalPages={viewMode === 'grouped' && groupedPaged ? groupedPaged.totalPages : totalPages}
+        totalItems={viewMode === 'grouped' && groupedPaged
+          ? groupedNotes?.reduce((sum, g) => sum + g.notes.length + 1, 0) ?? 0
+          : filtered.length}
+        pageSize={pageSize}
+        pageSizeOptions={[15, 30, 50]}
+        onPageChange={(p) => {
+          setPage(p)
+          document.querySelector('.notes-list')?.scrollTo(0, 0)
+        }}
+        onPageSizeChange={handlePageSizeChange}
+      />
 
       {deleteTarget && (
         <ConfirmDialog

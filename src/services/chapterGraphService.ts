@@ -1,6 +1,7 @@
 // src/services/chapterGraphService.ts
-import { listChapters, getChapterContent, readProjectFile } from '../api/tauri'
+import { listChapters, getChapterContent } from '../api/tauri'
 import { estimateWordCount } from '../utils/cjkCount'
+import { loadForeshadows } from './foreshadowStorage'
 
 export interface ChapterNode {
   id: string
@@ -21,8 +22,6 @@ export interface ChapterGraph {
   nodes: ChapterNode[]
   edges: ChapterEdge[]
 }
-
-const FORESHADOW_FILE = 'foreshadows.json'
 
 export async function loadChapterGraph(projectId: string): Promise<ChapterGraph> {
   const chapters = await listChapters(projectId)
@@ -56,18 +55,29 @@ export async function loadChapterGraph(projectId: string): Promise<ChapterGraph>
 
   // Foreshadow edges from foreshadows.json
   try {
-    const raw = await readProjectFile(projectId, 'memory', FORESHADOW_FILE)
-    const store = JSON.parse(raw)
-    for (const entry of store.entries || []) {
-      if (entry.status === 'resolved' && entry.resolvedChapter) {
-        const sourceId = `ch${String(entry.plantedChapter).padStart(3, '0')}`
-        const targetId = `ch${String(entry.resolvedChapter).padStart(3, '0')}`
+    const store = await loadForeshadows(projectId)
+    for (const entry of store.entries) {
+      // Planted → resolved edge
+      if (entry.status === 'resolved' && entry.resolvedChapterId) {
+        const sourceId = entry.plantedChapterId
+        const targetId = entry.resolvedChapterId
         if (nodeMap.has(sourceId) && nodeMap.has(targetId) && sourceId !== targetId) {
           edges.push({
             source: sourceId,
             target: targetId,
             type: 'foreshadow',
             label: `伏笔: ${entry.name}`,
+          })
+        }
+      }
+      // Planted/advanced → push clues as edges
+      for (const clue of entry.clues) {
+        if (nodeMap.has(clue.chapterId)) {
+          edges.push({
+            source: entry.plantedChapterId,
+            target: clue.chapterId,
+            type: 'foreshadow',
+            label: `推进: ${entry.name}`,
           })
         }
       }

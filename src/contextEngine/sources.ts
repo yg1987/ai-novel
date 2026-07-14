@@ -1,14 +1,13 @@
 // src/contextEngine/sources.ts
 import { readProjectFile } from '../api/tauri'
 import type { DataSource, ContextLoadContext } from './dataSource'
-import type { CognitionState, ForeshadowStore } from '../types/novel'
+import type { CognitionState } from '../types/novel'
+import { loadForeshadows } from '../services/foreshadowStorage'
 import { loadAllNotes, buildChapterRef } from '../services/notesStorage'
 import type { NoteEntry } from '../services/notesStorage'
 
 const SNAPSHOT_DIR = 'memory/snapshots'
-const FORESHADOW_DIR = 'memory'
 const COGNITION_FILE = 'character-states.json'
-const FORESHADOW_FILE = 'foreshadows.json'
 
 // ─── Helpers ───────────────────────────────
 
@@ -22,14 +21,11 @@ function cognitionToText(state: CognitionState): string {
   return lines.join('\n')
 }
 
-function foreshadowToText(store: ForeshadowStore, currentChapter: number): string {
-  const unresolved = store.entries.filter((e) => e.status !== 'resolved' && e.status !== 'abandoned')
-  if (unresolved.length === 0) return ''
-  unresolved.sort((a, b) => a.plantedChapter - b.plantedChapter)
-  return unresolved.map((f) => {
-    const age = currentChapter - f.plantedChapter
-    const urgency = age > 30 ? '⚠️ 紧急' : age > 15 ? '⚡ 注意' : '·'
-    return `${urgency} [${f.status === 'advanced' ? '推进中' : '已埋设'}] ${f.name}：${f.description}（第${f.plantedChapter}章埋设）`
+function foreshadowToText(entries: { name: string; description: string; status: string; plantedChapterId: string }[]): string {
+  if (entries.length === 0) return ''
+  return entries.map((f) => {
+    const statusLabel = f.status === 'advanced' ? '推进中' : '已埋设'
+    return `· [${statusLabel}] ${f.name}：${f.description}（${f.plantedChapterId}埋设）`
   }).join('\n')
 }
 
@@ -40,7 +36,7 @@ export const cognitionDS: DataSource<string> = {
   priority: 7,
   async load(ctx: ContextLoadContext): Promise<string> {
     try {
-      const raw = await readProjectFile(ctx.projectId, FORESHADOW_DIR, COGNITION_FILE)
+      const raw = await readProjectFile(ctx.projectId, 'memory', COGNITION_FILE)
       if (!raw.trim()) return ''
       const state = JSON.parse(raw) as CognitionState
       return cognitionToText(state)
@@ -50,13 +46,64 @@ export const cognitionDS: DataSource<string> = {
 
 export const foreshadowDS: DataSource<string> = {
   name: '未解伏笔',
-  priority: 8,
+  priority: 5,
   async load(ctx: ContextLoadContext): Promise<string> {
     try {
-      const raw = await readProjectFile(ctx.projectId, FORESHADOW_DIR, FORESHADOW_FILE)
-      if (!raw.trim()) return ''
-      const store = JSON.parse(raw) as ForeshadowStore
-      return foreshadowToText(store, ctx.chapterNumber)
+      const store = await loadForeshadows(ctx.projectId)
+      const unresolved = store.entries.filter(
+        (e) => e.status !== 'resolved' && e.status !== 'abandoned',
+      )
+      if (unresolved.length === 0) return ''
+
+      // Load current chapter snapshot to get appearing characters
+      let currentChars: string[] = []
+      try {
+        const snapRaw = await readProjectFile(
+          ctx.projectId,
+          'memory/snapshots',
+          `${ctx.chapterId}.snapshot.json`,
+        )
+        if (snapRaw.trim()) {
+          const snap = JSON.parse(snapRaw)
+          if (Array.isArray(snap.characters)) currentChars = snap.characters
+        }
+      } catch { /* no snapshot yet */ }
+
+      // Build sections: character-related first, then general
+      const sections: string[] = []
+
+      if (currentChars.length > 0) {
+        const charRelated = unresolved.filter(
+          (e) => e.relatedCharacters.some((c) => currentChars.includes(c)),
+        )
+        if (charRelated.length > 0) {
+          sections.push(
+            `## 👤 本章出场角色关联的伏笔（${charRelated.length}条）`,
+            `本章出场：${currentChars.join('、')}`,
+            charRelated
+              .map((f) => {
+                const statusLabel = f.status === 'advanced' ? '推进中' : '已埋设'
+                return `- [${statusLabel}] ${f.name}：${f.description}（${f.plantedChapterId}埋设）`
+              })
+              .join('\n'),
+          )
+        }
+
+        // Non-character related
+        const other = unresolved.filter(
+          (e) => !e.relatedCharacters.some((c) => currentChars.includes(c)),
+        )
+        if (other.length > 0) {
+          sections.push(
+            `## 其他未解伏笔（${other.length}条）`,
+            foreshadowToText(other),
+          )
+        }
+      } else {
+        sections.push(foreshadowToText(unresolved))
+      }
+
+      return sections.join('\n\n')
     } catch { return '' }
   },
 }

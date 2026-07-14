@@ -1945,28 +1945,70 @@ body {
   justify-content: flex-end;
 }
 
-/* Pagination */
-.notes-pagination {
+/* ─── Pagination ────────────────────────── */
+
+.pagination {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  padding: 12px 0 0;
-  border-top: 1px solid var(--border);
-  margin-top: 16px;
+  gap: 12px;
+  padding: 10px 0;
   flex-shrink: 0;
-}
-
-.notes-page-info {
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
   font-size: 0.85rem;
   color: var(--text-muted);
-  min-width: 60px;
-  text-align: center;
 }
 
-.notes-pagination .btn-text:disabled {
-  opacity: 0.4;
-  cursor: default;
+.pagination-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pagination-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pagination-info {
+  user-select: none;
+}
+
+.pagination-size {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.pagination-size-select {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.pagination-size-select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .notes-empty {
@@ -2229,7 +2271,7 @@ body {
   display: flex;
   flex-direction: column;
   flex: 1;
-  width: 100%;
+  overflow: hidden;
   padding: 24px;
 }
 
@@ -2239,9 +2281,11 @@ body {
   margin-bottom: 16px;
   font-size: 0.85rem;
   color: var(--text-secondary);
+  flex-shrink: 0;
 }
 
 .foreshadow-stats .stat-active { color: #e67e22; font-weight: 500; }
+.foreshadow-stats .stat-advanced { color: #3498db; font-weight: 500; }
 .foreshadow-stats .stat-done { color: #27ae60; font-weight: 500; }
 .foreshadow-stats .stat-abandoned { color: #95a5a6; }
 
@@ -2321,13 +2365,326 @@ body {
 .foreshadow-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 6px;
   margin-top: 4px;
+}
+
+.foreshadow-actions .btn-text {
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.foreshadow-actions .btn-text:hover {
+  text-decoration: none;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.foreshadow-actions .btn-text[style*="var(--danger)"] {
+  border-color: transparent;
+}
+
+.foreshadow-actions .btn-text[style*="var(--danger)"]:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: rgba(231, 76, 60, 0.06);
 }
 
 .foreshadow-empty {
   text-align: center;
   color: var(--text-muted);
   padding: 40px 0;
+}
+
+/* ─── Foreshadow filters & category ─────────────── */
+.foreshadow-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.category-filter {
+  flex-wrap: wrap;
+}
+
+.foreshadow-category-chip {
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-muted);
+}
+
+.foreshadow-category-chip.cat-identity     { background: #e8f5e9; color: #2e7d32; }
+.foreshadow-category-chip.cat-mystery      { background: #ede7f6; color: #4527a0; }
+.foreshadow-category-chip.cat-item         { background: #fff3e0; color: #e65100; }
+.foreshadow-category-chip.cat-relationship { background: #fce4ec; color: #c62828; }
+.foreshadow-category-chip.cat-event        { background: #e3f2fd; color: #1565c0; }
+.foreshadow-category-chip.cat-ability      { background: #fff8e1; color: #f57f17; }
+.foreshadow-category-chip.cat-power        { background: #f3e5f5; color: #6a1b9a; }
+
+.foreshadow-importance {
+  font-size: 0.7rem;
+  color: #f39c12;
+  letter-spacing: 1px;
+}
+
+.foreshadow-notes {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: var(--bg);
+  border-radius: 4px;
+}
+
+/* ─── Foreshadow clues timeline ─────────────────── */
+.foreshadow-clues {
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--bg);
+  border-radius: 4px;
+}
+
+.foreshadow-clues-title {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.foreshadow-clue-item {
+  display: flex;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+
+.foreshadow-clue-chapter {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  min-width: 80px;
+}
+
+.foreshadow-clue-desc {
+  color: var(--text-muted);
+}
+
+/* ─── Modal (shared) ──────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-content {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  overflow: hidden;
+}
+.modal-scroll-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+}
+
+/* ─── Foreshadow form ─────────────────────────── */
+.foreshadow-form {
+  width: 520px;
+  max-width: 95vw;
+}
+.foreshadow-form h3 {
+  margin: 0 0 16px;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.foreshadow-form .form-group {
+  margin-bottom: 12px;
+}
+.foreshadow-form .form-group label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.foreshadow-form .form-group input,
+.foreshadow-form .form-group textarea,
+.foreshadow-form .form-group select {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+}
+.foreshadow-form .form-row {
+  display: flex;
+  gap: 12px;
+}
+.foreshadow-form .form-row .form-group {
+  flex: 1;
+}
+
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+.advanced-toggle:hover { color: var(--accent); }
+.advanced-toggle .arrow { transition: transform 0.15s; }
+.advanced-toggle .arrow.open { transform: rotate(90deg); }
+
+/* ─── Foreshadow character chips ──────────────── */
+.foreshadow-chars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.foreshadow-char-chip {
+  display: inline-block;
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.foreshadow-char-chip:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ─── Character panel related foreshadows ───────── */
+.char-foreshadows {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.char-foreshadows-title {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.char-foreshadow-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 0.8rem;
+}
+.char-foreshadow-item.status-resolved .char-foreshadow-name {
+  text-decoration: line-through; opacity: 0.6;
+}
+.char-foreshadow-item.status-abandoned .char-foreshadow-name {
+  text-decoration: line-through; opacity: 0.5;
+}
+.char-foreshadow-name { flex: 1; }
+.char-foreshadow-status {
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.char-foreshadow-status.s-planted   { background: #e67e22; color: #fff; }
+.char-foreshadow-status.s-advanced  { background: #3498db; color: #fff; }
+.char-foreshadow-status.s-resolved  { background: #27ae60; color: #fff; }
+.char-foreshadow-status.s-abandoned { background: #95a5a6; color: #fff; }
+
+.character-multi-select {
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  padding: 4px;
+}
+
+.char-select-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border-radius: 4px;
+  user-select: none;
+}
+.char-select-option:hover { background: rgba(0, 0, 0, 0.04); }
+.char-select-option.selected { background: var(--accent); color: #fff; }
+.char-select-option input[type="checkbox"] { display: none; }
+
+.form-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+
+/* ─── Foreshadow small modals ─────────────────── */
+.foreshadow-advance-modal,
+.foreshadow-delete-modal {
+  width: 400px;
+  max-width: 90vw;
+}
+.foreshadow-advance-modal p,
+.foreshadow-delete-modal p {
+  font-size: 0.9rem;
+  margin: 0 0 12px;
+}
+.foreshadow-advance-modal textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+}
+.foreshadow-delete-modal small {
+  color: var(--text-muted);
+}
+
+/* ─── Foreshadow add button in stats bar ────────── */
+.foreshadow-stats .btn-add {
+  margin-left: auto;
+  padding: 4px 12px;
+  font-size: 0.8rem;
 }
 
 /* ─── Rewrite Panel ────────────────────────────── */

@@ -1,5 +1,6 @@
 import { readProjectFile } from '../api/tauri'
-import type { ForeshadowStore, CognitionState, TimelineEntry } from '../types/novel'
+import { loadForeshadows } from './foreshadowStorage'
+import type { ForeshadowEntry, CognitionState, TimelineEntry } from '../types/novel'
 import type { ConsistencyIssue, ConsistencyCheckResult, ConsistencySeverity } from '../types/review'
 import type { ConsistencyThresholds } from './reviewRules'
 import { getDefaultReviewRules } from './reviewRules'
@@ -15,19 +16,20 @@ function nextId(): string {
 // ─── Check 1: Dormant Foreshadowing ───────────────
 
 function checkDormantForeshadow(
-  foreshadows: ForeshadowStore | null,
+  foreshadows: ForeshadowEntry[],
   currentChapter: number,
   t: ConsistencyThresholds,
 ): ConsistencyIssue[] {
-  if (!foreshadows?.entries?.length) return []
+  if (!foreshadows.length) return []
 
   const issues: ConsistencyIssue[] = []
-  for (const entry of foreshadows.entries) {
+  for (const entry of foreshadows) {
     if (entry.status !== 'planted' && entry.status !== 'advanced') continue
 
-    const lastActiveChapter = entry.advancedChapters?.length
-      ? Math.max(...entry.advancedChapters, entry.plantedChapter)
-      : entry.plantedChapter
+    // Get last activity from clues or planted chapter
+    const lastActiveChapter = entry.clues?.length
+      ? Math.max(...entry.clues.map((c) => Number(c.chapterId.replace('ch', ''))))
+      : Number(entry.plantedChapterId.replace('ch', ''))
     const dormantFor = currentChapter - lastActiveChapter
 
     if (dormantFor >= t.dormantForeshadowWarn) {
@@ -41,9 +43,9 @@ function checkDormantForeshadow(
         type: 'dormant_foreshadow',
         severity,
         chapter: currentChapter,
-        description: `伏笔「${entry.name}」已沉寂 ${dormantFor} 章（第${entry.plantedChapter}章埋设）`,
+        description: `伏笔「${entry.name}」已沉寂 ${dormantFor} 章（${entry.plantedChapterId}埋设）`,
         suggestion: dormantFor >= t.dormantForeshadowCritical ? '需尽快推进或回收此伏笔' : '考虑在后续章节推进此伏笔',
-        detail: `category=${entry.category} importance=${entry.importance} last_active=ch${lastActiveChapter}`,
+        detail: `category=${entry.category} importance=${entry.importance} last_active=${entry.plantedChapterId}`,
       })
     }
   }
@@ -105,25 +107,26 @@ function checkTimelineOrder(
 // ─── Check 4: Overdue Foreshadowing ───────────────
 
 function checkOverdueForeshadow(
-  foreshadows: ForeshadowStore | null,
+  foreshadows: ForeshadowEntry[],
   currentChapter: number,
   t: ConsistencyThresholds,
 ): ConsistencyIssue[] {
-  if (!foreshadows?.entries?.length) return []
+  if (!foreshadows.length) return []
 
   const issues: ConsistencyIssue[] = []
-  for (const entry of foreshadows.entries) {
+  for (const entry of foreshadows) {
     if (entry.status !== 'planted' && entry.status !== 'advanced') continue
 
+    const plantedNum = Number(entry.plantedChapterId.replace('ch', ''))
     const threshold = entry.importance >= 0.8 ? t.overdueHighImportance : t.overdueDefault
-    const dormantFor = currentChapter - entry.plantedChapter
+    const dormantFor = currentChapter - plantedNum
     if (dormantFor > threshold) {
       issues.push({
         id: nextId(),
         type: 'overdue_foreshadow',
         severity: 'S2',
         chapter: currentChapter,
-        description: `高优先级伏笔「${entry.name}」已超 ${dormantFor} 章未回收（埋设于第${entry.plantedChapter}章）`,
+        description: `高优先级伏笔「${entry.name}」已超 ${dormantFor} 章未回收（埋设于${entry.plantedChapterId}）`,
         suggestion: '考虑在接下来 1-2 章内推动或回收此伏笔',
       })
     }
@@ -142,22 +145,21 @@ export async function runConsistencyChecks(
   const t: ConsistencyThresholds = { ...DEFAULT_THRESHOLDS, ...thresholds }
   _issueCounter = 0
 
-  const [foreshadowJson, cognitionJson, timelineJson] = await Promise.all([
-    readProjectFile(projectId, 'memory', 'foreshadows.json').catch(() => null),
+  const [foreshadowStore, cognitionJson, timelineJson] = await Promise.all([
+    loadForeshadows(projectId).catch(() => ({ entries: [], updatedAt: '' })),
     readProjectFile(projectId, 'memory', 'character-states.json').catch(() => null),
     readProjectFile(projectId, 'memory', 'timeline.json').catch(() => null),
   ])
 
-  const foreshadows: ForeshadowStore | null = foreshadowJson ? JSON.parse(foreshadowJson) as ForeshadowStore : null
   const cognition: CognitionState | null = cognitionJson ? JSON.parse(cognitionJson) as CognitionState : null
   const timeline: TimelineEntry[] | null = timelineJson ? JSON.parse(timelineJson) as TimelineEntry[] : null
 
   // Run all 4 checks (deterministic, no AI cost)
   const allIssues: ConsistencyIssue[] = [
-    ...checkDormantForeshadow(foreshadows, currentChapter, t),
+    ...checkDormantForeshadow(foreshadowStore.entries, currentChapter, t),
     ...checkAbsentCharacter(cognition, currentChapter, presentCharacterNames),
     ...checkTimelineOrder(timeline),
-    ...checkOverdueForeshadow(foreshadows, currentChapter, t),
+    ...checkOverdueForeshadow(foreshadowStore.entries, currentChapter, t),
   ]
 
   const summary = { S1: 0, S2: 0, S3: 0, S4: 0, total: allIssues.length }

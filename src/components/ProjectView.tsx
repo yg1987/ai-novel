@@ -30,6 +30,8 @@ export default function ProjectView({ project, onBack }: Props) {
   const [showArchive, setShowArchive] = useState(false)
   const [reviewChapterId, setReviewChapterId] = useState<string | null>(null)
   const [navigateChapterRef, setNavigateChapterRef] = useState<string | null>(null)
+  const [currentChapterId, setCurrentChapterId] = useState<string | null>(null)
+  const [navigateCharacter, setNavigateCharacter] = useState<string | null>(null)
 
   const handleNavigateToReview = (chapterId: string) => {
     setReviewChapterId(chapterId)
@@ -39,6 +41,11 @@ export default function ProjectView({ project, onBack }: Props) {
   const handleNavigateToChapter = (chapterRef: string) => {
     setNavigateChapterRef(chapterRef)
     setTab('writing')
+  }
+
+  const handleNavigateToCharacter = (name: string) => {
+    setNavigateCharacter(name)
+    setTab('characters')
   }
 
   return (
@@ -91,12 +98,12 @@ export default function ProjectView({ project, onBack }: Props) {
       </div>
 
       <div className="project-tab-content">
-        {tab === 'writing' && <ChapterManager projectId={project.id} projectName={project.name} onNavigateToReview={handleNavigateToReview} initialChapterRef={navigateChapterRef} />}
-        {tab === 'characters' && <CharacterPanel projectId={project.id} />}
+        {tab === 'writing' && <ChapterManager projectId={project.id} projectName={project.name} onNavigateToReview={handleNavigateToReview} initialChapterRef={navigateChapterRef} onChapterSelect={(chapterId) => setCurrentChapterId(chapterId)} />}
+        {tab === 'characters' && <CharacterPanel projectId={project.id} initialCharacter={navigateCharacter} />}
         {tab === 'worldview' && <WorldviewPanel projectId={project.id} />}
         {tab === 'outline' && <OutlinePanel projectId={project.id} />}
         {tab === 'notes' && <NotesPanel projectId={project.id} onNavigateToChapter={handleNavigateToChapter} />}
-        {tab === 'foreshadow' && <ForeshadowPanel projectId={project.id} currentChapter={1} />}
+        {tab === 'foreshadow' && <ForeshadowPanel projectId={project.id} currentChapterId={currentChapterId} onNavigateToCharacter={handleNavigateToCharacter} />}
         {tab === 'search' && <SearchPanel projectId={project.id} />}
         {tab === 'stats' && <StatisticsPanel projectId={project.id} targetWords={project.target_words} />}
         {tab === 'review' && <ReviewPanel projectId={project.id} currentChapterId={reviewChapterId} />}

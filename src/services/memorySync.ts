@@ -1,9 +1,8 @@
 import { writeProjectFile, readProjectFile } from '../api/tauri'
-import type { ChapterSnapshot, ForeshadowStore, CognitionState, CharacterCognition, TimelineEntry } from '../types/novel'
+import type { ChapterSnapshot, CognitionState, CharacterCognition, TimelineEntry } from '../types/novel'
+import { loadForeshadows, saveForeshadows, createForeshadowId } from './foreshadowStorage'
 
 const SNAPSHOT_DIR = 'memory/snapshots'
-const FORESHADOW_DIR = 'memory'
-const FORESHADOW_FILE = 'foreshadows.json'
 const COGNITION_DIR = 'memory'
 const COGNITION_FILE = 'character-states.json'
 
@@ -25,7 +24,7 @@ export async function saveChapterSnapshot(
   )
 
   // 2. Sync foreshadowing
-  await syncForeshadowing(projectId, snapshot)
+  await syncForeshadowing(projectId, snapshot, chapterId)
 
   // 3. Sync character cognition
   await syncCharacterCognition(projectId, snapshot)
@@ -36,17 +35,14 @@ export async function saveChapterSnapshot(
 
 // ─── Foreshadow sync ─────────────────────────────
 
-async function loadForeshadowStore(projectId: string): Promise<ForeshadowStore> {
-  try {
-    const raw = await readProjectFile(projectId, FORESHADOW_DIR, FORESHADOW_FILE)
-    if (raw.trim()) return JSON.parse(raw) as ForeshadowStore
-  } catch { /* file may not exist */ }
-  return { version: 1, entries: [], updatedAt: '' }
-}
-
-async function syncForeshadowing(projectId: string, snapshot: ChapterSnapshot): Promise<void> {
-  const store = await loadForeshadowStore(projectId)
+async function syncForeshadowing(
+  projectId: string,
+  snapshot: ChapterSnapshot,
+  chapterId: string,
+): Promise<void> {
+  const store = await loadForeshadows(projectId)
   let changed = false
+  const now = new Date().toISOString().slice(0, 16)
 
   for (const change of snapshot.foreshadowingChanges) {
     const trimmed = change.trim()
@@ -56,18 +52,24 @@ async function syncForeshadowing(projectId: string, snapshot: ChapterSnapshot): 
     if (plantMatch) {
       const name = plantMatch[1]!.trim()
       const desc = plantMatch[2]?.trim() ?? name
-      if (!store.entries.some((e) => e.name === name && e.status !== 'resolved')) {
+      // 去重：同名 + 同章节 ID 视为重复
+      const exists = store.entries.some(
+        (e) => e.name === name && e.plantedChapterId === chapterId,
+      )
+      if (!exists) {
         store.entries.push({
-          id: `f${String(Date.now())}`,
+          id: createForeshadowId(),
           name,
           description: desc,
           status: 'planted',
           category: 'mystery',
           importance: 0.6,
-          plantedChapter: snapshot.chapterNumber,
-          advancedChapters: [],
+          plantedChapterId: chapterId,
+          clues: [],
           relatedCharacters: snapshot.characters,
           notes: '',
+          createdAt: now,
+          updatedAt: now,
         })
         changed = true
       }
@@ -78,10 +80,17 @@ async function syncForeshadowing(projectId: string, snapshot: ChapterSnapshot): 
     const advMatch = trimmed.match(/^推进伏笔[：:]\s*(.+)$/)
     if (advMatch) {
       const name = advMatch[1]!.trim()
-      const entry = store.entries.find((e) => e.name === name)
-      if (entry && entry.status !== 'resolved') {
+      const entry = store.entries.find(
+        (e) => e.name === name && e.status !== 'resolved' && e.status !== 'abandoned',
+      )
+      if (entry) {
         entry.status = 'advanced'
-        entry.advancedChapters.push(snapshot.chapterNumber)
+        entry.clues.push({
+          chapterId,
+          description: snapshot.summary.slice(0, 100),
+          timestamp: new Date().toISOString(),
+        })
+        entry.updatedAt = now
         changed = true
       }
       continue
@@ -91,18 +100,20 @@ async function syncForeshadowing(projectId: string, snapshot: ChapterSnapshot): 
     const resMatch = trimmed.match(/^回收伏笔[：:]\s*(.+)$/)
     if (resMatch) {
       const name = resMatch[1]!.trim()
-      const entry = store.entries.find((e) => e.name === name)
+      const entry = store.entries.find(
+        (e) => e.name === name && e.status !== 'resolved',
+      )
       if (entry) {
         entry.status = 'resolved'
-        entry.resolvedChapter = snapshot.chapterNumber
+        entry.resolvedChapterId = chapterId
+        entry.updatedAt = now
         changed = true
       }
     }
   }
 
   if (changed) {
-    store.updatedAt = new Date().toISOString().slice(0, 16)
-    await writeProjectFile(projectId, FORESHADOW_DIR, FORESHADOW_FILE, JSON.stringify(store, null, 2))
+    await saveForeshadows(projectId, store)
   }
 }
 

@@ -22,24 +22,49 @@ export interface ChapterSnapshot {
 export type ForeshadowStatus = 'planted' | 'advanced' | 'resolved' | 'abandoned'
 export type ForeshadowCategory = 'identity' | 'mystery' | 'item' | 'relationship' | 'event' | 'ability' | 'power'
 
+export interface ForeshadowClue {
+  chapterId: string
+  description: string
+  timestamp: string
+}
+
 export interface ForeshadowEntry {
   id: string
   name: string
   description: string
   status: ForeshadowStatus
   category: ForeshadowCategory
-  importance: number                // 0.0 - 1.0
-  plantedChapter: number
-  advancedChapters: number[]
-  resolvedChapter?: number
+  importance: number              // 0.2 / 0.4 / 0.6 / 0.8 / 1.0
+  plantedChapterId: string
+  targetChapterId?: string
+  resolvedChapterId?: string
+  resolutionPlan?: string
+  clues: ForeshadowClue[]
   relatedCharacters: string[]
   notes: string
+  createdAt: string
+  updatedAt: string
 }
 
 export interface ForeshadowStore {
-  version: 1
   entries: ForeshadowEntry[]
   updatedAt: string
+}
+
+// ─── Foreshadow Config ─────────────────────────
+
+export interface ForeshadowConfig {
+  dormantThreshold: number
+  upcomingWindow: number
+  densityWarningThreshold: number
+  densityLowThreshold: number
+}
+
+export const DEFAULT_FORESHADOW_CONFIG: ForeshadowConfig = {
+  dormantThreshold: 20,
+  upcomingWindow: 10,
+  densityWarningThreshold: 0.3,
+  densityLowThreshold: 0.05,
 }
 
 // ─── Character Cognition ─────────────────────────
