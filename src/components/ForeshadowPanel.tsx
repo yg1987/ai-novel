@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { ForeshadowEntry, ForeshadowStatus, ForeshadowCategory } from '../types/novel'
+import type { ForeshadowEntry, ForeshadowStatus, ForeshadowCategory, ForeshadowClue } from '../types/novel'
+import { DEFAULT_FORESHADOW_CONFIG } from '../types/novel'
 import type { ChapterMeta } from '../types/chapter'
 import { listChapters, listProjectFiles } from '../api/tauri'
 import {
@@ -9,7 +10,9 @@ import {
   changeStatus,
   deleteForeshadow,
   createForeshadowId,
+  loadForeshadowConfig,
 } from '../services/foreshadowStorage'
+import { classifyForeshadows, type ForeshadowUrgency } from '../services/foreshadowContext'
 import Pagination from './Pagination'
 import { usePagination } from '../hooks/usePagination'
 
@@ -17,6 +20,7 @@ interface Props {
   projectId: string
   currentChapterId: string | null
   onNavigateToCharacter?: (name: string) => void
+  highlightId?: string | null
 }
 
 const CATEGORY_LABELS: Record<ForeshadowCategory, string> = {
@@ -38,32 +42,11 @@ const IMPORTANCE_OPTIONS = [
   { value: 1.0, label: '★★★★★' },
 ]
 
-function getChapterOrder(chapterId: string, chapters: ChapterMeta[]): number {
-  return chapters.find((c) => c.id === chapterId)?.order ?? 0
-}
-
 function getChapterLabel(chapterId: string, chapters: ChapterMeta[]): string {
   const meta = chapters.find((c) => c.id === chapterId)
   if (!meta) return chapterId
   const title = meta.title || `第${meta.order}章`
   return title
-}
-
-function getUrgency(
-  entry: ForeshadowEntry,
-  currentChapterId: string | null,
-  chapters: ChapterMeta[],
-): { label: string; level: 'critical' | 'warning' | 'normal' } {
-  if (entry.status === 'resolved' || entry.status === 'abandoned') {
-    return { label: '已处理', level: 'normal' }
-  }
-  if (!currentChapterId) return { label: '-', level: 'normal' }
-  const curOrder = getChapterOrder(currentChapterId, chapters)
-  const plantedOrder = getChapterOrder(entry.plantedChapterId, chapters)
-  const age = curOrder - plantedOrder
-  if (age > 30) return { label: `已过${String(age)}章未回收`, level: 'critical' }
-  if (age > 15) return { label: `已过${String(age)}章`, level: 'warning' }
-  return { label: `已埋${String(age)}章`, level: 'normal' }
 }
 
 interface FormData {
@@ -74,6 +57,7 @@ interface FormData {
   plantedChapterId: string
   targetChapterId: string
   relatedCharacters: string[]
+  clues: ForeshadowClue[]
   notes: string
   resolutionPlan: string
 }
@@ -87,6 +71,7 @@ function emptyForm(currentChapterId: string | null): FormData {
     plantedChapterId: currentChapterId ?? '',
     targetChapterId: '',
     relatedCharacters: [],
+    clues: [],
     notes: '',
     resolutionPlan: '',
   }
@@ -101,12 +86,13 @@ function entryToForm(entry: ForeshadowEntry): FormData {
     plantedChapterId: entry.plantedChapterId,
     targetChapterId: entry.targetChapterId ?? '',
     relatedCharacters: entry.relatedCharacters,
+    clues: entry.clues,
     notes: entry.notes,
     resolutionPlan: entry.resolutionPlan ?? '',
   }
 }
 
-export default function ForeshadowPanel({ projectId, currentChapterId, onNavigateToCharacter }: Props) {
+export default function ForeshadowPanel({ projectId, currentChapterId, onNavigateToCharacter, highlightId }: Props) {
   const [entries, setEntries] = useState<ForeshadowEntry[]>([])
   const [chapters, setChapters] = useState<ChapterMeta[]>([])
   const [characterNames, setCharacterNames] = useState<string[]>([])
@@ -119,15 +105,19 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
   const [deleteTarget, setDeleteTarget] = useState<ForeshadowEntry | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
+  const [foreshadowConfig, setForeshadowConfig] = useState(DEFAULT_FORESHADOW_CONFIG)
+  const [showCharDropdown, setShowCharDropdown] = useState(false)
 
   const refresh = useCallback(async () => {
-    const [store, chList, charFiles] = await Promise.all([
+    const [store, chList, charFiles, cfg] = await Promise.all([
       loadForeshadows(projectId),
       listChapters(projectId),
       listProjectFiles(projectId, 'characters').catch(() => []),
+      loadForeshadowConfig(projectId),
     ])
     setEntries(store.entries)
     setChapters(chList)
+    setForeshadowConfig(cfg)
     setCharacterNames(
       charFiles
         .filter((f) => f.name.endsWith('.md'))
@@ -143,6 +133,18 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
       setForm((f) => ({ ...f, plantedChapterId: currentChapterId ?? f.plantedChapterId }))
     }
   }, [currentChapterId, editingId])
+
+  // Scroll to highlighted foreshadow when highlightId changes
+  useEffect(() => {
+    if (!highlightId) return
+    const el = document.getElementById(`foreshadow-${highlightId}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.classList.add('foreshadow-highlight')
+      const timer = setTimeout(() => el.classList.remove('foreshadow-highlight'), 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [highlightId])
 
   const volumes = [...new Set(chapters.map((c) => c.volume))].sort()
 
@@ -194,6 +196,7 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
         importance: form.importance,
         plantedChapterId: form.plantedChapterId,
         targetChapterId: form.targetChapterId || undefined,
+        clues: form.clues,
         relatedCharacters: form.relatedCharacters,
         notes: form.notes,
         resolutionPlan: form.resolutionPlan || undefined,
@@ -209,7 +212,7 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
         importance: form.importance,
         plantedChapterId: form.plantedChapterId,
         targetChapterId: form.targetChapterId || undefined,
-        clues: [],
+        clues: form.clues,
         relatedCharacters: form.relatedCharacters,
         notes: form.notes,
         resolutionPlan: form.resolutionPlan || undefined,
@@ -278,6 +281,25 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
     </select>
   )
 
+  // ─── Urgency classification ──────────────
+
+  const URGENCY_LABELS: Record<ForeshadowUrgency, string> = {
+    critical: '🔴 必须回收',
+    upcoming: '🟡 即将到期',
+    active: '🔵 推进中',
+    background: '⚪ 已埋设',
+  }
+
+  function getForeshadowUrgency(
+    entry: ForeshadowEntry,
+    classified: Record<ForeshadowUrgency, ForeshadowEntry[]>,
+  ): ForeshadowUrgency {
+    for (const level of ['critical', 'upcoming', 'active', 'background'] as ForeshadowUrgency[]) {
+      if (classified[level].some((e) => e.id === entry.id)) return level
+    }
+    return 'background'
+  }
+
   // ─── Render ─────────────────────────────
   return (
     <div className="foreshadow-panel">
@@ -316,14 +338,16 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
 
       {/* ─── List ──────────────────────────── */}
       <div className="foreshadow-list">
-        {paged.map((entry) => {
-          const urgency = getUrgency(entry, currentChapterId, chapters)
-          const plantedLabel = getChapterLabel(entry.plantedChapterId, chapters)
-          const targetLabel = entry.targetChapterId
-            ? getChapterLabel(entry.targetChapterId, chapters)
-            : null
-          return (
-            <div key={entry.id} className={`foreshadow-item ${urgency.level}`}>
+        {(() => {
+          const classified = classifyForeshadows(filtered, currentChapterId, chapters, foreshadowConfig)
+          return paged.map((entry) => {
+            const urgency = getForeshadowUrgency(entry, classified)
+            const plantedLabel = getChapterLabel(entry.plantedChapterId, chapters)
+            const targetLabel = entry.targetChapterId
+              ? getChapterLabel(entry.targetChapterId, chapters)
+              : null
+            return (
+              <div key={entry.id} id={`foreshadow-${entry.id}`} className={`foreshadow-item urgency-${urgency}`}>
               <div className="foreshadow-item-header">
                 <span className={`foreshadow-status status-${entry.status}`}>
                   {STATUS_LABELS[entry.status]}
@@ -335,7 +359,7 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
                 <span className="foreshadow-importance">
                   {IMPORTANCE_OPTIONS.find((o) => o.value === entry.importance)?.label ?? '★★★☆☆'}
                 </span>
-                <span className={`urgency-badge ${urgency.level}`}>{urgency.label}</span>
+                <span className={`urgency-badge urgency-${urgency}`}>{URGENCY_LABELS[urgency]}</span>
               </div>
               <div className="foreshadow-desc">{entry.description}</div>
               <div className="foreshadow-meta">
@@ -403,7 +427,8 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
               </div>
             </div>
           )
-        })}
+          })
+        })()}
         {filtered.length === 0 && <p className="foreshadow-empty">暂无伏笔</p>}
       </div>
 
@@ -483,22 +508,51 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
                   </div>
                   <div className="form-group">
                     <label>关联角色</label>
-                    {characterNames.length > 0 ? (
-                      <div className="character-multi-select">
-                        {characterNames.map((name) => (
-                          <label key={name} className={`char-select-option${form.relatedCharacters.includes(name) ? ' selected' : ''}`}>
-                            <input
-                              type="checkbox"
-                              checked={form.relatedCharacters.includes(name)}
-                              onChange={() => toggleCharacter(name)}
-                            />
-                            {name}
-                          </label>
-                        ))}
-                      </div>
+                    {characterNames.length === 0 ? (
+                      <p className="form-hint">暂无角色记录，请在角色面板中创建</p>
                     ) : (
-                      <p className="form-hint">暂无角色，请先在角色面板创建角色</p>
+                      <>
+                        <button type="button" className="character-dropdown-btn" onClick={() => setShowCharDropdown(!showCharDropdown)}>
+                          已选 {form.relatedCharacters.length} 个角色 ▾
+                        </button>
+                        {showCharDropdown && (
+                          <div className="character-dropdown-panel">
+                            {characterNames.map((name) => (
+                              <label key={name} className="character-dropdown-item">
+                                <input type="checkbox" checked={form.relatedCharacters.includes(name)} onChange={() => toggleCharacter(name)} />
+                                {name}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                        <div className="character-chips">
+                          {form.relatedCharacters.map((name) => (
+                            <span key={name} className="character-chip">{name} <button type="button" onClick={() => toggleCharacter(name)}>×</button></span>
+                          ))}
+                        </div>
+                      </>
                     )}
+                  </div>
+                  <div className="form-group">
+                    <label>📋 推进轨迹</label>
+                    <div className="clues-editor">
+                      {form.clues.map((clue, idx) => (
+                        <div key={idx} className="clue-row">
+                          {renderChapterSelect(clue.chapterId, (v) => {
+                            const next = [...form.clues]; next[idx] = { ...next[idx]!, chapterId: v }; setForm({ ...form, clues: next })
+                          })}
+                          <input value={clue.description} onChange={(e) => {
+                            const next = [...form.clues]; next[idx] = { ...next[idx]!, description: e.target.value }; setForm({ ...form, clues: next })
+                          }} placeholder="推进描述（如：在第5章通过对话暗示...）" />
+                          <button type="button" className="btn-text btn-sm" onClick={() => {
+                            setForm({ ...form, clues: form.clues.filter((_, i) => i !== idx) })
+                          }}>删除</button>
+                        </div>
+                      ))}
+                      <button type="button" className="btn-text" onClick={() => {
+                        setForm({ ...form, clues: [...form.clues, { chapterId: '', description: '', timestamp: new Date().toISOString() }] })
+                      }}>+ 添加推进记录</button>
+                    </div>
                   </div>
                   <div className="form-group">
                     <label>备注</label>

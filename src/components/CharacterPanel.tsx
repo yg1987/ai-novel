@@ -13,6 +13,7 @@ import SelectionContextMenu, { type ContextMenuAction } from './SelectionContext
 interface Props {
   projectId: string
   initialCharacter?: string | null
+  onNavigateToForeshadow?: (id: string) => void
 }
 
 const CHARACTER_SUBDIR = 'characters'
@@ -93,7 +94,7 @@ ${nameLine}
 
 // ─── Component ───────────────────────────────────────
 
-export default function CharacterPanel({ projectId, initialCharacter }: Props) {
+export default function CharacterPanel({ projectId, initialCharacter, onNavigateToForeshadow }: Props) {
   const [files, setFiles] = useState<string[]>([])
   const [order, setOrder] = useState<string[]>([])
   const orderRef = useRef<string[]>([])
@@ -551,19 +552,6 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
                       <pre>{CHAR_EXAMPLE}</pre>
                     </div>
                   )}
-                  {relatedForeshadows.length > 0 && (
-                    <div className="char-foreshadows">
-                      <div className="char-foreshadows-title">📎 关联伏笔 ({relatedForeshadows.length})</div>
-                      {relatedForeshadows.map((f) => (
-                        <div key={f.id} className={`char-foreshadow-item status-${f.status}`}>
-                          <span className="char-foreshadow-name">{f.name}</span>
-                          <span className={`char-foreshadow-status s-${f.status}`}>
-                            {f.status === 'planted' ? '待处理' : f.status === 'advanced' ? '推进中' : f.status === 'resolved' ? '已回收' : '已废弃'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                   <textarea
                     ref={rewriteTextareaRef}
                     className="sub-field-textarea"
@@ -585,6 +573,25 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
               </div>
             ) : (
               <div className="panel-preview">{content || <span style={{ color: 'var(--text-muted)' }}>暂无内容，点击编辑填写角色信息</span>}</div>
+            )}
+            {relatedForeshadows.length > 0 && (
+              <div className="char-foreshadows">
+                <div className="char-foreshadows-title">📎 关联伏笔 ({relatedForeshadows.length})</div>
+                {relatedForeshadows.map((f) => (
+                  <div key={f.id} className={`char-foreshadow-item status-${f.status}`}>
+                    <span
+                      className="char-foreshadow-link"
+                      onClick={() => onNavigateToForeshadow?.(f.id)}
+                      style={{ cursor: 'pointer', color: 'var(--accent)' }}
+                    >
+                      {f.name}
+                    </span>
+                    <span className={`char-foreshadow-status s-${f.status}`}>
+                      {f.status === 'planted' ? '待处理' : f.status === 'advanced' ? '推进中' : f.status === 'resolved' ? '已回收' : '已废弃'}
+                    </span>
+                  </div>
+                ))}
+              </div>
             )}
           </>
         ) : (

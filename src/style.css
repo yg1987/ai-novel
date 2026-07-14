@@ -2687,6 +2687,29 @@ body {
   font-size: 0.8rem;
 }
 
+/* ─── Urgency levels ──────────── */
+.urgency-critical { border-left: 3px solid #e53e3e; background: #fff5f5; }
+.urgency-upcoming { border-left: 3px solid #d69e2e; background: #fffff0; }
+.urgency-active { border-left: 3px solid #3182ce; background: #ebf8ff; }
+.urgency-background { border-left: 3px solid #a0aec0; background: #f7fafc; }
+.foreshadow-highlight { box-shadow: 0 0 0 3px #3182ce; transition: box-shadow 0.3s; }
+
+/* ─── Character dropdown ──────── */
+.character-dropdown-btn { width: 100%; text-align: left; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-input); cursor: pointer; }
+.character-dropdown-panel { max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; margin-top: 4px; padding: 4px 0; background: var(--bg-input); }
+.character-dropdown-item { display: flex; align-items: center; gap: 6px; padding: 4px 10px; cursor: pointer; font-size: 13px; }
+.character-dropdown-item:hover { background: var(--bg-hover); }
+.character-chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 8px; background: var(--bg-tag); border-radius: 12px; font-size: 12px; margin: 2px; }
+.character-chip button { background: none; border: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; color: var(--text-muted); }
+.character-chip button:hover { color: var(--text); }
+.character-chips { margin-top: 6px; }
+
+/* ─── Clues editor ────────────── */
+.clues-editor { display: flex; flex-direction: column; gap: 6px; }
+.clue-row { display: flex; gap: 6px; align-items: center; }
+.clue-row select { width: 140px; flex-shrink: 0; }
+.clue-row input { flex: 1; }
+
 /* ─── Rewrite Panel ────────────────────────────── */
 .rewrite-overlay {
   position: fixed; inset: 0; z-index: 1000;
