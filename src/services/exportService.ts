@@ -1,6 +1,7 @@
 // src/services/exportService.ts
 import { listChapters, getChapterContent, readProjectFile } from '../api/tauri'
 import { htmlToPlainText, htmlToMarkdown } from '../utils/htmlToText'
+import { adaptForPlatform, type PublishPlatform } from '../utils/formatAdapter'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
 import { invoke } from '@tauri-apps/api/core'
@@ -85,6 +86,20 @@ export async function exportAsMarkdown(
   if (!filePath) return
 
   await writeTextFile(filePath, content)
+}
+
+/**
+ * Copy a single chapter to clipboard in platform-specific publish format.
+ */
+export async function copyChapterForPlatform(
+  projectId: string,
+  volume: string,
+  chapterId: string,
+  platform: PublishPlatform,
+): Promise<void> {
+  const html = await getChapterContent(projectId, volume, chapterId)
+  const text = adaptForPlatform(html, platform)
+  await navigator.clipboard.writeText(text)
 }
 
 /**

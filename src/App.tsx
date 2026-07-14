@@ -7,6 +7,7 @@ import EditProjectDialog from './components/EditProjectDialog'
 import ProjectView from './components/ProjectView'
 import ProviderConfigPanel from './components/ProviderConfig'
 import SettingsModal from './components/SettingsModal'
+import { ToastContainer } from './utils/toast'
 
 type View = { kind: 'bookshelf' } | { kind: 'project'; id: string }
 
@@ -139,6 +140,7 @@ export default function App() {
       )}
 
       <SettingsModal visible={showSettings} onClose={() => { setShowSettings(false) }} />
+      <ToastContainer />
     </div>
   )
 }

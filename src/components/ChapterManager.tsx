@@ -7,6 +7,10 @@ import {
   readProjectFile,
   writeProjectFile,
 } from '../api/tauri'
+import { copyChapterForPlatform } from '../services/exportService'
+import { PLATFORM_LABELS, type PublishPlatform } from '../utils/formatAdapter'
+import { showToast } from '../utils/toast'
+import PopupMenu from './PopupMenu'
 import Editor, { type EditorHandle } from './Editor'
 import VersionHistoryPanel from './VersionHistoryPanel'
 import MaterialSidebar from './MaterialSidebar'
@@ -35,6 +39,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
   const [volumeNames, setVolumeNames] = useState<Record<string, string>>({})
   const [editingVolumeName, setEditingVolumeName] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState(false)
+  const [exportMenuChapterId, setExportMenuChapterId] = useState<string | null>(null)
   const [currentWordCount, setCurrentWordCount] = useState(0)
   const volumeNameInputRef = useRef<HTMLInputElement>(null)
   const chapterTitleInputRef = useRef<HTMLInputElement>(null)
@@ -242,6 +247,17 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
     setEditingTitle(false)
   }
 
+  const buildExportItems = (ch: ChapterMeta) =>
+    (Object.entries(PLATFORM_LABELS) as [PublishPlatform, string][]).map(([platform, label]) => ({
+      key: platform,
+      label,
+      onClick: () => {
+        copyChapterForPlatform(projectId, ch.volume, ch.id, platform)
+          .then(() => showToast(`已复制为${label}格式`))
+          .catch((e) => console.error('Failed to copy chapter:', e))
+      },
+    }))
+
   // ─── Computed ─────────────────────────────────
 
   const chaptersByVolume = volumes.map((vol) => ({
@@ -323,6 +339,25 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
                           {getChapterDisplay(ch)}
                         </span>
                         <span className="chapter-item-actions">
+                          <PopupMenu
+                            trigger={
+                              <button
+                                className="btn-tiny"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setExportMenuChapterId(
+                                    exportMenuChapterId === ch.id ? null : ch.id,
+                                  )
+                                }}
+                                title="发布复制"
+                              >
+                                📋
+                              </button>
+                            }
+                            items={buildExportItems(ch)}
+                            open={exportMenuChapterId === ch.id}
+                            onClose={() => setExportMenuChapterId(null)}
+                          />
                           <button
                             className="btn-tiny"
                             onClick={(e) => { e.stopPropagation(); handleViewVersionHistory(ch) }}

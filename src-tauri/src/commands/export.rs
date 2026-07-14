@@ -11,29 +11,46 @@ fn collect_chapters(project_dir: &PathBuf) -> Result<Vec<(u32, String, String)>,
     }
 
     let mut chapters: Vec<(u32, String, String)> = Vec::new();
+
+    // Walk volume subdirectories (chapters/{volume}/ch*.md)
     let entries = fs::read_dir(&chapters_dir)
         .map_err(|e| format!("Failed to read chapters dir: {e}"))?;
 
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if !name.starts_with("ch") || !name.ends_with(".md") {
+        // Skip hidden dirs and non-dirs
+        if name.starts_with('.') {
             continue;
         }
-        let id = name.trim_end_matches(".md").to_string();
-        let order = id.strip_prefix("ch")
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(0);
+        let vol_dir = chapters_dir.join(&name);
+        if !vol_dir.is_dir() {
+            continue;
+        }
 
-        let content = fs::read_to_string(entry.path())
-            .map_err(|e| format!("Failed to read {name}: {e}"))?;
+        let vol_entries = fs::read_dir(&vol_dir)
+            .map_err(|e| format!("Failed to read volume dir {name}: {e}"))?;
 
-        // Strip HTML tags to get plain text for EPUB
-        let body = content
-            .replace('<', "")
-            .replace('>', "\n");
+        for ve in vol_entries.flatten() {
+            let fname = ve.file_name().to_string_lossy().to_string();
+            if !fname.starts_with("ch") || !fname.ends_with(".md") {
+                continue;
+            }
+            let id = fname.trim_end_matches(".md").to_string();
+            let order = id.strip_prefix("ch")
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0);
 
-        let title = format!("第{order}章");
-        chapters.push((order, title, body));
+            let content = fs::read_to_string(ve.path())
+                .map_err(|e| format!("Failed to read {fname}: {e}"))?;
+
+            // Strip HTML tags to get plain text for EPUB
+            let body = content
+                .replace('<', "")
+                .replace('>', "\n");
+
+            let title = format!("第{order}章");
+            chapters.push((order, title, body));
+        }
     }
 
     chapters.sort_by_key(|(order, _, _)| *order);

@@ -1,7 +1,5 @@
 import { useState, useCallback } from 'react'
 import { exportAsPlainText, exportAsMarkdown, exportAsEpub, type ExportFormat, type ExportProgress } from '../services/exportService'
-import { adaptForPlatform, PLATFORM_LABELS, type PublishPlatform } from '../utils/formatAdapter'
-import { listChapters, getChapterContent } from '../api/tauri'
 
 interface Props {
   projectId: string
@@ -15,10 +13,6 @@ export default function ExportDialog({ projectId, projectName, onClose }: Props)
   const [progress, setProgress] = useState<ExportProgress | null>(null)
   const [done, setDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [publishPlatform, setPublishPlatform] = useState<PublishPlatform>('raw')
-  const [publishPreview, setPublishPreview] = useState('')
-  const [copied, setCopied] = useState(false)
-  const [loadingPreview, setLoadingPreview] = useState(false)
 
   const handleExport = useCallback(async () => {
     setExporting(true)
@@ -45,28 +39,6 @@ export default function ExportDialog({ projectId, projectName, onClose }: Props)
     markdown: 'Markdown (.md)',
     epub: 'EPUB (.epub)',
   }
-
-  const handlePublishCopy = useCallback(async () => {
-    setLoadingPreview(true)
-    setCopied(false)
-    try {
-      const chapters = await listChapters(projectId)
-      chapters.sort((a, b) => a.order - b.order)
-      const parts: string[] = []
-      for (const ch of chapters) {
-        const html = await getChapterContent(projectId, ch.volume, ch.id)
-        parts.push(adaptForPlatform(html, publishPlatform))
-      }
-      const text = parts.join('\n\n')
-      setPublishPreview(text.slice(0, 500))
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setLoadingPreview(false)
-    }
-  }, [projectId, publishPlatform])
 
   return (
     <div className="rewrite-overlay">
@@ -116,37 +88,6 @@ export default function ExportDialog({ projectId, projectName, onClose }: Props)
               )}
 
               {error && <div className="error-bar">{error}</div>}
-
-              <div className="export-divider" />
-              <label className="export-label">发布格式（一键复制）</label>
-              <div className="export-format-list">
-                {(Object.entries(PLATFORM_LABELS) as [PublishPlatform, string][]).map(([key, label]) => (
-                  <label key={key} className={`export-format-item${publishPlatform === key ? ' selected' : ''}`}>
-                    <input
-                      type="radio"
-                      name="publishPlatform"
-                      value={key}
-                      checked={publishPlatform === key}
-                      onChange={() => setPublishPlatform(key)}
-                    />
-                    <span className="export-format-label">{label}</span>
-                  </label>
-                ))}
-              </div>
-              <button
-                className="btn-primary"
-                onClick={handlePublishCopy}
-                disabled={loadingPreview}
-                style={{ width: '100%', marginTop: 8 }}
-              >
-                {loadingPreview ? '生成中…' : copied ? '✅ 已复制' : '📋 复制全文'}
-              </button>
-              {publishPreview && (
-                <div className="export-preview">
-                  <div className="export-preview-header">预览（前500字）</div>
-                  <div className="export-preview-text">{publishPreview}</div>
-                </div>
-              )}
             </>
           )}
         </div>
