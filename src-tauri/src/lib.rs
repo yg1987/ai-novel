@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 use std::fs;
 use std::path::PathBuf;
-use std::time::SystemTime;
 use uuid::Uuid;
 
 mod commands;
@@ -39,10 +38,7 @@ fn project_dir(app_handle: &tauri::AppHandle, id: &str) -> Result<PathBuf, Strin
 }
 
 fn timestamp() -> String {
-    let d = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    format!("{}", d.as_secs())
+    chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
 // ─── Projects index I/O ───────────────────────────────────
@@ -295,47 +291,77 @@ fn save_chapter_content(
     fs::create_dir_all(chapter_path.parent().unwrap())
         .map_err(|e| format!("Failed to create dir: {e}"))?;
 
-    // Backup existing content before overwriting
-    if chapter_path.exists() {
-        if let Ok(current) = fs::read_to_string(&chapter_path) {
-            let current_trimmed = current.trim();
-            let new_trimmed = content.trim();
-            if !current_trimmed.is_empty() && current_trimmed != new_trimmed {
-                let history_dir = chapter_history_dir(&dir, &volume, &chapter_id);
-                fs::create_dir_all(&history_dir)
-                    .map_err(|e| format!("Failed to create history dir: {e}"))?;
+    fs::write(&chapter_path, &content).map_err(|e| format!("Failed to write chapter: {e}"))
+}
 
-                let idx_path = history_dir.join("_index.json");
-                let mut index = commands::version::load_index_for_save(&idx_path);
-                let next_ver = index.versions.iter().map(|v| v.version).max().unwrap_or(0) + 1;
-                let backup_path = history_dir.join(format!("v{next_ver}.md"));
-                fs::write(&backup_path, &current).map_err(|e| format!("Failed to write backup: {e}"))?;
-                index.versions.push(commands::version::VersionMeta {
-                    version: next_ver,
-                    created_at: timestamp(),
-                    word_count: commands::version::count_words(&current),
-                    char_count: commands::version::count_chars(&current),
-                    source: "auto_save".to_string(),
-                    label: String::new(),
-                });
-                // Prune old versions
-                while index.versions.len() > index.max_versions as usize {
-                    let oldest = index.versions.remove(0);
-                    let old_path = history_dir.join(format!("v{}.md", oldest.version));
-                    if old_path.exists() {
-                        let _ = fs::remove_file(&old_path);
-                    }
-                }
-                let idx_json = serde_json::to_string_pretty(&index)
-                    .map_err(|e| format!("Serialize error: {e}"))?;
-                fs::write(&idx_path, &idx_json)
-                    .map_err(|e| format!("Failed to write index: {e}"))?;
-            }
+/// Strip HTML tags for plain-text word counting.
+fn strip_html(html: &str) -> String {
+    let mut result = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for c in html.chars() {
+        if c == '<' {
+            in_tag = true;
+        } else if c == '>' {
+            in_tag = false;
+        } else if !in_tag {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// Commit a chapter version snapshot — saves the current editor content as a new
+/// version in .history, then writes the content to the chapter file.
+#[tauri::command]
+fn commit_chapter_version(
+    app_handle: tauri::AppHandle,
+    project_id: String,
+    volume: String,
+    chapter_id: String,
+    content: String,
+) -> Result<(), String> {
+    let dir = project_dir(&app_handle, &project_id)?;
+    let chapter_path = chapter_path(&dir, &volume, &chapter_id);
+    fs::create_dir_all(chapter_path.parent().unwrap())
+        .map_err(|e| format!("Failed to create dir: {e}"))?;
+
+    // Save version snapshot
+    let history_dir = chapter_history_dir(&dir, &volume, &chapter_id);
+    fs::create_dir_all(&history_dir)
+        .map_err(|e| format!("Failed to create history dir: {e}"))?;
+
+    let idx_path = history_dir.join("_index.json");
+    let mut index = commands::version::load_index_for_save(&idx_path);
+    let next_ver = index.versions.iter().map(|v| v.version).max().unwrap_or(0) + 1;
+    let backup_path = history_dir.join(format!("v{next_ver}.md"));
+    fs::write(&backup_path, &content).map_err(|e| format!("Failed to write version: {e}"))?;
+
+    let plain = strip_html(&content);
+    index.versions.push(commands::version::VersionMeta {
+        version: next_ver,
+        created_at: timestamp(),
+        word_count: commands::version::count_words(&plain),
+        char_count: commands::version::count_chars(&plain),
+        source: "manual_save".to_string(),
+        label: String::new(),
+    });
+
+    // Prune old versions
+    while index.versions.len() > index.max_versions as usize {
+        let oldest = index.versions.remove(0);
+        let old_path = history_dir.join(format!("v{}.md", oldest.version));
+        if old_path.exists() {
+            let _ = fs::remove_file(&old_path);
         }
     }
 
-    fs::write(&chapter_path, &content).map_err(|e| format!("Failed to write chapter: {e}"))?;
-    Ok(())
+    let idx_json = serde_json::to_string_pretty(&index)
+        .map_err(|e| format!("Serialize error: {e}"))?;
+    fs::write(&idx_path, &idx_json)
+        .map_err(|e| format!("Failed to write index: {e}"))?;
+
+    // Write current content to chapter file
+    fs::write(&chapter_path, &content).map_err(|e| format!("Failed to write chapter: {e}"))
 }
 
 #[tauri::command]
@@ -560,6 +586,7 @@ pub fn run() {
             list_chapters,
             get_chapter_content,
             save_chapter_content,
+            commit_chapter_version,
             load_provider_config,
             save_provider_config,
             load_settings,

@@ -9,7 +9,7 @@
 //   2. logChapterSaved       — stats event log
 //   3. chunk + embed + index — vector store upsert
 
-import { saveChapterContent, vectorUpsertChunks } from '../api/tauri'
+import { vectorUpsertChunks, commitChapterVersion } from '../api/tauri'
 import { checkBannedWords, type CheckResult } from './bannedWords'
 import { loadReviewRules } from './reviewRules'
 import { logChapterSaved } from './stats'
@@ -136,8 +136,8 @@ async function maybeRunDeepReview(
 export async function runSavePipeline(input: SavePipelineInput): Promise<void> {
   const { projectId, volume, chapterId, chapterNumber, html } = input
 
-  // 1. Persist chapter content to disk
-  await saveChapterContent(projectId, volume, chapterId, html)
+  // 1. Commit version snapshot + persist chapter content to disk
+  await commitChapterVersion(projectId, volume, chapterId, html)
 
   const plainText = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
 

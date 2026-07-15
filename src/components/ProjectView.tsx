@@ -33,6 +33,8 @@ export default function ProjectView({ project, onBack }: Props) {
   const [currentChapterId, setCurrentChapterId] = useState<string | null>(null)
   const [navigateCharacter, setNavigateCharacter] = useState<string | null>(null)
   const [navigateForeshadowId, setNavigateForeshadowId] = useState<string | null>(null)
+  const [navigateNotesChapterRef, setNavigateNotesChapterRef] = useState<string | null>(null)
+  const [navigateNotesFilter, setNavigateNotesFilter] = useState<string | null>(null)
 
   const handleNavigateToReview = (chapterId: string) => {
     setReviewChapterId(chapterId)
@@ -52,6 +54,12 @@ export default function ProjectView({ project, onBack }: Props) {
   const handleNavigateToForeshadow = (id: string) => {
     setNavigateForeshadowId(id)
     setTab('foreshadow')
+  }
+
+  const handleNavigateToNotes = (chapterRef: string, filter: string) => {
+    setNavigateNotesChapterRef(chapterRef)
+    setNavigateNotesFilter(filter)
+    setTab('notes')
   }
 
   /** Navigate to the appropriate tab when a search result is clicked */
@@ -132,11 +140,11 @@ export default function ProjectView({ project, onBack }: Props) {
       </div>
 
       <div className="project-tab-content">
-        {tab === 'writing' && <ChapterManager projectId={project.id} projectName={project.name} onNavigateToReview={handleNavigateToReview} initialChapterRef={navigateChapterRef} onChapterSelect={(chapterId) => setCurrentChapterId(chapterId)} />}
+        {tab === 'writing' && <ChapterManager projectId={project.id} projectName={project.name} onNavigateToReview={handleNavigateToReview} onNavigateToNotes={handleNavigateToNotes} initialChapterRef={navigateChapterRef} onChapterSelect={(chapterId) => setCurrentChapterId(chapterId)} />}
         {tab === 'characters' && <CharacterPanel projectId={project.id} initialCharacter={navigateCharacter} onNavigateToForeshadow={handleNavigateToForeshadow} />}
         {tab === 'worldview' && <WorldviewPanel projectId={project.id} />}
         {tab === 'outline' && <OutlinePanel projectId={project.id} />}
-        {tab === 'notes' && <NotesPanel projectId={project.id} onNavigateToChapter={handleNavigateToChapter} />}
+        {tab === 'notes' && <NotesPanel projectId={project.id} onNavigateToChapter={handleNavigateToChapter} initialChapterRef={navigateNotesChapterRef} initialFilter={navigateNotesFilter} onHighlightComplete={() => { setNavigateNotesChapterRef(null); setNavigateNotesFilter(null) }} />}
         {tab === 'foreshadow' && <ForeshadowPanel projectId={project.id} currentChapterId={currentChapterId} onNavigateToCharacter={handleNavigateToCharacter} highlightId={navigateForeshadowId} onHighlightComplete={() => setNavigateForeshadowId(null)} />}
         {tab === 'search' && <SearchPanel projectId={project.id} onOpenFile={handleSearchOpenFile} />}
         {tab === 'stats' && <StatisticsPanel projectId={project.id} targetWords={project.target_words} />}

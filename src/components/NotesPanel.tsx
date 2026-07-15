@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { listChapters } from '../api/tauri'
 import type { ChapterMeta } from '../types/chapter'
 import {
@@ -22,6 +22,9 @@ type ViewMode = 'timeline' | 'grouped'
 interface Props {
   projectId: string
   onNavigateToChapter?: (chapterRef: string) => void
+  initialChapterRef?: string | null
+  initialFilter?: string | null
+  onHighlightComplete?: () => void
 }
 
 const DEFAULT_PAGE_SIZE = 15
@@ -56,7 +59,7 @@ function resolveChapterName(chapterRef: string, chapters: ChapterMeta[]): string
   return found ? found.title : chapterRef
 }
 
-export default function NotesPanel({ projectId, onNavigateToChapter }: Props) {
+export default function NotesPanel({ projectId, onNavigateToChapter, initialChapterRef, initialFilter, onHighlightComplete }: Props) {
   const [notes, setNotes] = useState<NoteEntry[]>([])
   const [chapterList, setChapterList] = useState<ChapterMeta[]>([])
   const [newContent, setNewContent] = useState('')
@@ -83,6 +86,41 @@ export default function NotesPanel({ projectId, onNavigateToChapter }: Props) {
   }, [projectId])
 
   useEffect(() => { refresh().catch(console.error) }, [refresh])
+
+  // ─── Initial chapter ref navigation ────────────
+
+  const hasNavigatedRef = useRef(false)
+
+  useEffect(() => {
+    if (!initialChapterRef || loading) return
+    if (hasNavigatedRef.current) return
+    hasNavigatedRef.current = true
+
+    // Switch to grouped view and expand the target chapter group
+    setViewMode('grouped')
+    setFilter((initialFilter || 'all') as FilterView)
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      next.delete(initialChapterRef)
+      return next
+    })
+
+    // Scroll to the group header after a short delay for render
+    setTimeout(() => {
+      const el = document.querySelector(`[data-notes-group="${CSS.escape(initialChapterRef)}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+      onHighlightComplete?.()
+    }, 150)
+  }, [initialChapterRef, loading])
+
+  // Reset flag when initialChapterRef clears
+  useEffect(() => {
+    if (!initialChapterRef) {
+      hasNavigatedRef.current = false
+    }
+  }, [initialChapterRef])
 
   // ─── CRUD ───────────────────────────────────────
 
@@ -401,6 +439,7 @@ export default function NotesPanel({ projectId, onNavigateToChapter }: Props) {
                   <div
                     key={`gh-${item.key}`}
                     className="notes-group-header"
+                    data-notes-group={item.key}
                     onClick={() => { toggleGroupCollapse(item.key) }}
                   >
                     <span className="notes-group-caret">{isCollapsed ? '▶' : '▼'}</span>

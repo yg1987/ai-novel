@@ -7,7 +7,7 @@ import {
   readProjectFile,
   writeProjectFile,
 } from '../api/tauri'
-import { loadAllNotes, countPendingTodos, getNotesForChapter, buildChapterRef, parseChapterRef, type NoteEntry } from '../services/notesStorage'
+import { loadAllNotes, getNotesForChapter, buildChapterRef, parseChapterRef, type NoteEntry } from '../services/notesStorage'
 import { copyChapterForPlatform } from '../services/exportService'
 import { PLATFORM_LABELS, type PublishPlatform } from '../utils/formatAdapter'
 import { showToast } from '../utils/toast'
@@ -15,26 +15,24 @@ import PopupMenu from './PopupMenu'
 import Editor, { type EditorHandle } from './Editor'
 import VersionHistoryPanel from './VersionHistoryPanel'
 import MaterialSidebar from './MaterialSidebar'
-import FocusModeOverlay from './FocusModeOverlay'
 import ConfirmDialog from './ConfirmDialog'
-import { estimateWordCount } from '../utils/cjkCount'
 
 interface Props {
   projectId: string
   projectName: string
   onNavigateToReview?: (chapterId: string) => void
+  onNavigateToNotes?: (chapterRef: string, filter: string) => void
   initialChapterRef?: string | null
   onChapterSelect?: (chapterId: string) => void
 }
 
-export default function ChapterManager({ projectId, projectName, onNavigateToReview, initialChapterRef, onChapterSelect }: Props) {
+export default function ChapterManager({ projectId, projectName, onNavigateToReview, onNavigateToNotes, initialChapterRef, onChapterSelect }: Props) {
   const [chapters, setChapters] = useState<ChapterMeta[]>([])
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null)
   const [contentVersion, setContentVersion] = useState(0)
   const [loading, setLoading] = useState(true)
   const [showVersionHistory, setShowVersionHistory] = useState(false)
   const [showMaterial, setShowMaterial] = useState(false)
-  const [showFocus, setShowFocus] = useState(false)
   const [collapsedVolumes, setCollapsedVolumes] = useState<Record<string, boolean>>({})
   const [customVolumes, setCustomVolumes] = useState<string[]>([])
   const [deleteConfirm, setDeleteConfirm] = useState<{ kind: 'chapter'; chapter: ChapterMeta } | { kind: 'volume'; volume: string } | null>(null)
@@ -43,7 +41,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
   const [editingVolumeName, setEditingVolumeName] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState(false)
   const [exportMenuChapterId, setExportMenuChapterId] = useState<string | null>(null)
-  const [currentWordCount, setCurrentWordCount] = useState(0)
+  const [notesMenuChapterId, setNotesMenuChapterId] = useState<string | null>(null)
   const [allNotes, setAllNotes] = useState<NoteEntry[]>([])
   const volumeNameInputRef = useRef<HTMLInputElement>(null)
   const chapterTitleInputRef = useRef<HTMLInputElement>(null)
@@ -136,20 +134,19 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
     return () => { cancelled = true }
   }, [projectId])
 
-  const pendingTodoByChapter = useMemo(() => {
-    const map = new Map<string, number>()
+  const notesByType = useMemo(() => {
+    const map = new Map<string, { note: number; todo: number; question: number }>()
     for (const ch of chapters) {
       const ref = buildChapterRef(ch.volume, ch.id)
-      map.set(ch.id, countPendingTodos(allNotes, ref))
+      const chapterNotes = getNotesForChapter(allNotes, ref)
+      map.set(ch.id, {
+        note: chapterNotes.filter((n) => n.type === 'note').length,
+        todo: chapterNotes.filter((n) => n.type === 'todo' && !n.done).length,
+        question: chapterNotes.filter((n) => n.type === 'question' && !n.resolved).length,
+      })
     }
     return map
   }, [chapters, allNotes])
-
-  const currentChapterNotes = useMemo(() => {
-    if (!activeChapterId || !activeVolume) return []
-    const ref = buildChapterRef(activeVolume, activeChapterId)
-    return getNotesForChapter(allNotes, ref).slice(0, 5)
-  }, [activeChapterId, activeVolume, allNotes])
 
   // Focus inputs
   useEffect(() => {
@@ -206,8 +203,12 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
   }
 
   const handleViewVersionHistory = (ch: ChapterMeta) => {
-    setActiveChapterId(ch.id)
-    setShowVersionHistory(true)
+    if (activeChapterId === ch.id && showVersionHistory) {
+      setShowVersionHistory(false)
+    } else {
+      setActiveChapterId(ch.id)
+      setShowVersionHistory(true)
+    }
   }
 
   const handleDelete = async () => {
@@ -303,6 +304,16 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
       },
     }))
 
+  const buildNotesItems = (ch: ChapterMeta) => {
+    const counts = notesByType.get(ch.id) ?? { note: 0, todo: 0, question: 0 }
+    const ref = buildChapterRef(ch.volume, ch.id)
+    return [
+      { key: 'note', label: `📝 备注 (${counts.note})`, onClick: () => onNavigateToNotes?.(ref, 'note') },
+      { key: 'todo', label: `☐ 待办 (${counts.todo})`, onClick: () => onNavigateToNotes?.(ref, 'todo') },
+      { key: 'question', label: `❓ 疑问 (${counts.question})`, onClick: () => onNavigateToNotes?.(ref, 'question') },
+    ]
+  }
+
   // ─── Computed ─────────────────────────────────
 
   const chaptersByVolume = volumes.map((vol) => ({
@@ -383,12 +394,26 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
                         >
                           {getChapterDisplay(ch)}
                         </span>
-                        {pendingTodoByChapter.has(ch.id) && pendingTodoByChapter.get(ch.id)! > 0 && (
-                          <span className="chapter-todo-badge" title={`${pendingTodoByChapter.get(ch.id)} 条待办`}>
-                            🟡 {pendingTodoByChapter.get(ch.id)}
-                          </span>
-                        )}
                         <span className="chapter-item-actions">
+                          <PopupMenu
+                            trigger={
+                              <button
+                                className="btn-tiny"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setNotesMenuChapterId(
+                                    notesMenuChapterId === ch.id ? null : ch.id,
+                                  )
+                                }}
+                                title="章节备注"
+                              >
+                                📝
+                              </button>
+                            }
+                            items={buildNotesItems(ch)}
+                            open={notesMenuChapterId === ch.id}
+                            onClose={() => setNotesMenuChapterId(null)}
+                          />
                           <PopupMenu
                             trigger={
                               <button
@@ -439,28 +464,9 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
         </div>
 
         <div className="chapter-sidebar-footer">
-          <div className="chapter-footer-stats">
-            <span>{chapters.length} 章</span>
-          </div>
           <div className="chapter-footer-actions">
             <button className="btn-tiny" onClick={() => setShowMaterial((v) => !v)} title="素材库">📦 素材库</button>
-            <button className="btn-tiny" onClick={() => setShowFocus(true)} title="专注模式">🎯 专注</button>
           </div>
-          {currentChapterNotes.length > 0 && (
-            <div className="chapter-notes-section">
-              <div className="chapter-notes-section-title">📝 本章备注</div>
-              {currentChapterNotes.map((n) => (
-                <div key={n.id} className={`chapter-note-mini ${n.type}`}>
-                  <span className="chapter-note-mini-icon">
-                    {n.type === 'todo' ? '☐' : n.type === 'question' ? '❓' : '📝'}
-                  </span>
-                  <span className="chapter-note-mini-text">
-                    {n.content.length > 40 ? n.content.slice(0, 40) + '…' : n.content}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
 
@@ -512,10 +518,6 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
                   chapterId={activeChapterId}
                   chapterNumber={activeChapter?.order ?? 1}
                   onNavigateToReview={onNavigateToReview}
-                  onContentChange={(html) => {
-                    const text = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
-                    setCurrentWordCount(estimateWordCount(text))
-                  }}
                 />
               </div>
               {showMaterial && (
@@ -531,14 +533,6 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
           </div>
         )}
       </div>
-
-      {showFocus && activeChapterId && (
-        <FocusModeOverlay
-          wordCount={currentWordCount}
-          targetWords={4000}
-          onExit={() => setShowFocus(false)}
-        />
-      )}
 
       {deleteConfirm && (
         <ConfirmDialog

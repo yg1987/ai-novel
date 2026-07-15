@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
 import type { VersionMeta } from '../types/review'
 import { listChapterVersions, getChapterVersion, restoreChapterVersion, deleteChapterVersion, renameChapterVersion } from '../api/tauri'
 
@@ -79,6 +81,16 @@ export default function VersionHistoryPanel({ projectId, volume, chapterId, onRe
     return map[source] ?? source
   }
 
+  const previewEditor = useEditor(
+    {
+      content: previewContent,
+      editable: false,
+      extensions: [StarterKit],
+      editorProps: { attributes: { class: 'editor-content' } },
+    },
+    [previewContent],
+  )
+
   if (!chapterId) return <div className="review-empty">请先选择一个章节</div>
 
   return (
@@ -154,7 +166,9 @@ export default function VersionHistoryPanel({ projectId, volume, chapterId, onRe
                 </div>
               ) : null}
             </div>
-            <pre className="version-preview-content">{previewContent.replace(/<[^>]*>/g, '').slice(0, 3000)}</pre>
+            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              {previewEditor && <EditorContent editor={previewEditor} className="editor-content-wrapper" />}
+            </div>
           </>
         ) : (
           <div className="review-empty">

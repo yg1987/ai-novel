@@ -41,6 +41,10 @@ export async function saveChapterContent(projectId: string, volume: string, chap
   return invoke<null>('save_chapter_content', { projectId, volume, chapterId, content })
 }
 
+export async function commitChapterVersion(projectId: string, volume: string, chapterId: string, content: string): Promise<null> {
+  return invoke<null>('commit_chapter_version', { projectId, volume, chapterId, content })
+}
+
 export async function loadProviderConfig(): Promise<ProviderConfig> {
   return invoke<ProviderConfig>('load_provider_config')
 }
