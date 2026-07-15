@@ -52,6 +52,8 @@ fn extract_snippet(text: &str, query_lower: &str, max_len: usize) -> String {
     }
 }
 
+const MAX_FILE_SIZE_BYTES: u64 = 5 * 1024 * 1024; // 5MB
+
 fn search_directory(
     dir: &PathBuf,
     project_dir: &PathBuf,
@@ -63,24 +65,54 @@ fn search_directory(
     if results.len() >= max_results { return; }
     if !dir.exists() { return; }
     let query_lower = query.to_lowercase();
+    search_dir_recursive(dir, project_dir, &query_lower, subdir_label, results, max_results);
+}
+
+fn search_dir_recursive(
+    dir: &PathBuf,
+    project_dir: &PathBuf,
+    query_lower: &str,
+    subdir_label: &str,
+    results: &mut Vec<SearchResult>,
+    max_results: usize,
+) {
+    if results.len() >= max_results { return; }
 
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             if results.len() >= max_results { break; }
             let path = entry.path();
-            if path.is_dir() || path.file_name().map_or(true, |n| n.to_string_lossy().starts_with('.')) {
+
+            if path.is_dir() {
+                // Recurse into non-hidden subdirectories
+                if path.file_name().map_or(true, |n| n.to_string_lossy().starts_with('.')) {
+                    continue;
+                }
+                search_dir_recursive(&path, project_dir, query_lower, subdir_label, results, max_results);
                 continue;
             }
+
+            // Skip hidden files
+            if path.file_name().map_or(true, |n| n.to_string_lossy().starts_with('.')) {
+                continue;
+            }
+
+            // Skip oversized files
+            if let Ok(meta) = fs::metadata(&path) {
+                if meta.len() > MAX_FILE_SIZE_BYTES {
+                    continue;
+                }
+            }
+
             if let Ok(content) = fs::read_to_string(&path) {
-                let score = score_match(&content, &query_lower);
+                let score = score_match(&content, query_lower);
                 if score > 0.0 {
-                    // Return path relative to project directory
                     let rel_path = path.strip_prefix(project_dir)
                         .unwrap_or(&path);
                     results.push(SearchResult {
                         path: rel_path.to_string_lossy().to_string(),
                         filename: path.file_name().map_or(String::new(), |n| n.to_string_lossy().to_string()),
-                        snippet: extract_snippet(&content, &query_lower, 120),
+                        snippet: extract_snippet(&content, query_lower, 120),
                         score,
                         source: subdir_label.to_string(),
                     });

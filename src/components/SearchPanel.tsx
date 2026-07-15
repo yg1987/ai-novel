@@ -1,12 +1,14 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import type { SearchSource } from '../services/search'
 import { hybridSearch } from '../services/search'
-import type { SearchResult } from '../api/tauri'
+import type { HybridResult } from '../services/search'
 import Pagination from './Pagination'
 import { usePagination } from '../hooks/usePagination'
+import HighlightText from './HighlightText'
 
 interface Props {
   projectId: string
+  onOpenFile?: (path: string, source: string) => void
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -20,38 +22,80 @@ const SOURCE_LABELS: Record<string, string> = {
 }
 
 const DEFAULT_PAGE_SIZE = 15
+const HISTORY_KEY_PREFIX = 'search_history_'
+const MAX_HISTORY = 10
 
-export default function SearchPanel({ projectId }: Props) {
+export default function SearchPanel({ projectId, onOpenFile }: Props) {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<Array<SearchResult & { rrfScore: number }>>([])
+  // allResults 保留搜索返回的完整结果（未过滤），给客户端过滤用
+  const [allResults, setAllResults] = useState<HybridResult[]>([])
   const [searching, setSearching] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
   const [includeVector, setIncludeVector] = useState(true)
   const [sourceFilter, setSourceFilter] = useState<string>('all')
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => loadHistory())
 
-  const { paged, page, setPage, totalPages, reset } = usePagination(results, pageSize)
+  const resultsRef = useRef<HTMLDivElement>(null)
 
-  const doSearch = useCallback(async () => {
-    if (!query.trim()) return
+  // 客户端过滤：根据来源筛选已返回的结果，不重新搜索
+  const filteredResults = useMemo(() => {
+    if (sourceFilter === 'all') return allResults
+    return allResults.filter((r) => r.source === sourceFilter)
+  }, [allResults, sourceFilter])
+
+  const { paged, page, setPage, totalPages, reset } = usePagination(filteredResults, pageSize)
+
+  function loadHistory(): string[] {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY_PREFIX + projectId)
+      return raw ? JSON.parse(raw) as string[] : []
+    } catch { return [] }
+  }
+
+  const saveHistory = useCallback((q: string) => {
+    try {
+      const current = loadHistory()
+      const filtered = current.filter((h) => h !== q)
+      const updated = [q, ...filtered].slice(0, MAX_HISTORY)
+      localStorage.setItem(HISTORY_KEY_PREFIX + projectId, JSON.stringify(updated))
+      setSearchHistory(updated)
+    } catch { /* localStorage not available */ }
+  }, [projectId])
+
+  const doSearchWithQuery = useCallback(async (q: string) => {
+    if (!q.trim()) return
     setSearching(true)
+    setHasSearched(true)
     try {
       const sources = sourceFilter === 'all' ? [] : [sourceFilter as SearchSource]
-      const res = await hybridSearch(projectId, query.trim(), { sources, includeVector, topK: 30 })
-      setResults(res)
+      const res = await hybridSearch(projectId, q.trim(), { sources, includeVector, topK: 30 })
+      setAllResults(res)
       reset()
+      saveHistory(q.trim())
     } catch (e) {
       console.error('Search failed:', e)
     } finally {
       setSearching(false)
     }
-  }, [query, projectId, sourceFilter, includeVector, reset])
+  }, [projectId, sourceFilter, includeVector, reset, saveHistory])
+
+  const doSearch = useCallback(() => {
+    doSearchWithQuery(query.trim())
+  }, [query, doSearchWithQuery])
 
   const handleSourceChange = (s: string) => { setSourceFilter(s); reset() }
   const handlePageSizeChange = (ps: number) => { setPageSize(ps); reset() }
 
+  const handleOpenFile = useCallback((result: HybridResult) => {
+    if (onOpenFile) {
+      onOpenFile(result.path, result.source)
+    }
+  }, [onOpenFile])
+
   return (
     <div className="panel-layout">
-      <div className="panel-sidebar" style={{ width: 200 }}>
+      <div className="panel-sidebar">
         <div className="panel-sidebar-header">
           <h3>搜索范围</h3>
         </div>
@@ -66,7 +110,7 @@ export default function SearchPanel({ projectId }: Props) {
             </div>
           ))}
         </div>
-        <div style={{ padding: '8px', borderTop: '1px solid var(--border)' }}>
+        <div style={{ padding: '8px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
           <label style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}>
             <input type="checkbox" checked={includeVector} onChange={(e) => { setIncludeVector(e.target.checked) }} />
             向量搜索
@@ -74,7 +118,7 @@ export default function SearchPanel({ projectId }: Props) {
         </div>
       </div>
       <div className="panel-editor">
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8 }}>
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, flexShrink: 0 }}>
           <input
             className="notes-input"
             style={{ flex: 1 }}
@@ -87,30 +131,75 @@ export default function SearchPanel({ projectId }: Props) {
             {searching ? '搜索中…' : '搜索'}
           </button>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
-          {results.length === 0 && !searching && (
-            <div className="panel-placeholder" style={{ height: 200 }}>输入关键词开始搜索</div>
+
+        {/* Search history pills — show before first search */}
+        {!hasSearched && searchHistory.length > 0 && !query.trim() && (
+          <div style={{ padding: '8px 24px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 6 }}>最近搜索</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {searchHistory.map((h, i) => (
+                <span
+                  key={i}
+                  className="search-history-tag"
+                  onClick={() => { setQuery(h); doSearchWithQuery(h) }}
+                >
+                  {h}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div ref={resultsRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
+          {/* Empty state: not yet searched */}
+          {!hasSearched && allResults.length === 0 && !searching && (
+            <div className="panel-placeholder">输入关键词开始搜索</div>
           )}
+
+          {/* Empty state: searched but current filter yields no results */}
+          {hasSearched && filteredResults.length === 0 && !searching && (
+            <div className="panel-placeholder">
+              {allResults.length > 0
+                ? `当前筛选条件下无结果（共 ${allResults.length} 条匹配，无"${SOURCE_LABELS[sourceFilter] ?? sourceFilter}"来源的结果）`
+                : `未找到匹配"${query}"的结果`}
+            </div>
+          )}
+
+          {/* Result cards */}
           {paged.map((r, i) => (
-            <div key={`${r.path}-${i}`} className="foreshadow-item normal" style={{ marginBottom: 8 }}>
-              <div className="foreshadow-item-header">
+            <div
+              key={`${r.path}-${i}`}
+              className="search-result-item"
+              style={{ marginBottom: 8 }}
+              onClick={() => handleOpenFile(r)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleOpenFile(r) }}
+            >
+              <div className="search-result-header">
                 <span className="note-type-badge">{SOURCE_LABELS[r.source] ?? r.source}</span>
-                <span className="foreshadow-name">{r.filename}</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>RRF: {r.rrfScore.toFixed(3)}</span>
+                <span className="search-result-filename">
+                  <HighlightText text={r.filename} query={query} />
+                </span>
               </div>
-              <div className="foreshadow-desc">{r.snippet}</div>
+              <div className="search-result-snippet">
+                <HighlightText text={r.snippet} query={query} />
+              </div>
+              <div className="search-result-path">{r.path}</div>
             </div>
           ))}
+
           {searching && <div className="panel-placeholder">搜索中…</div>}
+
           <Pagination
             currentPage={page}
             totalPages={totalPages}
-            totalItems={results.length}
+            totalItems={filteredResults.length}
             pageSize={pageSize}
             pageSizeOptions={[15, 30, 50]}
             onPageChange={(p) => {
               setPage(p)
-              document.querySelector('.panel-editor')?.scrollTo(0, 0)
+              resultsRef.current?.scrollTo(0, 0)
             }}
             onPageSizeChange={handlePageSizeChange}
           />

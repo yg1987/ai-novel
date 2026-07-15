@@ -54,6 +54,34 @@ export default function ProjectView({ project, onBack }: Props) {
     setTab('foreshadow')
   }
 
+  /** Navigate to the appropriate tab when a search result is clicked */
+  const handleSearchOpenFile = (path: string, source: string) => {
+    const tabMap: Record<string, Tab> = {
+      characters: 'characters',
+      worldview: 'worldview',
+      chapters: 'writing',
+      notes: 'notes',
+      outline: 'outline',
+      memory: 'notes',
+      resources: 'resource',
+    }
+
+    const targetTab = tabMap[source]
+    if (!targetTab) return
+
+    // For characters, extract the filename (without .md) and pass as initialCharacter
+    if (source === 'characters') {
+      const name = path
+        .replace(/^characters[/\\]/, '')
+        .replace(/\.md$/, '')
+      if (name) {
+        setNavigateCharacter(name)
+      }
+    }
+
+    setTab(targetTab)
+  }
+
   return (
     <div className="project-view">
       <div className="project-view-header">
@@ -110,7 +138,7 @@ export default function ProjectView({ project, onBack }: Props) {
         {tab === 'outline' && <OutlinePanel projectId={project.id} />}
         {tab === 'notes' && <NotesPanel projectId={project.id} onNavigateToChapter={handleNavigateToChapter} />}
         {tab === 'foreshadow' && <ForeshadowPanel projectId={project.id} currentChapterId={currentChapterId} onNavigateToCharacter={handleNavigateToCharacter} highlightId={navigateForeshadowId} onHighlightComplete={() => setNavigateForeshadowId(null)} />}
-        {tab === 'search' && <SearchPanel projectId={project.id} />}
+        {tab === 'search' && <SearchPanel projectId={project.id} onOpenFile={handleSearchOpenFile} />}
         {tab === 'stats' && <StatisticsPanel projectId={project.id} targetWords={project.target_words} />}
         {tab === 'review' && <ReviewPanel projectId={project.id} currentChapterId={reviewChapterId} />}
         {tab === 'resource' && <ResourcePanel projectId={project.id} />}
