@@ -5,12 +5,14 @@ import type {
   ForeshadowStore,
   ForeshadowStatus,
   ForeshadowConfig,
+  ForeshadowInspiration,
 } from '../types/novel'
 import { DEFAULT_FORESHADOW_CONFIG } from '../types/novel'
 
 const DIR = 'memory'
 const STORE_FILE = 'foreshadows.json'
 const CONFIG_FILE = 'foreshadow-config.json'
+const INSPIRE_FILE = 'foreshadow-inspiration.json'
 
 // ─── ID ──────────────────────────────────────
 
@@ -153,4 +155,23 @@ export async function saveForeshadowConfig(
   config: ForeshadowConfig,
 ): Promise<void> {
   await writeProjectFile(projectId, DIR, CONFIG_FILE, JSON.stringify(config, null, 2))
+}
+
+// ─── Inspiration persistence ──────────────
+
+export async function saveInspiration(
+  projectId: string,
+  inspiration: ForeshadowInspiration | null,
+): Promise<void> {
+  await writeProjectFile(projectId, DIR, INSPIRE_FILE, JSON.stringify(inspiration, null, 2))
+}
+
+export async function loadInspiration(
+  projectId: string,
+): Promise<ForeshadowInspiration | null> {
+  try {
+    const raw = await readProjectFile(projectId, DIR, INSPIRE_FILE)
+    if (raw.trim()) return JSON.parse(raw) as ForeshadowInspiration
+  } catch { /* file doesn't exist */ }
+  return null
 }

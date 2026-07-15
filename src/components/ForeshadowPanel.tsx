@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { ForeshadowEntry, ForeshadowStatus, ForeshadowCategory, ForeshadowClue } from '../types/novel'
+import type { ForeshadowEntry, ForeshadowStatus, ForeshadowCategory, ForeshadowClue, ForeshadowInspiration, ForeshadowSuggestion } from '../types/novel'
 import { DEFAULT_FORESHADOW_CONFIG } from '../types/novel'
 import type { ChapterMeta } from '../types/chapter'
 import { listChapters, listProjectFiles } from '../api/tauri'
@@ -12,9 +12,12 @@ import {
   createForeshadowId,
   loadForeshadowConfig,
   saveForeshadowConfig,
+  saveInspiration,
+  loadInspiration,
 } from '../services/foreshadowStorage'
 import { classifyForeshadows, type ForeshadowUrgency } from '../services/foreshadowContext'
 import { calcForeshadowHealth, getHealthLabel, calcForeshadowDensity } from '../services/foreshadowHealth'
+import { runForeshadowInspire } from '../services/foreshadowInspire'
 import Pagination from './Pagination'
 import Modal from './Modal'
 import { usePagination } from '../hooks/usePagination'
@@ -120,6 +123,59 @@ function entryToForm(entry: ForeshadowEntry): FormData {
   }
 }
 
+// ─── Suggestion card ──────────────────────────
+
+const SUGGESTION_COLORS: Record<string, { bg: string; tag: string }> = {
+  gap: { bg: '#fff3e0', tag: '🔴 缺口' },
+  callback: { bg: '#e8f5e9', tag: '🟡 呼应' },
+  density: { bg: '#e3f2fd', tag: '🟢 密度' },
+}
+
+function SuggestionCard({ suggestion, onAdopt }: {
+  suggestion: ForeshadowSuggestion
+  onAdopt: (prefill: { name?: string; description?: string; plantedChapterId?: string; relatedCharacters?: string[] }) => void
+}) {
+  const colors = SUGGESTION_COLORS[suggestion.type] ?? SUGGESTION_COLORS.gap
+  return (
+    <div style={{ padding: '10px', background: colors.bg, borderRadius: 6, fontSize: '0.84rem', lineHeight: 1.5 }}>
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>{colors.tag}</div>
+      {suggestion.type === 'gap' && (
+        <>
+          <div>📍 {suggestion.chapterRef}</div>
+          <div style={{ color: 'var(--text-secondary)', margin: '4px 0' }}>{suggestion.reason}</div>
+          <div>💡 {suggestion.suggestion}</div>
+          {suggestion.relatedCharacters.length > 0 && (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>👤 {suggestion.relatedCharacters.join('、')}</div>
+          )}
+        </>
+      )}
+      {suggestion.type === 'callback' && (
+        <>
+          <div>📍 源头: {suggestion.sourceChapter}</div>
+          <div style={{ color: 'var(--text-secondary)', margin: '4px 0' }}>📝 {suggestion.element}</div>
+          <div>💡 {suggestion.suggestion}</div>
+        </>
+      )}
+      {suggestion.type === 'density' && (
+        <>
+          {suggestion.hotChapters.length > 0 && <div>🔥 过多: {suggestion.hotChapters.join('、')}</div>}
+          {suggestion.coldChapters.length > 0 && <div>❄️ 空白: {suggestion.coldChapters.join('、')}</div>}
+          <div style={{ color: 'var(--text-secondary)', marginTop: 4 }}>{suggestion.overallAssessment}</div>
+        </>
+      )}
+      {suggestion.type !== 'density' && (
+        <button onClick={() => {
+          if (suggestion.type === 'gap') {
+            onAdopt({ name: suggestion.suggestion.slice(0, 40), description: `${suggestion.chapterRef}: ${suggestion.reason}\n\n建议: ${suggestion.suggestion}`, relatedCharacters: suggestion.relatedCharacters })
+          } else {
+            onAdopt({ name: suggestion.element.slice(0, 40), description: `来源: ${suggestion.sourceChapter}\n\n${suggestion.element}\n\n建议: ${suggestion.suggestion}` })
+          }
+        }} style={{ marginTop: 6, fontSize: '0.78rem', padding: '2px 8px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-card)', cursor: 'pointer', color: 'var(--text)', whiteSpace: 'nowrap' }}>📝 采纳</button>
+      )}
+    </div>
+  )
+}
+
 export default function ForeshadowPanel({ projectId, currentChapterId, onNavigateToCharacter, highlightId, onHighlightComplete }: Props) {
   const [entries, setEntries] = useState<ForeshadowEntry[]>([])
   const [chapters, setChapters] = useState<ChapterMeta[]>([])
@@ -137,6 +193,11 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
   const [showCharDropdown, setShowCharDropdown] = useState(false)
   const [showConfig, setShowConfig] = useState(false)
   const [configForm, setConfigForm] = useState(foreshadowConfig)
+  const [showInspireModal, setShowInspireModal] = useState(false)
+  const [inspireVolume, setInspireVolume] = useState('all')
+  const [inspireLoading, setInspireLoading] = useState(false)
+  const [inspireResult, setInspireResult] = useState<ForeshadowInspiration | null>(null)
+  const [inspireError, setInspireError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     const [store, chList, charFiles, cfg] = await Promise.all([
@@ -156,6 +217,7 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
   }, [projectId])
 
   useEffect(() => { refresh().catch(console.error) }, [refresh])
+  useEffect(() => { loadInspiration(projectId).then((s) => { if (s) setInspireResult(s) }).catch(() => {}) }, [projectId])
 
   // Update default plantedChapterId when currentChapterId changes
   useEffect(() => {
@@ -184,10 +246,13 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
   // ─── Filters ─────────────────────────────
 
   const filtered = entries.filter((e) => {
+    if (statusFilter === 'inspire') return false
     if (statusFilter !== 'all' && e.status !== statusFilter) return false
     if (categoryFilter !== 'all' && e.category !== categoryFilter) return false
     return true
   })
+
+  const inspireCount = inspireResult?.suggestions.length ?? 0
 
   const { paged, page, setPage, totalPages, reset } = usePagination(filtered, pageSize)
 
@@ -217,6 +282,21 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
     setForm(entryToForm(entry))
     setShowAdvanced(!!entry.targetChapterId || !!entry.resolutionPlan || !!entry.notes)
     setShowForm(true)
+  }
+
+  const handleInspire = async () => {
+    setInspireLoading(true)
+    setInspireError(null)
+    try {
+      const result = await runForeshadowInspire({ projectId, volume: inspireVolume })
+      setInspireResult(result)
+      saveInspiration(projectId, result).catch(() => {})
+    } catch (e) {
+      setInspireError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setInspireLoading(false)
+      setShowInspireModal(false)
+    }
   }
 
   const handleSave = async () => {
@@ -332,6 +412,7 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
         <span className="stat-done">已回收 {counts.resolved}</span>
         <span className="stat-abandoned">已废弃 {counts.abandoned}</span>
         <button className="btn-add" onClick={openAdd}>+ 新增伏笔</button>
+        <button onClick={() => setShowInspireModal(true)} title="AI 分析伏笔机会" style={{ padding: '4px 12px', fontSize: '0.8rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-card)', cursor: 'pointer', color: 'var(--text)', whiteSpace: 'nowrap' }}>🔍 灵感分析</button>
         <button className="btn-icon" onClick={() => { setConfigForm(foreshadowConfig); setShowConfig(!showConfig); }} title="伏笔配置">⚙</button>
       </div>
 
@@ -415,6 +496,7 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
           <button className={`tab-btn${statusFilter === 'advanced' ? ' active' : ''}`} onClick={() => handleStatusFilter('advanced')}>推进中</button>
           <button className={`tab-btn${statusFilter === 'resolved' ? ' active' : ''}`} onClick={() => handleStatusFilter('resolved')}>已回收</button>
           <button className={`tab-btn${statusFilter === 'abandoned' ? ' active' : ''}`} onClick={() => handleStatusFilter('abandoned')}>已废弃</button>
+          <button className={`tab-btn${statusFilter === 'inspire' ? ' active' : ''}`} onClick={() => handleStatusFilter('inspire')} style={statusFilter === 'inspire' ? {} : { color: inspireCount > 0 ? 'var(--accent)' : undefined }}>💡 灵感建议{inspireCount > 0 ? ` (${inspireCount})` : ''}</button>
         </div>
         <div className="notes-filter category-filter">
           <button className={`tab-btn${categoryFilter === 'all' ? ' active' : ''}`} onClick={() => handleCategoryFilter('all')}>全部分类</button>
@@ -431,7 +513,42 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
       </div>
 
       {/* ─── List ──────────────────────────── */}
-      <div className="foreshadow-list">
+      {statusFilter === 'inspire' ? (
+        <div className="foreshadow-list">
+          {!inspireResult || inspireResult.suggestions.length === 0 ? (
+            <div className="foreshadow-empty">
+              <p>暂无灵感建议</p>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 4 }}>点击上方 🔍 灵感分析 按钮获取建议</p>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 16, marginBottom: 10, fontSize: '0.78rem', color: 'var(--text-muted)', padding: '0 4px' }}>
+                <span>🔴 缺口</span><span>🟡 呼应</span><span>🟢 密度</span>
+              </div>
+              {inspireResult.summary && (
+                <div style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', marginBottom: 10, padding: '8px', background: 'var(--bg-sidebar)', borderRadius: 4 }}>{inspireResult.summary}</div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {inspireResult.suggestions.map((s, i) => (
+                  <SuggestionCard key={i} suggestion={s} onAdopt={(prefill) => {
+                    setForm({ ...emptyForm(currentChapterId), name: prefill.name || '', description: prefill.description || '', plantedChapterId: prefill.plantedChapterId || currentChapterId || '', relatedCharacters: prefill.relatedCharacters || [] })
+                    setEditingId(null)
+                    setShowAdvanced(false)
+                    setShowForm(true)
+                    if (inspireResult) {
+                      const updated = { ...inspireResult, suggestions: inspireResult.suggestions.filter((_, idx) => idx !== i) }
+                      setInspireResult(updated)
+                      saveInspiration(projectId, updated).catch(() => {})
+                    }
+                  }} />
+                ))}
+              </div>
+             </>
+           )}
+         </div>
+       ) : (
+         <>
+       <div className="foreshadow-list">
         {(() => {
           const classified = classifyForeshadows(filtered, currentChapterId, chapters, foreshadowConfig)
           return paged.map((entry) => {
@@ -538,6 +655,29 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
         }}
         onPageSizeChange={handlePageSizeChange}
       />
+      </>
+      )}
+      {/* ─── Inspire modal ─────────────────── */}
+      {showInspireModal && (
+        <Modal>
+          <div style={{ minWidth: 300 }}>
+            <h3 style={{ marginBottom: 12 }}>AI 伏笔灵感分析</h3>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', marginBottom: 4, fontSize: '0.85rem', fontWeight: 500 }}>分析范围</label>
+              <select value={inspireVolume} onChange={(e) => setInspireVolume(e.target.value)} style={{ width: '100%', padding: '6px 8px', fontSize: '0.85rem' }}>
+                <option value="all">全篇（所有章节）</option>
+                {volumes.map((vol) => (<option key={vol} value={vol}>{vol}</option>))}
+              </select>
+            </div>
+            {inspireError && <div style={{ color: 'var(--danger)', fontSize: '0.82rem', marginBottom: 8, padding: '6px', background: 'var(--bg-sidebar)', borderRadius: 4 }}>{inspireError}</div>}
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 12 }}>AI 将通读所选范围章节，分析伏笔缺口、可呼应元素和密度分布。</div>
+            <div className="modal-actions">
+              <button className="btn-primary" onClick={() => { void handleInspire() }} disabled={inspireLoading}>{inspireLoading ? '⏳ 分析中…' : '开始分析'}</button>
+              <button className="btn-text" onClick={() => { setShowInspireModal(false); setInspireError(null) }}>取消</button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* ─── Add/Edit Modal ─────────────────── */}
       {showForm && (

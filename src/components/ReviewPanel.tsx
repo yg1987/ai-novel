@@ -15,6 +15,7 @@ interface Props {
   projectId: string
   currentChapterId: string | null
   chapterHtml?: string
+  onNavigateToForeshadow?: (id: string) => void
 }
 
 // ─── Severity helpers ────────────────────────────
@@ -22,7 +23,10 @@ interface Props {
 type AnyIssue = ReviewIssue | ConsistencyIssue
 
 function isConsistencyIssue(i: AnyIssue): i is ConsistencyIssue {
-  return 'type' in i && (i.type === 'dormant_foreshadow' || i.type === 'absent_character' || i.type === 'timeline_order' || i.type === 'overdue_foreshadow')
+  return 'type' in i && [
+    'dormant_foreshadow', 'absent_character', 'timeline_order',
+    'overdue_foreshadow', 'resolution_delay', 'foreshadow_density',
+  ].includes((i as ConsistencyIssue).type)
 }
 
 function issueSeverity(i: AnyIssue): string {
@@ -61,7 +65,7 @@ const inputBase: React.CSSProperties = {
   color: 'var(--text)',
 }
 
-export default function ReviewPanel({ projectId, currentChapterId, chapterHtml = '' }: Props) {
+export default function ReviewPanel({ projectId, currentChapterId, chapterHtml = '', onNavigateToForeshadow }: Props) {
   const [chapters, setChapters] = useState<ChapterReviewData[]>([])
   const [expandedChapter, setExpandedChapter] = useState<string | null>(null)
   const [runningReview, setRunningReview] = useState(false)
@@ -435,7 +439,21 @@ export default function ReviewPanel({ projectId, currentChapterId, chapterHtml =
                 {!isCollapsed('一致性检查') && (
                   <div style={{ padding: '0 4px 12px' }}>
                     {consistencyResult.issues.map((issue) => (
-                      <IssueRow key={issue.id} issue={issue} />
+                      <div key={issue.id}>
+                        <IssueRow issue={issue} />
+                        {issue.foreshadowId && onNavigateToForeshadow && (
+                          <button
+                            onClick={() => onNavigateToForeshadow(issue.foreshadowId!)}
+                            style={{
+                              ...inputBase, fontSize: '0.78rem', color: 'var(--accent)',
+                              background: 'none', border: 'none', cursor: 'pointer',
+                              padding: '2px 0 2px 4px', textDecoration: 'underline',
+                            }}
+                          >
+                            → 查看伏笔
+                          </button>
+                        )}
+                      </div>
                     ))}
                   </div>
                 )}

@@ -141,14 +141,14 @@ export default function ProjectView({ project, onBack }: Props) {
 
       <div className="project-tab-content">
         {tab === 'writing' && <ChapterManager projectId={project.id} projectName={project.name} onNavigateToReview={handleNavigateToReview} onNavigateToNotes={handleNavigateToNotes} initialChapterRef={navigateChapterRef} onChapterSelect={(chapterId) => setCurrentChapterId(chapterId)} />}
-        {tab === 'characters' && <CharacterPanel projectId={project.id} initialCharacter={navigateCharacter} onNavigateToForeshadow={handleNavigateToForeshadow} />}
+        {tab === 'characters' && <CharacterPanel projectId={project.id} initialCharacter={navigateCharacter} />}
         {tab === 'worldview' && <WorldviewPanel projectId={project.id} />}
         {tab === 'outline' && <OutlinePanel projectId={project.id} />}
         {tab === 'notes' && <NotesPanel projectId={project.id} onNavigateToChapter={handleNavigateToChapter} initialChapterRef={navigateNotesChapterRef} initialFilter={navigateNotesFilter} onHighlightComplete={() => { setNavigateNotesChapterRef(null); setNavigateNotesFilter(null) }} />}
         {tab === 'foreshadow' && <ForeshadowPanel projectId={project.id} currentChapterId={currentChapterId} onNavigateToCharacter={handleNavigateToCharacter} highlightId={navigateForeshadowId} onHighlightComplete={() => setNavigateForeshadowId(null)} />}
         {tab === 'search' && <SearchPanel projectId={project.id} onOpenFile={handleSearchOpenFile} />}
         {tab === 'stats' && <StatisticsPanel projectId={project.id} targetWords={project.target_words} />}
-        {tab === 'review' && <ReviewPanel projectId={project.id} currentChapterId={reviewChapterId} />}
+        {tab === 'review' && <ReviewPanel projectId={project.id} currentChapterId={reviewChapterId} onNavigateToForeshadow={handleNavigateToForeshadow} />}
         {tab === 'resource' && <ResourcePanel projectId={project.id} />}
         {tab === 'brainstorm' && <BrainstormPanel projectId={project.id} />}
         {tab === 'graph' && <RelationshipGraph projectId={project.id} />}

@@ -67,6 +67,52 @@ export const DEFAULT_FORESHADOW_CONFIG: ForeshadowConfig = {
   densityLowThreshold: 0.05,
 }
 
+// ─── Foreshadow Inspiration ─────────────────────
+
+export interface ForeshadowGapSuggestion {
+  type: 'gap'
+  /** 建议加伏笔的章节引用，如 "第3章" */
+  chapterRef: string
+  /** 为什么这里缺少伏笔 */
+  reason: string
+  /** AI 给出的具体伏笔建议 */
+  suggestion: string
+  /** 与该伏笔相关的角色名列表 */
+  relatedCharacters: string[]
+}
+
+export interface ForeshadowCallbackSuggestion {
+  type: 'callback'
+  /** 源头章节 */
+  sourceChapter: string
+  /** 可被呼应的已有元素描述 */
+  element: string
+  /** 如何呼应/回收的建议 */
+  suggestion: string
+  /** 关联的已有伏笔 ID（若有） */
+  relatedForeshadowId?: string
+}
+
+export interface ForeshadowDensityAssessment {
+  type: 'density'
+  /** 伏笔过多的章节 */
+  hotChapters: string[]
+  /** 没有伏笔的章节 */
+  coldChapters: string[]
+  /** 全局密度评价 */
+  overallAssessment: string
+}
+
+export type ForeshadowSuggestion =
+  | ForeshadowGapSuggestion
+  | ForeshadowCallbackSuggestion
+  | ForeshadowDensityAssessment
+
+export interface ForeshadowInspiration {
+  suggestions: ForeshadowSuggestion[]
+  summary: string
+}
+
 // ─── Character Cognition ─────────────────────────
 
 export interface CharacterCognition {

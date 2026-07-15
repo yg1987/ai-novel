@@ -47,11 +47,16 @@ async function syncForeshadowing(
   for (const change of snapshot.foreshadowingChanges) {
     const trimmed = change.trim()
 
-    // "新增伏笔: 名称 - 描述"
-    const plantMatch = trimmed.match(/^新增伏笔[：:]\s*(.+?)(?:[-—]\s*(.+))?$/)
+    // "新增伏笔: 名称 - 描述 [关联角色: A, B]"
+    // 从 AI 输出中提取角色标注，只关联与伏笔直接相关的角色
+    const plantMatch = trimmed.match(/^新增伏笔[：:]\s*(.+?)(?:\s*[-—]\s*(.+?))?\s*(?:\[关联角色[：:]\s*(.+?)\])?\s*$/)
     if (plantMatch) {
       const name = plantMatch[1]!.trim()
       const desc = plantMatch[2]?.trim() ?? name
+      const charStr = plantMatch[3]?.trim()
+      const relatedChars = charStr
+        ? charStr.split(/[,，、\s]+/).map(s => s.trim()).filter(Boolean)
+        : []
       // 去重：同名 + 同章节 ID 视为重复
       const exists = store.entries.some(
         (e) => e.name === name && e.plantedChapterId === chapterId,
@@ -66,7 +71,7 @@ async function syncForeshadowing(
           importance: 0.6,
           plantedChapterId: chapterId,
           clues: [],
-          relatedCharacters: snapshot.characters,
+          relatedCharacters: relatedChars,
           notes: '',
           createdAt: now,
           updatedAt: now,

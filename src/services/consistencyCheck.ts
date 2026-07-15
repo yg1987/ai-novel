@@ -52,6 +52,7 @@ function checkDormantForeshadow(
         description: `伏笔「${entry.name}」已沉寂 ${dormantFor} 章（${entry.plantedChapterId}埋设）`,
         suggestion: dormantFor >= t.dormantForeshadowCritical ? '需尽快推进或回收此伏笔' : '考虑在后续章节推进此伏笔',
         detail: `category=${entry.category} importance=${entry.importance} last_active=${entry.plantedChapterId}`,
+          foreshadowId: entry.id,
       })
     }
   }
@@ -135,7 +136,8 @@ function checkOverdueForeshadow(
         severity: 'S4',
         chapter: currentChapter,
         description: `伏笔「${entry.name}」已超 ${overdue} 章未回收（计划第${targetOrder}章回收，埋设于${entry.plantedChapterId}）`,
-        suggestion: '考虑在接下来 1-2 章内推动或回收此伏笔',
+          suggestion: '考虑在接下来 1-2 章内推动或回收此伏笔',
+          foreshadowId: entry.id,
       })
     }
   }
@@ -165,7 +167,8 @@ function checkResolutionDelay(
         severity: 'S4',
         chapter: resolvedOrder,
         description: `伏笔「${entry.name}」计划第${targetOrder}章回收，实际第${resolvedOrder}章回收，延迟${delay}章`,
-        suggestion: '评估延迟回收是否影响读者体验',
+          suggestion: '评估延迟回收是否影响读者体验',
+          foreshadowId: entry.id,
       })
     }
   }

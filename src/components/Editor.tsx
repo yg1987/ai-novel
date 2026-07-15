@@ -14,8 +14,6 @@ import type { ChapterWordCountResolution } from '../services/settings'
 import type { CheckResult } from '../services/bannedWords'
 import RewritePreview from './RewritePreview'
 import RewriteButtons from './RewriteButtons'
-import { analyzeChapter } from '../services/chapterIngest'
-import { saveChapterSnapshot } from '../services/memorySync'
 import { logAIGenerated, logSessionStart } from '../services/stats'
 import { runSavePipeline, runReview } from '../services/savePipeline'
 import { type RewriteMode } from '../services/rewriteService'
@@ -54,7 +52,6 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
   const [generating, setGenerating] = useState(false)
   const [bannedCheck, setBannedCheck] = useState<CheckResult | null>(null)
   const [showBannedDetail, setShowBannedDetail] = useState(false)
-  const [ingesting, setIngesting] = useState(false)
   const [rewriteState, setRewriteState] = useState<{
     selectedText: string
     beforeText: string
@@ -138,21 +135,6 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
     }
   }, [editor, projectId, chapterId])
 
-  const runIngest = useCallback(async (html: string) => {
-    if (ingesting) return
-    setIngesting(true)
-    try {
-      const text = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
-      if (text.trim().length < 100) return
-      const snapshot = await analyzeChapter(chapterNumber, chapterId, html)
-      await saveChapterSnapshot(projectId, snapshot)
-    } catch (e) {
-      console.error('Chapter ingest failed:', e)
-    } finally {
-      setIngesting(false)
-    }
-  }, [projectId, chapterId, chapterNumber, ingesting])
-
   const handleSaveNow = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
     if (!editor) return
@@ -162,16 +144,11 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
     setGenerationComplete(false)
     setSaveFeedback(null)
 
-    const plainText = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
-    if (plainText.trim().length >= 100) {
-      void runIngest(html)
-    }
-
     runSavePipeline({ projectId, volume, chapterId, chapterNumber: chapterNumber, html })
       .then(() => { showFeedback('✅ 已保存') })
       .catch((e: unknown) => { console.error('Save failed:', e); showFeedback('保存失败') })
       .finally(() => { setSaving(false) })
-  }, [editor, projectId, chapterId, chapterNumber, runIngest])
+  }, [editor, projectId, chapterId, chapterNumber])
 
   const showFeedback = useCallback((msg: string) => {
     setSaveFeedback(msg)

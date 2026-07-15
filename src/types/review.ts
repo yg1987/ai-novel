@@ -86,6 +86,8 @@ export interface ConsistencyIssue {
   description: string
   suggestion?: string
   detail?: string
+  /** 伏笔 ID，仅 foreshadow 类检查填充，用于跳转到伏笔面板 */
+  foreshadowId?: string
 }
 
 export interface ConsistencyCheckResult {

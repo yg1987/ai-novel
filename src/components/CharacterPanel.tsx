@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { listProjectFiles, readProjectFile, writeProjectFile, deleteProjectFile, loadProviderConfig } from '../api/tauri'
 import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
-import { loadForeshadows } from '../services/foreshadowStorage'
 import { buildAIContext } from '../services/aiContext'
 import type { TextareaSelection } from '../services/rewriteUtils'
 import { getTextareaSelection, applyTextareaRewrite } from '../services/rewriteUtils'
@@ -13,7 +12,6 @@ import SelectionContextMenu, { type ContextMenuAction } from './SelectionContext
 interface Props {
   projectId: string
   initialCharacter?: string | null
-  onNavigateToForeshadow?: (id: string) => void
 }
 
 const CHARACTER_SUBDIR = 'characters'
@@ -94,7 +92,7 @@ ${nameLine}
 
 // ─── Component ───────────────────────────────────────
 
-export default function CharacterPanel({ projectId, initialCharacter, onNavigateToForeshadow }: Props) {
+export default function CharacterPanel({ projectId, initialCharacter }: Props) {
   const [files, setFiles] = useState<string[]>([])
   const [order, setOrder] = useState<string[]>([])
   const orderRef = useRef<string[]>([])
@@ -113,7 +111,6 @@ export default function CharacterPanel({ projectId, initialCharacter, onNavigate
   const [rewriteState, setRewriteState] = useState<(TextareaSelection & { mode: RewriteMode }) | null>(null)
   const [hasSelection, setHasSelection] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
-  const [relatedForeshadows, setRelatedForeshadows] = useState<{ name: string; id: string; status: string }[]>([])
   const rewriteTextareaRef = useRef<HTMLTextAreaElement>(null)
   const checkSelection = useCallback(() => {
     const ta = rewriteTextareaRef.current
@@ -176,25 +173,11 @@ export default function CharacterPanel({ projectId, initialCharacter, onNavigate
   useEffect(() => {
     if (!activeFile) {
       setContent('')
-      setRelatedForeshadows([])
       return
     }
     readProjectFile(projectId, CHARACTER_SUBDIR, `${activeFile}.md`)
       .then(setContent)
       .catch((e: unknown) => { console.error(e) })
-  }, [projectId, activeFile])
-
-  // Load related foreshadows for current character
-  useEffect(() => {
-    if (!activeFile) return
-    loadForeshadows(projectId)
-      .then((store) => {
-        const related = store.entries
-          .filter((e) => e.relatedCharacters.includes(activeFile))
-          .map((e) => ({ name: e.name, id: e.id, status: e.status }))
-        setRelatedForeshadows(related)
-      })
-      .catch(() => setRelatedForeshadows([]))
   }, [projectId, activeFile])
 
   const handleSave = () => {
@@ -573,25 +556,6 @@ export default function CharacterPanel({ projectId, initialCharacter, onNavigate
               </div>
             ) : (
               <div className="panel-preview">{content || <span style={{ color: 'var(--text-muted)' }}>暂无内容，点击编辑填写角色信息</span>}</div>
-            )}
-            {relatedForeshadows.length > 0 && (
-              <div className="char-foreshadows">
-                <div className="char-foreshadows-title">📎 关联伏笔 ({relatedForeshadows.length})</div>
-                {relatedForeshadows.map((f) => (
-                  <div key={f.id} className={`char-foreshadow-item status-${f.status}`}>
-                    <span
-                      className="char-foreshadow-link"
-                      onClick={() => onNavigateToForeshadow?.(f.id)}
-                      style={{ cursor: 'pointer', color: 'var(--accent)' }}
-                    >
-                      {f.name}
-                    </span>
-                    <span className={`char-foreshadow-status s-${f.status}`}>
-                      {f.status === 'planted' ? '待处理' : f.status === 'advanced' ? '推进中' : f.status === 'resolved' ? '已回收' : '已废弃'}
-                    </span>
-                  </div>
-                ))}
-              </div>
             )}
           </>
         ) : (

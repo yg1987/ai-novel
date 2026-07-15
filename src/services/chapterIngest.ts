@@ -92,7 +92,7 @@ function buildAnalysisPrompt(text: string, previousSnapshot: ChapterSnapshot | n
     "角色名不知道/没察觉 信息描述"
   ],
   "foreshadowingChanges": [
-    "新增伏笔: 伏笔描述",
+    "新增伏笔: 伏笔名称 - 简要描述 [关联角色: 角色A, 角色B]（只列出与伏笔直接相关的角色，不要列出所有出场角色）",
     "推进伏笔: 伏笔名称",
     "回收伏笔: 伏笔名称"
   ],
