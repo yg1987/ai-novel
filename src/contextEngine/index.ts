@@ -7,7 +7,10 @@ import type { ContextLoadContext } from './dataSource'
 export interface ContextPack {
   systemPrompt: string
   wordBudget: number
+  maxTokens: number
   sources: string[]
+  outlineContent: string
+  previousEnding: string
 }
 
 const MAX_PROMPT_TOKENS = 4096
@@ -78,8 +81,11 @@ export async function buildContext(
   const sections: string[] = [promptBase]
 
   if (chapterGuide) {
-    const label = outline ? '## 本章细纲' : '## 项目背景'
-    sections.push('', label, chapterGuide)
+    if (outline) {
+      sections.push('', '## 本章大纲', '', chapterGuide)
+    } else {
+      sections.push('', '## 项目背景', chapterGuide)
+    }
   }
   if (previousEnding) sections.push('', '## 上一章结尾', previousEnding)
 
@@ -87,11 +93,16 @@ export async function buildContext(
     sections.push('', `## ${src.name}`, src.content)
   }
 
-  sections.push('', `## 字数要求`, `本章必须写满约 ${String(targetWords)} 字，请确保情节充分展开、描写细致到位，不要仓促收尾或省略细节。`)
+  sections.push('', `## 篇幅要求
+
+本章总计约 ${String(targetWords)} 字。`)
 
   return {
     systemPrompt: sections.join('\n'),
     wordBudget: targetWords,
+    maxTokens: Math.ceil(targetWords * 1.5),
     sources: assembled.map((s) => s.name),
+    outlineContent: chapterGuide,
+    previousEnding,
   }
 }

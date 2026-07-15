@@ -46,18 +46,14 @@ export function truncateToBudget(
   return kept
 }
 
-const DEFAULT_SYSTEM_PROMPT = `你是一位优秀的网络小说作家。请根据以下要求续写小说正文。
+const DEFAULT_SYSTEM_PROMPT = `重要：不要输出章节标题，章节标题已由系统单独设置。
 
-## 写作要求
-- 只输出小说正文，不要添加任何解释、注释或元描述
-- 保持连贯的叙事风格
-- 注意章节之间的衔接
-- 用自然段落分隔，段落之间用空行
+你是一位优秀的网络小说作家。请续写小说正文。
 
-## 输出格式要求（重要）
-- 输出纯文本，不要使用 markdown 语法。禁止使用 # ## ** * > - 等符号
-- 章节标题独占一行，不要在前面加 # 号
-- 段落之间用一个空行分隔，不要在段落开头加缩进`
+## 格式要求
+- 只输出小说正文，不要添加解释、注释或元描述
+- 段首空两格，段落自然换行即可
+- 输出纯文本，禁止使用 markdown 语法（# ## ** * > - 等）`
 
 export function getDefaultSystemPrompt(): string {
   return DEFAULT_SYSTEM_PROMPT

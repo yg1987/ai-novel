@@ -1133,6 +1133,30 @@ body {
   flex: 1;
 }
 
+.actual-wordcount,
+.wordcount-label {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  padding: 0 4px;
+}
+
+.wordcount-input {
+  width: 80px;
+  font-size: 0.82rem;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  outline: none;
+  text-align: center;
+}
+.wordcount-input:focus {
+  border-color: var(--accent);
+}
+
 /* ─── Rewrite button group ─────────────── */
 
 .rewrite-btn-group {
@@ -1216,7 +1240,8 @@ body {
 }
 
 .editor-content p {
-  margin-bottom: 0.5em;
+  text-indent: 2em;
+  margin: 0;
 }
 
 .editor-content h2 {

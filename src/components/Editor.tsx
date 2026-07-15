@@ -5,6 +5,8 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { saveChapterContent, getChapterContent } from '../api/tauri'
 import { buildContext } from '../contextEngine'
 import { generateChapter, stopGeneration } from '../services/aiProvider'
+import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
+import { estimateWordCount } from '../utils/cjkCount'
 import {
   resolveChapterWordCount,
   saveChapterWordCountOverride,
@@ -19,6 +21,37 @@ import { logAIGenerated, logSessionStart } from '../services/stats'
 import { runSavePipeline, runReview } from '../services/savePipeline'
 import { type RewriteMode } from '../services/rewriteService'
 import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
+
+const PROMPT_KEY = 'chapter_generate'
+
+/** Default prompt template — {outline}, {word_count}, {previous_ending} are replaced at generation time */
+const DEFAULT_PROMPT = `重要：不要输出章节标题！
+
+你是一位网文作家。请根据大纲续写小说正文。
+
+## 本章大纲（必须严格按编号顺序执行）
+{outline}
+
+【硬性要求 — 违反则不合格】
+1. 严格按大纲编号顺序逐条推进，禁止跳序、重排或遗漏任何条目
+2. 字数：至少 {word_count} 字，至多 {word_count_high} 字。在此范围内写完所有条目并自然收尾
+3. 结尾必须是完整的句子和完整的场景，不能断在半句话或半场戏中
+{previous_ending_section}
+
+【格式】
+输出纯文本正文（无标题），段首空两格，段落自然换行`
+
+/** Replace variables in the prompt template. Removes {previous_ending_section} if no previous ending. */
+function applyPromptTemplate(template: string, outline: string, wordCount: number, previousEnding: string): string {
+  return template
+    .replace(/\{outline\}/g, outline || '（无大纲）')
+    .replace(/\{word_count_high\}/g, String(Math.ceil(wordCount * 1.15)))
+    .replace(/\{word_count\}/g, String(wordCount))
+    .replace(/\{previous_ending\}/g, previousEnding || '（无）')
+    .replace(/\{previous_ending_section\}/g, previousEnding
+      ? '\n【前文结尾】\n{previous_ending}'.replace(/\{previous_ending\}/g, previousEnding)
+      : '')
+}
 
 interface Props {
   projectId: string
@@ -67,6 +100,19 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
   const [reviewing, setReviewing] = useState(false)
   const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const paragraphBuf = useRef('')
+  const stopRequestedRef = useRef(false)
+  const [selectionVersion, setSelectionVersion] = useState(0)
+
+  // ─── Custom prompt ─────────────────────────────
+  const [showPrompt, setShowPrompt] = useState(false)
+  const [editingPrompt, setEditingPrompt] = useState('')
+  const [savingPrompt, setSavingPrompt] = useState(false)
+
+  useEffect(() => {
+    loadPrompt(projectId, PROMPT_KEY).then((saved) => {
+      setEditingPrompt(saved ?? DEFAULT_PROMPT)
+    }).catch(() => {})
+  }, [projectId])
 
   // ─── Word count resolution ──────────────────────
 
@@ -106,6 +152,9 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
             .catch((e: unknown) => { console.error('Auto-save failed:', e) })
         }
       }, AUTOSAVE_DELAY)
+    },
+    onSelectionUpdate: () => {
+      setSelectionVersion((n) => n + 1)
     },
   })
 
@@ -163,45 +212,46 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
     setGenerationComplete(false)
     generateStartTime.current = Date.now()
     paragraphBuf.current = ''
+    stopRequestedRef.current = false
     editor.commands.focus()
     try {
       const ctx = await buildContext(projectId, volume, chapterId, effectiveWordCount)
       const { from } = editor.state.selection
       editor.commands.insertContentAt(from, '<p></p>')
-      await generateChapter(ctx.systemPrompt, {
+
+      // Use custom prompt if user saved one; otherwise use the auto-generated prompt
+      const hasCustom = editingPrompt !== DEFAULT_PROMPT
+      const systemPrompt = hasCustom
+        ? applyPromptTemplate(editingPrompt, ctx.outlineContent, ctx.wordBudget, ctx.previousEnding)
+        : ctx.systemPrompt
+
+      await generateChapter(systemPrompt, {
         onToken: (text) => {
           paragraphBuf.current += text
           let idx: number
           while ((idx = paragraphBuf.current.indexOf('\n\n')) !== -1) {
             const para = paragraphBuf.current.slice(0, idx).trim()
             paragraphBuf.current = paragraphBuf.current.slice(idx + 2)
-            if (para) {
-              editor.commands.insertContent(para)
-            }
-            editor.commands.insertContent('<p></p>')
+            if (para) editor.commands.insertContent('<p>' + para + '</p>')
           }
         },
         onDone: () => {
-          // Flush remaining buffer
-          if (paragraphBuf.current.trim()) {
-            editor.commands.insertContent(paragraphBuf.current.trim())
-          }
+          if (paragraphBuf.current.trim()) editor.commands.insertContent('<p>' + paragraphBuf.current.trim() + '</p>')
           paragraphBuf.current = ''
-          // Strip leftover markdown heading prefixes
           stripMarkdownHeadings()
           setGenerating(false)
           setGenerationComplete(true)
           const elapsed = Date.now() - generateStartTime.current
           logAIGenerated(projectId, chapterNumber, elapsed)
         },
-        onError: (err) => { console.error('Generation error:', err); setGenerating(false); paragraphBuf.current = '' },
-      })
+        onError: (err) => { console.error(err); setGenerating(false); paragraphBuf.current = '' },
+      }, ctx.maxTokens)
     } catch (e) {
       console.error('Generation failed:', e)
       setGenerating(false)
       paragraphBuf.current = ''
     }
-  }, [editor, generating, projectId, chapterId, effectiveWordCount, chapterNumber])
+  }, [editor, generating, projectId, chapterId, effectiveWordCount, chapterNumber, editingPrompt])
 
   /**
    * Remove markdown heading prefixes (#, ##) and list markers (-) from the
@@ -222,7 +272,7 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
     })
   }, [editor])
 
-  const handleStop = useCallback(() => { stopGeneration(); setGenerating(false); paragraphBuf.current = '' }, [])
+  const handleStop = useCallback(() => { stopGeneration(); setGenerating(false); paragraphBuf.current = ''; stopRequestedRef.current = true }, [])
 
   const handleReview = useCallback(() => {
     if (!editor || reviewing) return
@@ -278,6 +328,11 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
     },
   }))
 
+  // Real-time word count from editor content, computed during render so it's always current
+  const currentWordCount = editor
+    ? estimateWordCount(editor.state.doc.textContent)
+    : estimateWordCount(initialContent.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' '))
+
   if (!editor) return <div className="editor-loading">加载编辑器…</div>
 
   return (
@@ -299,8 +354,13 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
         <Button variant="ghost" size="sm" onClick={() => { editor.chain().focus().toggleBlockquote().run() }} data-active={editor.isActive('blockquote')} title="引用">"</Button>
         <div className="toolbar-spacer" />
 
+        <span className="actual-wordcount" title="当前正文实际字数">
+          现有字数：{currentWordCount} 字
+        </span>
+        <span className="toolbar-sep" />
+
         <div className="wordcount-input-group" title={`来源: ${SourceLabel[wordCountSource]}`}>
-          <span className="wordcount-label">预计字数:</span>
+          <span className="wordcount-label">预计AI生成字数:</span>
           <input
             type="number"
             className="wordcount-input"
@@ -382,11 +442,46 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
         ) : (
           <Button variant="primary" size="sm" icon="✨" onClick={() => { void handleGenerate() }} title="AI 生成">生成</Button>
         )}
+        <Button variant="ghost" size="sm" onClick={() => setShowPrompt(!showPrompt)} title="自定义AI生成提示词">
+          {showPrompt ? '关闭提示词' : '✎ 提示词'}
+        </Button>
         <Button variant="primary" size="sm" onClick={handleSaveNow} disabled={saving} title="保存">
           {saving ? '保存中…' : '保存'}
         </Button>
         {saveFeedback && <span className="save-feedback">{saveFeedback}</span>}
       </div>
+
+      {/* Prompt editor */}
+      {showPrompt && (
+        <div className="prompt-editor">
+          <div className="prompt-editor-header">
+            <span>AI 生成提示词（修改后点击保存，AI 将使用你的提示词。{'{outline}'}、{'{word_count}'}、{'{previous_ending}'} 会被自动替换为实际内容）</span>
+            <Button variant="text" size="sm" onClick={async () => {
+              setSavingPrompt(true)
+              await resetPrompt(projectId, PROMPT_KEY)
+              setEditingPrompt(DEFAULT_PROMPT)
+              setSavingPrompt(false)
+            }}>恢复默认</Button>
+          </div>
+          <textarea
+            className="prompt-editor-textarea"
+            value={editingPrompt}
+            onChange={(e) => setEditingPrompt(e.target.value)}
+            placeholder="在此编写自定义提示词…"
+            rows={14}
+          />
+          <div className="prompt-editor-footer">
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              {editingPrompt !== DEFAULT_PROMPT ? '已自定义提示词' : '正在使用默认提示词'}
+            </span>
+            <Button variant="primary" size="sm" disabled={savingPrompt} onClick={async () => {
+              setSavingPrompt(true)
+              await savePrompt(projectId, PROMPT_KEY, editingPrompt)
+              setSavingPrompt(false)
+            }}>{savingPrompt ? '保存中…' : '保存提示词'}</Button>
+          </div>
+        </div>
+      )}
 
       {/* Banned words detail panel */}
       {showBannedDetail && bannedCheck && bannedCheck.matches.length > 0 && (

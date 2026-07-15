@@ -21,6 +21,8 @@ export function isGenerating(): boolean {
 export async function generateChapter(
   systemPrompt: string,
   callbacks: StreamCallbacks,
+  maxTokens?: number,
+  userMessage?: string,
 ): Promise<void> {
   // Stop any existing generation
   stopGeneration()
@@ -36,7 +38,7 @@ export async function generateChapter(
   activeAbortController = controller
 
   try {
-    await streamFromProvider(provider, systemPrompt, controller, callbacks)
+    await streamFromProvider(provider, systemPrompt, controller, callbacks, maxTokens, userMessage)
   } catch (e) {
     if ((e as Error).name === 'AbortError') {
       // Generation was intentionally stopped
@@ -54,6 +56,8 @@ async function streamFromProvider(
   systemPrompt: string,
   controller: AbortController,
   callbacks: StreamCallbacks,
+  maxTokens?: number,
+  userMessage?: string,
 ): Promise<void> {
   const response = await fetch(`${provider.base_url}/chat/completions`, {
     method: 'POST',
@@ -65,11 +69,11 @@ async function streamFromProvider(
       model: provider.models.writing,
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: '请开始写作本章内容。' },
+        { role: 'user', content: userMessage ?? '开始。' },
       ],
       stream: true,
       temperature: 0.8,
-      max_tokens: 16384,
+      max_tokens: maxTokens ?? 16384,
     }),
     signal: controller.signal,
   })
