@@ -16,6 +16,7 @@ import Editor, { type EditorHandle } from './Editor'
 import VersionHistoryPanel from './VersionHistoryPanel'
 import MaterialSidebar from './MaterialSidebar'
 import ConfirmDialog from './ConfirmDialog'
+import Button from './Button'
 
 interface Props {
   projectId: string
@@ -397,8 +398,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
                         <span className="chapter-item-actions">
                           <PopupMenu
                             trigger={
-                              <button
-                                className="btn-tiny"
+                              <Button variant="ghost" size="xs"
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   setNotesMenuChapterId(
@@ -406,9 +406,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
                                   )
                                 }}
                                 title="章节备注"
-                              >
-                                📝
-                              </button>
+                              >📝</Button>
                             }
                             items={buildNotesItems(ch)}
                             open={notesMenuChapterId === ch.id}
@@ -416,8 +414,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
                           />
                           <PopupMenu
                             trigger={
-                              <button
-                                className="btn-tiny"
+                              <Button variant="ghost" size="xs"
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   setExportMenuChapterId(
@@ -425,24 +422,20 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
                                   )
                                 }}
                                 title="发布复制"
-                              >
-                                📋
-                              </button>
+                              >📋</Button>
                             }
                             items={buildExportItems(ch)}
                             open={exportMenuChapterId === ch.id}
                             onClose={() => setExportMenuChapterId(null)}
                           />
-                          <button
-                            className="btn-tiny"
+                          <Button variant="ghost" size="xs"
                             onClick={(e) => { e.stopPropagation(); handleViewVersionHistory(ch) }}
                             title="版本历史"
-                          >🕐</button>
-                          <button
-                            className="btn-tiny btn-tiny-danger"
+                          >🕐</Button>
+                          <Button variant="ghost" size="xs" className="btn-tiny-danger"
                             onClick={(e) => { e.stopPropagation(); setDeleteConfirm({ kind: 'chapter', chapter: ch }) }}
                             title="删除章节"
-                          >✕</button>
+                          >✕</Button>
                         </span>
                       </div>
                     ))}
@@ -465,7 +458,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
 
         <div className="chapter-sidebar-footer">
           <div className="chapter-footer-actions">
-            <button className="btn-tiny" onClick={() => setShowMaterial((v) => !v)} title="素材库">📦 素材库</button>
+            <Button variant="ghost" size="xs" onClick={() => setShowMaterial((v) => !v)} title="素材库">📦 素材库</Button>
           </div>
         </div>
       </div>

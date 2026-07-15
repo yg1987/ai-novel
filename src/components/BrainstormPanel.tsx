@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { runBrainstorm, type BrainstormMode, type BrainstormResult } from '../services/brainstormService'
+import Button from './Button'
 
 interface Props {
   projectId: string
@@ -50,14 +51,9 @@ export default function BrainstormPanel({ projectId }: Props) {
             </button>
           ))}
         </div>
-        <button
-          className="btn-primary"
-          onClick={handleGenerate}
-          disabled={generating}
-          style={{ width: '100%', marginTop: 12 }}
-        >
-          {generating ? '生成中…' : '✨ 生成灵感'}
-        </button>
+        <Button variant="primary" size="md" onClick={handleGenerate} disabled={generating} style={{ width: '100%', marginTop: 12 }}>
+          {generating ? '⏳ 思考中…' : '🚀 开始脑暴'}
+        </Button>
         {error && <div className="error-bar" style={{ marginTop: 8 }}>{error}</div>}
       </div>
 

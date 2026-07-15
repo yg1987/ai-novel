@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { ReviewRules, BannedWordRule, ConsistencyThresholds, ReviewDimensionConfig } from '../services/reviewRules'
 import { loadReviewRules, saveReviewRules, writeDefaultReviewRules } from '../services/reviewRules'
+import Button from './Button'
 
 interface Props {
   projectId: string
@@ -245,26 +246,18 @@ export default function ReviewRulesEditor({ projectId, onClose, onSaved }: Props
           />
 
           {/* Delete */}
-          <button
-            className="btn-icon"
+          <Button variant="ghost" size="sm"
             onClick={() => removeBannedRule(i)}
             disabled={busy}
             title="删除"
-            style={{ flexShrink: 0, color: 'var(--danger)', padding: '2px 6px', fontSize: '1rem' }}
-          >
-            ✕
-          </button>
+            style={{ flexShrink: 0, color: 'var(--danger)' }}
+          >✕</Button>
         </div>
       ))}
 
-      <button
-        className="btn-text"
-        onClick={addBannedRule}
-        disabled={busy}
-        style={{ alignSelf: 'flex-start', marginTop: 4 }}
-      >
-        ＋ 添加规则
-      </button>
+      <Button variant="text" size="sm" onClick={addBannedRule} disabled={busy} style={{ alignSelf: 'flex-start', marginTop: 4 }}>
+        + 添加违规词
+      </Button>
     </div>
   )
 
@@ -329,15 +322,12 @@ export default function ReviewRulesEditor({ projectId, onClose, onSaved }: Props
               disabled={busy}
               style={{ ...inputStyle, flex: 1 }}
             />
-            <button
-              className="btn-icon"
+            <Button variant="ghost" size="sm"
               onClick={() => removeDimension(i)}
               disabled={busy}
               title="删除"
-              style={{ flexShrink: 0, color: 'var(--danger)', padding: '2px 6px', fontSize: '1rem' }}
-            >
-              ✕
-            </button>
+              style={{ flexShrink: 0, color: 'var(--danger)' }}
+            >✕</Button>
           </div>
           <input
             type="text"
@@ -350,14 +340,9 @@ export default function ReviewRulesEditor({ projectId, onClose, onSaved }: Props
         </div>
       ))}
 
-      <button
-        className="btn-text"
-        onClick={addDimension}
-        disabled={busy}
-        style={{ alignSelf: 'flex-start', marginTop: 4 }}
-      >
+      <Button variant="text" size="sm" onClick={addDimension} disabled={busy} style={{ alignSelf: 'flex-start', marginTop: 4 }}>
         ＋ 添加维度
-      </button>
+      </Button>
     </div>
   )
 
@@ -401,14 +386,7 @@ export default function ReviewRulesEditor({ projectId, onClose, onSaved }: Props
           }}
         >
           <h2 style={{ fontSize: '1.15rem', margin: 0 }}>⚙ 审查规则配置</h2>
-          <button
-            className="btn-text"
-            onClick={onClose}
-            disabled={busy}
-            style={{ fontSize: '1.1rem', color: 'var(--text-muted)', padding: '2px 6px' }}
-          >
-            ✕
-          </button>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={busy} style={{ fontSize: '1.1rem', color: 'var(--text-muted)' }}>✕</Button>
         </div>
 
         {/* Tabs */}
@@ -461,39 +439,15 @@ export default function ReviewRulesEditor({ projectId, onClose, onSaved }: Props
         </div>
 
         {/* Footer */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '12px 20px',
-            borderTop: '1px solid var(--border)',
-            flexShrink: 0,
-            background: 'var(--bg-sidebar)',
-          }}
-        >
-          <button
-            className="btn-secondary"
-            onClick={handleReset}
-            disabled={busy}
-          >
+        <div className="dialog-footer" style={{ justifyContent: 'space-between', padding: '12px 20px', background: 'var(--bg-sidebar)' }}>
+          <Button variant="secondary" size="sm" onClick={handleReset} disabled={busy}>
             {resetting ? '恢复中…' : '恢复默认'}
-          </button>
+          </Button>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              className="btn-secondary"
-              onClick={onClose}
-              disabled={busy}
-            >
-              取消
-            </button>
-            <button
-              className="btn-primary"
-              onClick={handleSave}
-              disabled={busy}
-            >
+            <Button variant="secondary" size="md" onClick={onClose} disabled={busy}>取消</Button>
+            <Button variant="primary" size="md" onClick={handleSave} disabled={busy}>
               {saving ? '保存中…' : '保存'}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

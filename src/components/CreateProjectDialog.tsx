@@ -1,5 +1,7 @@
 import { useState, type SyntheticEvent } from 'react'
 
+import Button from './Button'
+
 interface Props {
   onConfirm: (data: { name: string; genre: string; description: string; target_words: number }) => void
   onCancel: () => void
@@ -63,9 +65,9 @@ export default function CreateProjectDialog({ onConfirm, onCancel }: Props) {
               step={10000}
             />
           </div>
-          <div className="dialog-actions">
-            <button type="button" className="btn-secondary" onClick={onCancel}>取消</button>
-            <button type="submit" className="btn-primary" disabled={!name.trim()}>创建</button>
+          <div className="dialog-footer">
+            <Button variant="secondary" size="md" type="button" onClick={onCancel}>取消</Button>
+            <Button variant="primary" size="md" type="submit" disabled={!name.trim()}>创建</Button>
           </div>
         </form>
       </div>

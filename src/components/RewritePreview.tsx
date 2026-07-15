@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { rewriteText, stopRewrite, type RewriteMode } from '../services/rewriteService'
+import Button from './Button'
 
 interface Props {
   selectedText: string
@@ -51,7 +52,7 @@ export default function RewritePreview({ selectedText, beforeText, afterText, de
               </button>
             ))}
           </div>
-          <button className="btn-text" onClick={onReject} disabled={generating}>✕</button>
+          <Button variant="ghost" size="sm" onClick={onReject} disabled={generating}>✕</Button>
         </div>
 
         <div className="rewrite-compare">
@@ -71,14 +72,14 @@ export default function RewritePreview({ selectedText, beforeText, afterText, de
 
         <div className="rewrite-actions">
           {generating ? (
-            <button className="toolbar-btn stop-btn" onClick={handleStop}>■ 停止</button>
+            <Button variant="danger" size="sm" icon="■" onClick={handleStop}>停止</Button>
           ) : result ? (
             <>
-              <button className="btn-primary" onClick={() => onAccept(result)}>✓ 接受</button>
-              <button className="btn-text" onClick={handleGenerate}>🔄 重新生成</button>
+              <Button variant="primary" size="md" icon="✓" onClick={() => onAccept(result)}>接受</Button>
+              <Button variant="text" size="sm" icon="🔄" onClick={handleGenerate}>重新生成</Button>
             </>
           ) : (
-            <button className="btn-primary" onClick={handleGenerate}>✨ 生成</button>
+            <Button variant="primary" size="md" icon="✨" onClick={handleGenerate}>生成</Button>
           )}
         </div>
       </div>

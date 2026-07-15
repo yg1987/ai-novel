@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { FocusSession, type FocusConfig } from '../services/focusService'
+import Button from './Button'
 
 interface Props {
   wordCount: number
@@ -52,7 +53,7 @@ export default function FocusModeOverlay({ wordCount, targetWords: _targetWords,
             <h2>专注完成！</h2>
             <p>本次写作：{wordCount} 字 / 目标 {sessionTarget} 字</p>
             <p className="focus-completed-time">用时 {formatTime(elapsed)}</p>
-            <button className="btn-primary" onClick={onExit}>返回</button>
+            <Button variant="primary" size="md" onClick={onExit}>返回</Button>
           </div>
         </div>
       </div>
@@ -76,9 +77,9 @@ export default function FocusModeOverlay({ wordCount, targetWords: _targetWords,
                 onChange={(e) => setSessionTarget(Number(e.target.value))} />
             </label>
           </div>
-          <div className="focus-actions">
-            <button className="btn-primary" onClick={handleStart}>开始专注</button>
-            <button className="btn-text" onClick={onExit}>取消</button>
+          <div className="dialog-footer" style={{ justifyContent: 'center' }}>
+            <Button variant="text" size="md" onClick={onExit}>取消</Button>
+            <Button variant="primary" size="md" onClick={handleStart}>开始专注</Button>
           </div>
         </div>
       </div>
@@ -100,12 +101,12 @@ export default function FocusModeOverlay({ wordCount, targetWords: _targetWords,
           <span>目标 {sessionTarget} 字</span>
         </div>
         <div className="focus-actions">
-          <button className="btn-text" onClick={handlePause}>
+          <Button variant="text" size="md" onClick={handlePause}>
             {paused ? '▶ 继续' : '⏸ 暂停'}
-          </button>
-          <button className="btn-text" style={{ color: 'var(--danger)' }} onClick={() => { session.stop(); onExit() }}>
+          </Button>
+          <Button variant="text" size="md" style={{ color: 'var(--danger)' }} onClick={() => { session.stop(); onExit() }}>
             ✕ 放弃
-          </button>
+          </Button>
         </div>
       </div>
     </div>

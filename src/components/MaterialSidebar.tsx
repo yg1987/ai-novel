@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { listResourceCategories, listResourceFiles, readResourceFile } from '../api/tauri'
 import type { FileEntry } from '../api/tauri'
+import Button from './Button'
 
 interface Props {
   onInsert: (text: string) => void
@@ -68,13 +69,10 @@ export default function MaterialSidebar({ onInsert }: Props) {
         <div className="material-preview">
           <div className="material-preview-header">
             <span className="material-filename">{selectedFile}</span>
-            <button
-              className="btn-primary"
-              style={{ fontSize: '0.78rem', padding: '2px 8px' }}
-              onClick={() => onInsert(previewText)}
-            >
+            <Button variant="primary" size="sm"
+              onClick={() => onInsert(previewText)}>
               插入
-            </button>
+            </Button>
           </div>
           <pre className="material-preview-content">{previewText}</pre>
         </div>

@@ -14,6 +14,7 @@ import type { ChapterWordCountResolution } from '../services/settings'
 import type { CheckResult } from '../services/bannedWords'
 import RewritePreview from './RewritePreview'
 import RewriteButtons from './RewriteButtons'
+import Button from './Button'
 import { logAIGenerated, logSessionStart } from '../services/stats'
 import { runSavePipeline, runReview } from '../services/savePipeline'
 import { type RewriteMode } from '../services/rewriteService'
@@ -287,15 +288,15 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
         }
       }}>
       <div className="editor-toolbar">
-        <button className="toolbar-btn" onClick={() => { editor.chain().focus().toggleBold().run() }} data-active={editor.isActive('bold')} title="加粗">B</button>
-        <button className="toolbar-btn" onClick={() => { editor.chain().focus().toggleItalic().run() }} data-active={editor.isActive('italic')} title="斜体">I</button>
-        <button className="toolbar-btn" onClick={() => { editor.chain().focus().toggleUnderline().run() }} data-active={editor.isActive('underline')} title="下划线">U</button>
+        <Button variant="ghost" size="sm" onClick={() => { editor.chain().focus().toggleBold().run() }} data-active={editor.isActive('bold')} title="加粗">B</Button>
+        <Button variant="ghost" size="sm" onClick={() => { editor.chain().focus().toggleItalic().run() }} data-active={editor.isActive('italic')} title="斜体">I</Button>
+        <Button variant="ghost" size="sm" onClick={() => { editor.chain().focus().toggleUnderline().run() }} data-active={editor.isActive('underline')} title="下划线">U</Button>
         <span className="toolbar-sep" />
-        <button className="toolbar-btn" onClick={() => { editor.chain().focus().toggleHeading({ level: 2 }).run() }} data-active={editor.isActive('heading', { level: 2 })} title="标题">H2</button>
-        <button className="toolbar-btn" onClick={() => { editor.chain().focus().toggleHeading({ level: 3 }).run() }} data-active={editor.isActive('heading', { level: 3 })} title="小标题">H3</button>
+        <Button variant="ghost" size="sm" onClick={() => { editor.chain().focus().toggleHeading({ level: 2 }).run() }} data-active={editor.isActive('heading', { level: 2 })} title="标题">H2</Button>
+        <Button variant="ghost" size="sm" onClick={() => { editor.chain().focus().toggleHeading({ level: 3 }).run() }} data-active={editor.isActive('heading', { level: 3 })} title="小标题">H3</Button>
         <span className="toolbar-sep" />
-        <button className="toolbar-btn" onClick={() => { editor.chain().focus().toggleBulletList().run() }} data-active={editor.isActive('bulletList')} title="列表">≡</button>
-        <button className="toolbar-btn" onClick={() => { editor.chain().focus().toggleBlockquote().run() }} data-active={editor.isActive('blockquote')} title="引用">"</button>
+        <Button variant="ghost" size="sm" onClick={() => { editor.chain().focus().toggleBulletList().run() }} data-active={editor.isActive('bulletList')} title="列表">≡</Button>
+        <Button variant="ghost" size="sm" onClick={() => { editor.chain().focus().toggleBlockquote().run() }} data-active={editor.isActive('blockquote')} title="引用">"</Button>
         <div className="toolbar-spacer" />
 
         <div className="wordcount-input-group" title={`来源: ${SourceLabel[wordCountSource]}`}>
@@ -323,14 +324,14 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
             }}
           />
           {wordCountSource === 'manual' && (
-            <button
-              className="wordcount-reset-btn"
+            <Button
+              variant="ghost" size="xs"
               title="重置为默认字数"
               onClick={async () => {
                 await deleteChapterWordCountOverride(projectId, chapterId)
                 void refreshWordCount()
               }}
-            >↩</button>
+            >↩</Button>
           )}
         </div>
 
@@ -346,14 +347,15 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
           <span className="generation-complete-badge">✅ 生成完成，可以保存</span>
         )}
 
-        <button
-          className="toolbar-btn review-btn"
+        <Button
+          variant="text" size="sm"
+          icon="🔍"
           onClick={handleReview}
           disabled={reviewing}
           title="审查"
         >
-          {reviewing ? '审查中…' : '🔍 审查'}
-        </button>
+          {reviewing ? '审查中…' : '审查'}
+        </Button>
 
         {/* Banned words indicator */}
         {bannedCheck && (
@@ -365,23 +367,24 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
 
         {/* Light check indicator */}
         {lastLightCheckResult && !lastLightCheckResult.passed && (
-          <button
+          <Button
+            variant="text" size="sm"
             className={`light-check-indicator ${lastLightCheckResult.passed ? 'passed' : 'failed'}`}
             title={`轻量检查发现 ${lastLightCheckResult.issues} 个问题，点击查看详情`}
             onClick={() => onNavigateToReview?.(chapterId)}
           >
             ⚠ 检查
-          </button>
+          </Button>
         )}
 
         {generating ? (
-          <button className="toolbar-btn stop-btn" onClick={handleStop} title="停止生成">■ 停止</button>
+          <Button variant="danger" size="sm" icon="■" onClick={handleStop} title="停止生成">停止</Button>
         ) : (
-          <button className="toolbar-btn generate-btn" onClick={() => { void handleGenerate() }} title="AI 生成">✨ 生成</button>
+          <Button variant="primary" size="sm" icon="✨" onClick={() => { void handleGenerate() }} title="AI 生成">生成</Button>
         )}
-        <button className={`toolbar-btn save-btn${saving ? ' saving' : ''}`} onClick={handleSaveNow} disabled={saving} title="保存">
+        <Button variant="primary" size="sm" onClick={handleSaveNow} disabled={saving} title="保存">
           {saving ? '保存中…' : '保存'}
-        </button>
+        </Button>
         {saveFeedback && <span className="save-feedback">{saveFeedback}</span>}
       </div>
 
@@ -390,7 +393,7 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
         <div className="banned-detail">
           <div className="banned-detail-header">
             <span>AI 味检测 ({bannedCheck.score}/100)</span>
-            <button className="btn-text" onClick={() => { setShowBannedDetail(false) }}>✕</button>
+            <Button variant="ghost" size="sm" onClick={() => { setShowBannedDetail(false) }}>✕</Button>
           </div>
           <div className="banned-detail-list">
             {bannedCheck.matches.map((m, i) => (

@@ -8,6 +8,7 @@ import type { ReviewRules } from '../services/reviewRules'
 import type { GroupedBannedMatch } from '../services/bannedWords'
 import { listChapters, getChapterContent } from '../api/tauri'
 import ReviewRulesEditor from './ReviewRulesEditor'
+import Button from './Button'
 
 // ─── Props ───────────────────────────────────────
 
@@ -224,8 +225,8 @@ export default function ReviewPanel({ projectId, currentChapterId, chapterHtml =
       <div className="panel-sidebar review-sidebar">
         <div className="review-sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h3>审查报告</h3>
-          <button className="btn-icon" onClick={() => setShowRulesEditor(true)} title="审查规则配置"
-            style={{ fontSize: '1.1rem', padding: '2px 6px' }}>⚙</button>
+          <Button variant="ghost" size="sm" onClick={() => setShowRulesEditor(true)} title="审查规则配置"
+            style={{ fontSize: '1.1rem' }}>⚙</Button>
         </div>
 
         {/* Action buttons */}
@@ -235,25 +236,25 @@ export default function ReviewPanel({ projectId, currentChapterId, chapterHtml =
               💡 展开左侧章节后可运行检查
             </p>
           )}
-          <button className="btn-primary" onClick={handleRunLightCheck}
+          <Button variant="primary" size="md" onClick={handleRunLightCheck}
             disabled={runningReview || noExpandedChapter}
             title={noExpandedChapter ? '请先展开左侧章节' : undefined}
             style={{ width: '100%', marginBottom: 6 }}>
             {runningReview ? '检查中…' : '⚡ 轻量检查'}
-          </button>
-          <button className="btn-primary" onClick={handleRunDeepReview}
+          </Button>
+          <Button variant="primary" size="md" onClick={handleRunDeepReview}
             disabled={runningReview || noExpandedChapter}
             title={noExpandedChapter ? '请先展开左侧章节' : undefined}
             style={{ width: '100%', marginBottom: 6 }}>
             {runningReview ? '审查中…' : '🔍 AI 深度审查'}
-          </button>
+          </Button>
           <div className="review-section-separator" />
-          <button className="btn-secondary" onClick={handleRunConsistency}
+          <Button variant="secondary" size="md" onClick={handleRunConsistency}
             disabled={runningConsistency || noExpandedChapter}
             title={noExpandedChapter ? '请先展开左侧章节' : undefined}
             style={{ width: '100%' }}>
             {runningConsistency ? '检查中…' : '🔗 一致性检查（Tier 1）'}
-          </button>
+          </Button>
         </div>
 
         {error && <div className="error-bar">{error}</div>}

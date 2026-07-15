@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { archiveProject, importProject } from '../services/archiveService'
+import Button from './Button'
 
 interface Props {
   projectId: string
@@ -45,36 +46,26 @@ export default function ArchiveDialog({ projectId, projectName, onClose, onImpor
       <div className="export-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="export-header">
           <h3>项目存档</h3>
-          <button className="btn-text" onClick={onClose}>✕</button>
+          <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
         </div>
 
         <div className="export-body">
           {done ? (
             <div className="export-done">
               <p>✅ 操作成功</p>
-              <button className="btn-primary" onClick={onClose}>完成</button>
+              <Button variant="primary" size="md" onClick={onClose}>完成</Button>
             </div>
           ) : (
             <>
               <p className="export-label">导出当前项目为备份文件，或从备份文件导入</p>
 
               <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-                <button
-                  className="btn-primary"
-                  onClick={handleExport}
-                  disabled={working}
-                  style={{ flex: 1 }}
-                >
+                <Button variant="primary" size="md" onClick={handleExport} disabled={working} style={{ flex: 1 }}>
                   {working ? '导出中…' : '📤 导出存档'}
-                </button>
-                <button
-                  className="btn-primary"
-                  onClick={handleImport}
-                  disabled={working}
-                  style={{ flex: 1 }}
-                >
+                </Button>
+                <Button variant="primary" size="md" onClick={handleImport} disabled={working} style={{ flex: 1 }}>
                   {working ? '导入中…' : '📥 导入存档'}
-                </button>
+                </Button>
               </div>
 
               {error && <div className="error-bar" style={{ marginTop: 12 }}>{error}</div>}

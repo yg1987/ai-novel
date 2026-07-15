@@ -9,6 +9,7 @@ import { type RewriteMode } from '../services/rewriteService'
 import RewriteButtons from './RewriteButtons'
 import RewritePreview from './RewritePreview'
 import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
+import Button from './Button'
 
 interface Props {
   projectId?: string
@@ -184,7 +185,7 @@ export default function ResourcePanel({ projectId }: Props) {
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreateCategory() }}
               placeholder="新建分类…"
             />
-            <button className="btn-text" onClick={handleCreateCategory} disabled={!newCategory.trim()}>+</button>
+            <Button variant="text" size="sm" onClick={handleCreateCategory} disabled={!newCategory.trim()}>+</Button>
           </div>
         </div>
       </div>
@@ -194,7 +195,7 @@ export default function ResourcePanel({ projectId }: Props) {
         <div className="panel-sidebar-header">
           <h3>素材文件</h3>
           {selectedCategory && (
-            <button className="btn-text" onClick={() => setShowNewFile(true)} title="新建素材">+</button>
+            <Button variant="text" size="sm" onClick={() => setShowNewFile(true)} title="新建素材">+</Button>
           )}
         </div>
         <div className="panel-list">
@@ -211,12 +212,7 @@ export default function ResourcePanel({ projectId }: Props) {
               onClick={() => handleSelectFile(f.name)}
             >
               <span style={{ flex: 1 }}>{f.name.replace(/\.md$/i, '')}</span>
-              <button
-                className="btn-text"
-                style={{ fontSize: '0.75rem', color: 'var(--danger)', padding: '0 4px' }}
-                onClick={(e) => { e.stopPropagation(); handleDelete(f.name) }}
-                title="删除"
-              >✕</button>
+              <Button variant="text" size="sm" style={{ color: 'var(--danger)' }} onClick={(e) => { e.stopPropagation(); handleDelete(f.name) }} title="删除">✕</Button>
             </div>
           ))}
         </div>
@@ -231,8 +227,8 @@ export default function ResourcePanel({ projectId }: Props) {
               placeholder="文件名.md…"
               autoFocus
             />
-            <button className="btn-text" onClick={() => { handleCreateFile() }}>✓</button>
-            <button className="btn-text" onClick={() => { setShowNewFile(false); setNewFilename('') }}>✕</button>
+            <Button variant="text" size="sm" onClick={() => { handleCreateFile() }}>✓</Button>
+            <Button variant="text" size="sm" onClick={() => { setShowNewFile(false); setNewFilename('') }}>✕</Button>
           </div>
         )}
       </div>
@@ -242,14 +238,14 @@ export default function ResourcePanel({ projectId }: Props) {
         {error && (
           <div className="error-bar" style={{ margin: 8 }}>
             {error}
-            <button className="btn-text" onClick={() => setError(null)}>✕</button>
+            <Button variant="text" size="sm" onClick={() => setError(null)}>✕</Button>
           </div>
         )}
         {aiSuggestion && (
           <div style={{ margin: '8px', padding: '8px 12px', background: '#f0f8ff', border: '1px solid #b8d4fe', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem' }}>
             建议分类：<strong>{aiSuggestion.suggested_category}</strong>
             ，标签：{aiSuggestion.tags.map((t, i) => <code key={i} style={{ margin: '0 2px' }}>{t}</code>)}
-            <button className="btn-text" style={{ float: 'right' }} onClick={() => setAiSuggestion(null)}>✕</button>
+            <Button variant="text" size="sm" style={{ float: 'right' }} onClick={() => setAiSuggestion(null)}>✕</Button>
           </div>
         )}
         {selectedFile ? (
@@ -261,9 +257,7 @@ export default function ResourcePanel({ projectId }: Props) {
               <h4>{selectedFile}</h4>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 {!editing && fileContent && (
-                  <button
-                    className="btn-text"
-                    style={{ fontSize: '0.78rem' }}
+                  <Button variant="text" size="sm"
                     onClick={async () => {
                       setAiSuggesting(true)
                       setAiSuggestion(null)
@@ -274,7 +268,7 @@ export default function ResourcePanel({ projectId }: Props) {
                     disabled={aiSuggesting}
                   >
                     {aiSuggesting ? '分析中…' : '🏷 AI 分类'}
-                  </button>
+                  </Button>
                 )}
                 {editing && editContent && (
                   <RewriteButtons
@@ -287,13 +281,13 @@ export default function ResourcePanel({ projectId }: Props) {
                 )}
                 {editing ? (
                   <>
-                    <button className="btn-primary" onClick={handleSave} disabled={saving}>
+                    <Button variant="primary" size="md" onClick={handleSave} disabled={saving}>
                       {saving ? '保存中…' : '保存'}
-                    </button>
-                    <button className="btn-text" onClick={() => { setEditing(false); setEditContent(fileContent) }}>取消</button>
+                    </Button>
+                    <Button variant="text" size="sm" onClick={() => { setEditing(false); setEditContent(fileContent) }}>取消</Button>
                   </>
                 ) : (
-                  <button className="btn-primary" onClick={() => setEditing(true)}>编辑</button>
+                  <Button variant="primary" size="md" onClick={() => setEditing(true)}>编辑</Button>
                 )}
               </div>
             </div>

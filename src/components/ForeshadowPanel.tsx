@@ -21,6 +21,7 @@ import { runForeshadowInspire } from '../services/foreshadowInspire'
 import Pagination from './Pagination'
 import Modal from './Modal'
 import { usePagination } from '../hooks/usePagination'
+import Button from './Button'
 
 interface Props {
   projectId: string
@@ -411,9 +412,9 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
         <span className="stat-advanced">推进中 {counts.advanced}</span>
         <span className="stat-done">已回收 {counts.resolved}</span>
         <span className="stat-abandoned">已废弃 {counts.abandoned}</span>
-        <button className="btn-add" onClick={openAdd}>+ 新增伏笔</button>
-        <button onClick={() => setShowInspireModal(true)} title="AI 分析伏笔机会" style={{ padding: '4px 12px', fontSize: '0.8rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-card)', cursor: 'pointer', color: 'var(--text)', whiteSpace: 'nowrap' }}>🔍 灵感分析</button>
-        <button className="btn-icon" onClick={() => { setConfigForm(foreshadowConfig); setShowConfig(!showConfig); }} title="伏笔配置">⚙</button>
+        <Button variant="primary" size="sm" onClick={openAdd}>+ 新增伏笔</Button>
+        <Button variant="secondary" size="sm" onClick={() => setShowInspireModal(true)} title="AI 分析伏笔机会">🔍 灵感分析</Button>
+        <Button variant="ghost" size="sm" onClick={() => { setConfigForm(foreshadowConfig); setShowConfig(!showConfig); }} title="伏笔配置">⚙</Button>
       </div>
 
       {/* ─── Health Card ──────────────────────── */}
@@ -481,9 +482,11 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
             <div className="config-hint">低于此值建议增加伏笔（仅&gt;20章时）</div>
           </div>
           <div className="foreshadow-config-actions">
-            <button className="btn-primary" onClick={handleSaveConfig}>保存</button>
-            <button className="btn-text" onClick={() => { setConfigForm(foreshadowConfig); setShowConfig(false); }}>取消</button>
-            <button className="btn-text" onClick={() => setConfigForm(DEFAULT_FORESHADOW_CONFIG)}>恢复默认</button>
+            <Button variant="secondary" size="sm" onClick={() => setConfigForm(DEFAULT_FORESHADOW_CONFIG)}>恢复默认</Button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button variant="secondary" size="sm" onClick={() => { setConfigForm(foreshadowConfig); setShowConfig(false); }}>取消</Button>
+              <Button variant="primary" size="sm" onClick={handleSaveConfig}>保存</Button>
+            </div>
           </div>
         </div>
       )}
@@ -618,23 +621,23 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
               <div className="foreshadow-actions">
                 {entry.status === 'planted' && (
                   <>
-                    <button className="btn-text" onClick={() => handleStatusChange(entry, 'advanced')}>推进</button>
-                    <button className="btn-text" onClick={() => handleStatusChange(entry, 'resolved')}>回收</button>
-                    <button className="btn-text" onClick={() => handleStatusChange(entry, 'abandoned')}>废弃</button>
+                    <Button variant="text" size="sm" onClick={() => handleStatusChange(entry, 'advanced')}>推进</Button>
+                    <Button variant="text" size="sm" onClick={() => handleStatusChange(entry, 'resolved')}>回收</Button>
+                    <Button variant="text" size="sm" onClick={() => handleStatusChange(entry, 'abandoned')}>废弃</Button>
                   </>
                 )}
                 {entry.status === 'advanced' && (
                   <>
-                    <button className="btn-text" onClick={() => handleStatusChange(entry, 'advanced')}>再推</button>
-                    <button className="btn-text" onClick={() => handleStatusChange(entry, 'resolved')}>回收</button>
-                    <button className="btn-text" onClick={() => handleStatusChange(entry, 'abandoned')}>废弃</button>
+                    <Button variant="text" size="sm" onClick={() => handleStatusChange(entry, 'advanced')}>再推</Button>
+                    <Button variant="text" size="sm" onClick={() => handleStatusChange(entry, 'resolved')}>回收</Button>
+                    <Button variant="text" size="sm" onClick={() => handleStatusChange(entry, 'abandoned')}>废弃</Button>
                   </>
                 )}
                 {(entry.status === 'resolved' || entry.status === 'abandoned') && (
-                  <button className="btn-text" onClick={() => handleStatusChange(entry, 'planted')}>重开</button>
+                  <Button variant="text" size="sm" onClick={() => handleStatusChange(entry, 'planted')}>重开</Button>
                 )}
-                <button className="btn-text" onClick={() => openEdit(entry)}>编辑</button>
-                <button className="btn-text" style={{ color: 'var(--danger)' }} onClick={() => setDeleteTarget(entry)}>删除</button>
+                <Button variant="text" size="sm" onClick={() => openEdit(entry)}>编辑</Button>
+                <Button variant="text" size="sm" style={{ color: 'var(--danger)' }} onClick={() => setDeleteTarget(entry)}>删除</Button>
               </div>
             </div>
           )
@@ -671,9 +674,9 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
             </div>
             {inspireError && <div style={{ color: 'var(--danger)', fontSize: '0.82rem', marginBottom: 8, padding: '6px', background: 'var(--bg-sidebar)', borderRadius: 4 }}>{inspireError}</div>}
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 12 }}>AI 将通读所选范围章节，分析伏笔缺口、可呼应元素和密度分布。</div>
-            <div className="modal-actions">
-              <button className="btn-primary" onClick={() => { void handleInspire() }} disabled={inspireLoading}>{inspireLoading ? '⏳ 分析中…' : '开始分析'}</button>
-              <button className="btn-text" onClick={() => { setShowInspireModal(false); setInspireError(null) }}>取消</button>
+            <div className="dialog-footer">
+              <Button variant="text" size="sm" onClick={() => { setShowInspireModal(false); setInspireError(null) }}>取消</Button>
+              <Button variant="primary" size="md" onClick={() => { void handleInspire() }} disabled={inspireLoading}>{inspireLoading ? '⏳ 分析中…' : '开始分析'}</Button>
             </div>
           </div>
         </Modal>
@@ -777,14 +780,14 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
                           <input value={clue.description} onChange={(e) => {
                             const next = [...form.clues]; next[idx] = { ...next[idx]!, description: e.target.value }; setForm({ ...form, clues: next })
                           }} placeholder="推进描述（如：在第5章通过对话暗示...）" />
-                          <button type="button" className="btn-text btn-sm" onClick={() => {
+                          <Button variant="text" size="sm" onClick={() => {
                             setForm({ ...form, clues: form.clues.filter((_, i) => i !== idx) })
-                          }}>删除</button>
+                          }}>删除</Button>
                         </div>
                       ))}
-                      <button type="button" className="btn-text" onClick={() => {
+                      <Button variant="text" size="sm" onClick={() => {
                         setForm({ ...form, clues: [...form.clues, { chapterId: '', description: '', timestamp: new Date().toISOString() }] })
-                      }}>+ 添加推进记录</button>
+                      }}>+ 添加推进记录</Button>
                     </div>
                   </div>
                   <div className="form-group">
@@ -794,9 +797,9 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
                 </>
               )}
             </div>
-            <div className="modal-actions">
-              <button className="btn-primary" disabled={!form.name.trim() || !form.description.trim()} onClick={handleSave}>保存</button>
-              <button className="btn-text" onClick={() => setShowForm(false)}>取消</button>
+            <div className="dialog-footer">
+              <Button variant="text" size="sm" onClick={() => setShowForm(false)}>取消</Button>
+              <Button variant="primary" size="md" disabled={!form.name.trim() || !form.description.trim()} onClick={handleSave}>保存</Button>
             </div>
         </Modal>
       )}
@@ -813,9 +816,9 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
               rows={3}
               autoFocus
             />
-            <div className="modal-actions">
-              <button className="btn-primary" onClick={handleAdvanceConfirm}>确认推进</button>
-              <button className="btn-text" onClick={() => setAdvancePrompt(null)}>取消</button>
+            <div className="dialog-footer">
+              <Button variant="text" size="sm" onClick={() => setAdvancePrompt(null)}>取消</Button>
+              <Button variant="primary" size="md" onClick={handleAdvanceConfirm}>确认推进</Button>
             </div>
         </Modal>
       )}
@@ -829,9 +832,9 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
               <br />
               <small>埋设于 {getChapterLabel(deleteTarget.plantedChapterId, chapters)}</small>
             </p>
-            <div className="modal-actions">
-              <button className="btn-danger" onClick={handleDelete}>确定删除</button>
-              <button className="btn-text" onClick={() => setDeleteTarget(null)}>取消</button>
+            <div className="dialog-footer">
+              <Button variant="text" size="sm" onClick={() => setDeleteTarget(null)}>取消</Button>
+              <Button variant="danger" size="md" onClick={handleDelete}>确定删除</Button>
             </div>
         </Modal>
       )}

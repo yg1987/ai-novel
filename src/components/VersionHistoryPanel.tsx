@@ -3,6 +3,7 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import type { VersionMeta } from '../types/review'
 import { listChapterVersions, getChapterVersion, restoreChapterVersion, deleteChapterVersion, renameChapterVersion } from '../api/tauri'
+import Button from './Button'
 
 interface Props {
   projectId: string
@@ -129,24 +130,20 @@ export default function VersionHistoryPanel({ projectId, volume, chapterId, onRe
                       placeholder="版本标记…"
                       autoFocus
                     />
-                    <button className="btn-text" onClick={() => handleRename(v.version)}>✓</button>
-                    <button className="btn-text" onClick={() => setRenamingVersion(null)}>✕</button>
+                    <Button variant="text" size="sm" onClick={() => handleRename(v.version)}>✓</Button>
+                    <Button variant="text" size="sm" onClick={() => setRenamingVersion(null)}>✕</Button>
                   </div>
                 ) : (
-                  <button className="btn-text" onClick={(e) => { e.stopPropagation(); setRenamingVersion(v.version); setRenameValue(v.label) }}>
+                  <Button variant="text" size="sm" onClick={(e) => { e.stopPropagation(); setRenamingVersion(v.version); setRenameValue(v.label) }}>
                     标记
-                  </button>
+                  </Button>
                 )}
-                <button className="btn-text" onClick={(e) => { e.stopPropagation(); setConfirmRestore(v.version) }}>
+                <Button variant="text" size="sm" onClick={(e) => { e.stopPropagation(); setConfirmRestore(v.version) }}>
                   回退
-                </button>
-                <button
-                  className="btn-text"
-                  style={{ color: 'var(--danger)' }}
-                  onClick={(e) => { e.stopPropagation(); handleDelete(v.version) }}
-                >
+                </Button>
+                <Button variant="text" size="sm" style={{ color: 'var(--danger)' }} onClick={(e) => { e.stopPropagation(); handleDelete(v.version) }}>
                   删除
-                </button>
+                </Button>
               </div>
             </div>
           ))}
@@ -159,10 +156,10 @@ export default function VersionHistoryPanel({ projectId, volume, chapterId, onRe
             <div className="version-preview-header">
               <h4>v{selectedVersion} 预览</h4>
               {confirmRestore === selectedVersion ? (
-                <div className="version-confirm-restore">
-                  <span>确认恢复到 v{selectedVersion}？</span>
-                  <button className="btn-primary" onClick={() => handleRestore(selectedVersion)}>确认恢复</button>
-                  <button className="btn-text" onClick={() => setConfirmRestore(null)}>取消</button>
+                <div className="dialog-footer" style={{ borderTop: 'none', paddingTop: 0, marginTop: 0 }}>
+                  <span style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>确认恢复到 v{selectedVersion}？</span>
+                  <Button variant="text" size="sm" onClick={() => setConfirmRestore(null)}>取消</Button>
+                  <Button variant="primary" size="sm" onClick={() => handleRestore(selectedVersion)}>确认恢复</Button>
                 </div>
               ) : null}
             </div>

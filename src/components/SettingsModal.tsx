@@ -7,6 +7,7 @@ import {
   getSettingDefault,
   type SettingDef,
 } from '../services/settings'
+import Button from './Button'
 
 interface Props {
   visible: boolean
@@ -68,7 +69,7 @@ export default function SettingsModal({ visible, onClose }: Props) {
       <div className="dialog" onClick={(e) => { e.stopPropagation() }}>
         <div className="dialog-header">
           <h2>🛠 系统设置</h2>
-          <button className="btn-text" onClick={handleCancel}>✕</button>
+          <Button variant="ghost" size="sm" onClick={handleCancel}>✕</Button>
         </div>
 
         {error && (
@@ -86,11 +87,11 @@ export default function SettingsModal({ visible, onClose }: Props) {
           />
         ))}
 
-        <div className="dialog-actions">
-          <button className="btn-secondary" onClick={handleCancel} disabled={saving}>取消</button>
-          <button className="btn-primary" onClick={handleSave} disabled={saving || !hasChanges}>
+        <div className="dialog-footer">
+          <Button variant="secondary" size="md" onClick={handleCancel} disabled={saving}>取消</Button>
+          <Button variant="primary" size="md" onClick={handleSave} disabled={saving || !hasChanges}>
             {saving ? '保存中…' : '保存'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { exportAsPlainText, exportAsMarkdown, exportAsEpub, type ExportFormat, type ExportProgress } from '../services/exportService'
 import { loadAllNotes } from '../services/notesStorage'
+import Button from './Button'
 
 interface Props {
   projectId: string
@@ -58,14 +59,14 @@ export default function ExportDialog({ projectId, projectName, onClose }: Props)
       <div className="export-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="export-header">
           <h3>导出项目</h3>
-          <button className="btn-text" onClick={onClose}>✕</button>
+          <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
         </div>
 
         <div className="export-body">
           {done ? (
             <div className="export-done">
               <p>✅ 导出成功</p>
-              <button className="btn-primary" onClick={onClose}>完成</button>
+              <Button variant="primary" size="md" onClick={onClose}>完成</Button>
             </div>
           ) : (
             <>
@@ -111,15 +112,11 @@ export default function ExportDialog({ projectId, projectName, onClose }: Props)
           )}
         </div>
 
-        <div className="export-footer">
+        <div className="dialog-footer">
           {!done && (
-            <button
-              className="btn-primary"
-              onClick={handleExport}
-              disabled={exporting}
-            >
+            <Button variant="primary" size="md" onClick={handleExport} disabled={exporting}>
               {exporting ? '导出中…' : '导出'}
-            </button>
+            </Button>
           )}
         </div>
       </div>

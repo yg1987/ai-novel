@@ -8,6 +8,7 @@ import { type RewriteMode } from '../services/rewriteService'
 import RewriteButtons from './RewriteButtons'
 import RewritePreview from './RewritePreview'
 import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
+import Button from './Button'
 
 interface Props {
   projectId: string
@@ -387,22 +388,13 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
             placeholder="角色名"
             onKeyDown={(e) => { if (e.key === 'Enter' && !generating) { handleCreate() } }}
           />
-          <button className="btn-small" onClick={handleCreate} disabled={!newName.trim() || isNameDuplicate} title="创建空白角色卡">
-            +
-          </button>
+          <Button variant="primary" size="xs" onClick={handleCreate} disabled={!newName.trim() || isNameDuplicate} title="创建空白角色卡">+</Button>
         </div>
         <div className="panel-new-actions">
-          <button className="btn-small" onClick={handleRandomName} title="随机起名">
-            🎲 起名
-          </button>
-          <button
-            className="btn-small btn-ai"
-            onClick={() => { void handleAICreate() }}
-            disabled={generating || (newName.trim().length > 0 && isNameDuplicate)}
-            title="AI 生成完整角色卡"
-          >
-            {generating ? '⏳ 生成中' : '✨ AI 创建'}
-          </button>
+          <Button variant="secondary" size="xs" onClick={handleRandomName} title="随机起名">🎲 起名</Button>
+          <Button variant="primary" size="xs" onClick={() => { void handleAICreate() }} disabled={generating || (newName.trim().length > 0 && isNameDuplicate)} title="AI 生成完整角色卡" loading={generating}>
+            {generating ? '生成中' : '✨ AI 创建'}
+          </Button>
         </div>
         {aiError && (
           <div style={{ padding: '4px 8px', fontSize: '0.78rem', color: 'var(--danger)', background: 'var(--bg)' }}>
@@ -426,7 +418,7 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
                 style={{ cursor: 'grab', userSelect: 'none' }}
                 onMouseDown={(e) => handleMouseDown(e, idx)}
               >⠿ {f}</span>
-              <button className="btn-text" onClick={(e) => { e.stopPropagation(); handleDelete(f) }} style={{ color: 'var(--danger)', fontSize: '0.8rem' }}>✕</button>
+              <Button variant="danger" size="xs" onClick={(e) => { e.stopPropagation(); handleDelete(f) }} title="删除角色">✕</Button>
             </div>
           ))}
           {files.length === 0 && <p className="panel-empty">暂无角色</p>}
@@ -440,14 +432,9 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {editing && (
                   <>
-                    <button
-                      className="btn-text"
-                      onClick={() => { void handleAICreate() }}
-                      disabled={generating}
-                      style={{ fontSize: '0.85rem' }}
-                    >
-                      {generating ? '⏳ 生成中…' : '✨ AI 辅助'}
-                    </button>
+                    <Button variant="text" size="sm" onClick={() => { void handleAICreate() }} disabled={generating} loading={generating}>
+                      {generating ? '生成中…' : '✨ AI 辅助'}
+                    </Button>
                     <RewriteButtons
                       enabled={hasSelection}
                       loading={rewriteState !== null}
@@ -455,26 +442,22 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
                       onExpand={() => handleRewriteMode('expand')}
                       onPolish={() => handleRewriteMode('polish')}
                     />
-                    <button
-                      className="btn-text"
-                      onClick={async () => {
-                        if (!showPrompt && !editingPrompt.trim()) {
-                          let info = await buildAIContext(projectId)
-                          const def = buildAIPrompt(newName, info)
-                          setEditingPrompt(def.system + '\n\n---\n\n' + def.user)
-                        }
-                        setShowPrompt(!showPrompt)
-                      }}
-                      style={{ fontSize: '0.85rem' }}
-                    >
+                    <Button variant="text" size="sm" onClick={async () => {
+                      if (!showPrompt && !editingPrompt.trim()) {
+                        let info = await buildAIContext(projectId)
+                        const def = buildAIPrompt(newName, info)
+                        setEditingPrompt(def.system + '\n\n---\n\n' + def.user)
+                      }
+                      setShowPrompt(!showPrompt)
+                    }}>
                       {showPrompt ? '关闭提示词' : '✎ 提示词'}
-                    </button>
+                    </Button>
                   </>
                 )}
                 {editing ? (
-                  <button className="btn-primary" onClick={() => { handleSave() }}>保存</button>
+                  <Button variant="primary" size="md" onClick={() => { handleSave() }}>保存</Button>
                 ) : (
-                  <button className="btn-secondary" onClick={() => { setEditing(true) }}>编辑</button>
+                  <Button variant="secondary" size="md" onClick={() => { setEditing(true) }}>编辑</Button>
                 )}
               </div>
             </div>
@@ -482,17 +465,13 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
               <div className="prompt-editor">
                 <div className="prompt-editor-header">
                   <span>提示词（AI 辅助使用，修改后自动保存到本项目的提示词库）</span>
-                  <button
-                    className="btn-text"
-                    style={{ fontSize: '0.8rem' }}
-                    onClick={async () => {
-                      setSavingPrompt(true)
-                      await resetPrompt(projectId, promptKey)
-                      setEditingPrompt('')
-                      setShowPrompt(false)
-                      setSavingPrompt(false)
-                    }}
-                  >恢复默认</button>
+                  <Button variant="text" size="sm" onClick={async () => {
+                    setSavingPrompt(true)
+                    await resetPrompt(projectId, promptKey)
+                    setEditingPrompt('')
+                    setShowPrompt(false)
+                    setSavingPrompt(false)
+                  }}>恢复默认</Button>
                 </div>
                 <textarea
                   className="prompt-editor-textarea"
@@ -504,16 +483,11 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                     {editingPrompt.trim() ? '已保存自定义提示词' : '修改后点保存，AI 将使用你的提示词'}
                   </span>
-                  <button
-                    className="btn-primary"
-                    style={{ fontSize: '0.82rem', padding: '4px 12px' }}
-                    disabled={savingPrompt}
-                    onClick={async () => {
-                      setSavingPrompt(true)
-                      await savePrompt(projectId, promptKey, editingPrompt)
-                      setSavingPrompt(false)
-                    }}
-                  >{savingPrompt ? '保存中…' : '保存提示词'}</button>
+                  <Button variant="primary" size="sm" disabled={savingPrompt} onClick={async () => {
+                    setSavingPrompt(true)
+                    await savePrompt(projectId, promptKey, editingPrompt)
+                    setSavingPrompt(false)
+                  }}>{savingPrompt ? '保存中…' : '保存提示词'}</Button>
                 </div>
               </div>
             )}
@@ -522,13 +496,9 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
                 <div className="sub-field" style={{ marginBottom: 0 }}>
                   <div className="sub-field-label-row">
                     <label className="sub-field-label">角色信息</label>
-                    <button
-                      className="btn-text"
-                      style={{ fontSize: '0.78rem' }}
-                      onClick={() => { setShowExample(!showExample) }}
-                    >
+                    <Button variant="text" size="sm" onClick={() => { setShowExample(!showExample) }}>
                       {showExample ? '收起示例' : '📖 看示例'}
-                    </button>
+                    </Button>
                   </div>
                   {showExample && (
                     <div className="sub-field-example">

@@ -3,6 +3,7 @@ import type { SearchSource } from '../services/search'
 import { hybridSearch } from '../services/search'
 import type { HybridResult } from '../services/search'
 import Pagination from './Pagination'
+import Button from './Button'
 import { usePagination } from '../hooks/usePagination'
 import HighlightText from './HighlightText'
 
@@ -127,9 +128,9 @@ export default function SearchPanel({ projectId, onOpenFile }: Props) {
             onKeyDown={(e) => { if (e.key === 'Enter') doSearch() }}
             placeholder="搜索角色、世界观、章节、备注…"
           />
-          <button className="btn-primary" onClick={doSearch} disabled={searching || !query.trim()}>
+          <Button variant="primary" size="md" onClick={doSearch} disabled={searching || !query.trim()}>
             {searching ? '搜索中…' : '搜索'}
-          </button>
+          </Button>
         </div>
 
         {/* Search history pills — show before first search */}

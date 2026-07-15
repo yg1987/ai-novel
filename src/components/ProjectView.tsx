@@ -16,6 +16,7 @@ import RelationshipGraph from './RelationshipGraph'
 import TrendingPanel from './TrendingPanel'
 import ArchiveDialog from './ArchiveDialog'
 import ChapterGraph from './ChapterGraph'
+import Button from './Button'
 
 interface Props {
   project: ProjectMeta
@@ -93,11 +94,11 @@ export default function ProjectView({ project, onBack }: Props) {
   return (
     <div className="project-view">
       <div className="project-view-header">
-        <button className="btn-text" onClick={() => { onBack() }}>← 返回书架</button>
+        <Button variant="text" size="sm" onClick={() => { onBack() }}>← 返回书架</Button>
         <h2>{project.name}</h2>
         <span className="project-status-badge">{project.status}</span>
-        <button className="btn-text" onClick={() => setShowExport(true)}>📤 导出</button>
-        <button className="btn-text" onClick={() => setShowArchive(true)}>💾 存档</button>
+        <Button variant="text" size="sm" onClick={() => setShowExport(true)}>📤 导出</Button>
+        <Button variant="text" size="sm" onClick={() => setShowArchive(true)}>💾 存档</Button>
       </div>
       {showExport && (
         <ExportDialog

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ProviderConfig, ProviderEntry } from '../types/provider'
 import { loadProviderConfig, saveProviderConfig } from '../api/tauri'
+import Button from './Button'
 
 interface Props {
   onClose: () => void
@@ -87,7 +88,7 @@ export default function ProviderConfigPanel({ onClose }: Props) {
       <div className="dialog dialog-wide" onClick={(e) => { e.stopPropagation() }}>
         <div className="dialog-header">
           <h2>AI Provider 配置</h2>
-          <button className="btn-text" onClick={onClose}>✕</button>
+          <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
         </div>
 
         <div className="provider-list">
@@ -104,15 +105,15 @@ export default function ProviderConfigPanel({ onClose }: Props) {
           ))}
         </div>
 
-        <button className="btn-secondary" onClick={addProvider} style={{ marginTop: 12 }}>
+        <Button variant="secondary" size="md" onClick={addProvider} style={{ marginTop: 12 }}>
           + 添加 Provider
-        </button>
+        </Button>
 
-        <div className="dialog-actions">
-          <button className="btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn-primary" onClick={() => { void handleSave() }} disabled={saving}>
+        <div className="dialog-footer">
+          <Button variant="secondary" size="md" onClick={onClose}>取消</Button>
+          <Button variant="primary" size="md" onClick={() => { void handleSave() }} disabled={saving}>
             {saving ? '保存中…' : '保存'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -205,13 +206,9 @@ function ProviderForm({
               placeholder={placeholder}
             />
             {models && (
-              <button
-                className="btn-text"
+              <Button variant="text" size="sm"
                 onClick={() => setCustomFields(prev => { const n = new Set(prev); n.delete(field); return n })}
-                title="从列表选择"
-              >
-                选择
-              </button>
+                title="从列表选择">选择</Button>
             )}
           </div>
         )}
@@ -232,9 +229,9 @@ function ProviderForm({
           {isActive ? (
             <span className="active-badge">当前</span>
           ) : (
-            <button className="btn-text" onClick={onSetActive}>设为默认</button>
+            <Button variant="text" size="sm" onClick={onSetActive}>设为默认</Button>
           )}
-          <button className="btn-text" onClick={onRemove} style={{ color: 'var(--danger)' }}>删除</button>
+          <Button variant="text" size="sm" style={{ color: 'var(--danger)' }} onClick={onRemove}>删除</Button>
         </div>
       </div>
       <div className="provider-field">

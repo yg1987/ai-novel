@@ -9,6 +9,7 @@ import RewriteButtons from './RewriteButtons'
 import RewritePreview from './RewritePreview'
 import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
 import ConfirmDialog from './ConfirmDialog'
+import Button from './Button'
 import {
   type SectionDef,
   type SubField,
@@ -511,20 +512,8 @@ export default function WorldviewPanel({ projectId }: Props) {
           <span style={{ flex: 1 }}>
             项目类型已改为「{genre}」，世界观栏目还是「{savedGenre}」的默认预设。
           </span>
-          <button
-            className="btn-text"
-            style={{ fontWeight: 600, fontSize: '0.82rem', whiteSpace: 'nowrap' }}
-            onClick={() => { setShowResetConfirm(true) }}
-          >
-            重置
-          </button>
-          <button
-            className="btn-text"
-            style={{ fontSize: '0.82rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}
-            onClick={() => { setGenreMismatchDismissed(true) }}
-          >
-            忽略
-          </button>
+          <Button variant="text" size="sm" onClick={() => { setShowResetConfirm(true) }}>重置</Button>
+          <Button variant="text" size="sm" style={{ color: 'var(--text-muted)' }} onClick={() => { setGenreMismatchDismissed(true) }}>忽略</Button>
         </div>
       )}
 
@@ -560,14 +549,7 @@ export default function WorldviewPanel({ projectId }: Props) {
                   onDoubleClick={() => { setEditingSectionId(s.key); setEditingSectionLabel(s.label) }}
                 >
                   <span style={{ flex: 1 }}>{s.label}</span>
-                  <button
-                    className="btn-text"
-                    style={{ fontSize: '0.75rem', padding: '0 6px', opacity: 0.5 }}
-                    title="删除栏目"
-                    onClick={(e) => { e.stopPropagation(); setDeletingSectionId(s.key) }}
-                  >
-                    ✕
-                  </button>
+                  <Button variant="ghost" size="xs" title="删除栏目" onClick={(e) => { e.stopPropagation(); setDeletingSectionId(s.key) }}>✕</Button>
                 </div>
               )}
             </div>
@@ -585,21 +567,17 @@ export default function WorldviewPanel({ projectId }: Props) {
                 placeholder="栏目名称…"
                 autoFocus
               />
-              <button className="btn-text" onClick={handleAddSection} disabled={!newSectionName.trim()}>✓</button>
-              <button className="btn-text" onClick={() => { setShowAddSection(false); setNewSectionName('') }}>✕</button>
+              <Button variant="text" size="sm" onClick={handleAddSection} disabled={!newSectionName.trim()}>✓</Button>
+              <Button variant="text" size="sm" onClick={() => { setShowAddSection(false); setNewSectionName('') }}>✕</Button>
             </div>
           ) : (
-            <button className="btn-text" style={{ fontSize: '0.82rem', width: '100%' }} onClick={() => setShowAddSection(true)}>
+            <Button variant="text" size="sm" style={{ width: '100%' }} onClick={() => setShowAddSection(true)}>
               + 添加栏目
-            </button>
+            </Button>
           )}
-          <button
-            className="btn-text"
-            style={{ fontSize: '0.82rem', width: '100%', marginTop: 8, padding: '4px 0', borderTop: '1px solid var(--border)' }}
-            onClick={() => setShowResetConfirm(true)}
-          >
+          <Button variant="text" size="sm" style={{ width: '100%', marginTop: 8, borderTop: '1px solid var(--border)' }} onClick={() => setShowResetConfirm(true)}>
             重置为品类默认
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -611,14 +589,9 @@ export default function WorldviewPanel({ projectId }: Props) {
             {dirty && <span style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>未保存</span>}
             {editing && (
               <>
-                <button
-                  className="btn-text"
-                  onClick={() => { void generateWithAI() }}
-                  disabled={generatingAi}
-                  style={{ fontSize: '0.85rem' }}
-                >
-                  {generatingAi ? '⏳ 生成中…' : '✨ AI 辅助'}
-                </button>
+                <Button variant="text" size="sm" onClick={() => { void generateWithAI() }} disabled={generatingAi} loading={generatingAi}>
+                  {generatingAi ? '生成中…' : '✨ AI 辅助'}
+                </Button>
                 <RewriteButtons
                   enabled={hasSelection}
                   loading={rewriteState !== null}
@@ -626,24 +599,20 @@ export default function WorldviewPanel({ projectId }: Props) {
                     onExpand={() => handleRewriteMode('expand')}
                     onPolish={() => handleRewriteMode('polish')}
                   />
-                  <button
-                  className="btn-text"
-                  onClick={() => {
+                  <Button variant="text" size="sm" onClick={() => {
                     if (!showPrompt && !editingPrompt.trim()) {
                       setEditingPrompt(getDefaultPrompt(activeSection, hasSubs))
                     }
                     setShowPrompt(!showPrompt)
-                  }}
-                  style={{ fontSize: '0.85rem' }}
-                >
-                  {showPrompt ? '关闭提示词' : '✎ 提示词'}
-                </button>
+                  }}>
+                    {showPrompt ? '关闭提示词' : '✎ 提示词'}
+                  </Button>
               </>
             )}
             {editing ? (
-              <button className="btn-primary" onClick={() => { void handleSave() }}>保存</button>
+              <Button variant="primary" size="md" onClick={() => { void handleSave() }}>保存</Button>
             ) : (
-              <button className="btn-secondary" onClick={handleStartEdit}>编辑</button>
+              <Button variant="secondary" size="md" onClick={handleStartEdit}>编辑</Button>
             )}
           </div>
         </div>
@@ -652,17 +621,13 @@ export default function WorldviewPanel({ projectId }: Props) {
           <div className="prompt-editor">
             <div className="prompt-editor-header">
               <span>提示词（AI 辅助使用，修改后自动保存到本项目的提示词库，换项目不影响）</span>
-              <button
-                className="btn-text"
-                style={{ fontSize: '0.8rem' }}
-                onClick={async () => {
-                  setSavingPrompt(true)
-                  await resetPrompt(projectId, promptKey)
-                  setEditingPrompt('')
-                  setShowPrompt(false)
-                  setSavingPrompt(false)
-                }}
-              >恢复默认</button>
+              <Button variant="text" size="sm" onClick={async () => {
+                setSavingPrompt(true)
+                await resetPrompt(projectId, promptKey)
+                setEditingPrompt('')
+                setShowPrompt(false)
+                setSavingPrompt(false)
+              }}>恢复默认</Button>
             </div>
             <textarea
               className="prompt-editor-textarea"
@@ -674,16 +639,11 @@ export default function WorldviewPanel({ projectId }: Props) {
               <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                 {editingPrompt.trim() ? '已保存自定义提示词' : '修改后点保存，AI 将使用你的提示词'}
               </span>
-              <button
-                className="btn-primary"
-                style={{ fontSize: '0.82rem', padding: '4px 12px' }}
-                disabled={savingPrompt}
-                onClick={async () => {
-                  setSavingPrompt(true)
-                  await savePrompt(projectId, promptKey, editingPrompt)
-                  setSavingPrompt(false)
-                }}
-              >{savingPrompt ? '保存中…' : '保存提示词'}</button>
+              <Button variant="primary" size="sm" disabled={savingPrompt} onClick={async () => {
+                setSavingPrompt(true)
+                await savePrompt(projectId, promptKey, editingPrompt)
+                setSavingPrompt(false)
+              }}>{savingPrompt ? '保存中…' : '保存提示词'}</Button>
             </div>
           </div>
         )}
@@ -699,13 +659,7 @@ export default function WorldviewPanel({ projectId }: Props) {
             <div className="panel-editor-inner">
               <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>
                 💡 {activeSection.hint}
-                <button
-                  className="btn-text"
-                  style={{ fontSize: '0.78rem', marginLeft: 8 }}
-                  onClick={() => setAddingSubToKey(activeSection.key)}
-                >
-                  + 添加子字段
-                </button>
+                <Button variant="text" size="sm" onClick={() => setAddingSubToKey(activeSection.key)}>+ 添加子字段</Button>
               </p>
               <div className="sub-field">
                 <div className="sub-field-label-row">
@@ -714,13 +668,9 @@ export default function WorldviewPanel({ projectId }: Props) {
                     const ex = getExample(genre, activeSection.key, '_default')
                     const showThis = showExample === '__freeform__'
                     return ex ? (
-                      <button
-                        className="btn-text"
-                        style={{ fontSize: '0.78rem' }}
-                        onClick={() => { setShowExample(showThis ? null : '__freeform__') }}
-                      >
+                      <Button variant="text" size="sm" onClick={() => { setShowExample(showThis ? null : '__freeform__') }}>
                         {showThis ? '收起示例' : '📖 看示例'}
-                      </button>
+                      </Button>
                     ) : null
                   })()}
                 </div>
@@ -761,8 +711,8 @@ export default function WorldviewPanel({ projectId }: Props) {
                     placeholder="子字段名称…"
                     autoFocus
                   />
-                  <button className="btn-text" onClick={() => handleAddSubField(activeSection.key)} disabled={!newSubFieldName.trim()}>✓</button>
-                  <button className="btn-text" onClick={() => { setAddingSubToKey(null); setNewSubFieldName('') }}>✕</button>
+                  <Button variant="text" size="sm" onClick={() => handleAddSubField(activeSection.key)} disabled={!newSubFieldName.trim()}>✓</Button>
+                  <Button variant="text" size="sm" onClick={() => { setAddingSubToKey(null); setNewSubFieldName('') }}>✕</Button>
                 </div>
               )}
             </div>
@@ -770,13 +720,7 @@ export default function WorldviewPanel({ projectId }: Props) {
             <div className="panel-editor-inner">
               <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>
                 💡 {activeSection.hint}
-                <button
-                  className="btn-text"
-                  style={{ fontSize: '0.78rem', marginLeft: 8 }}
-                  onClick={() => setAddingSubToKey(activeSection.key)}
-                >
-                  + 添加子字段
-                </button>
+                <Button variant="text" size="sm" onClick={() => setAddingSubToKey(activeSection.key)}>+ 添加子字段</Button>
               </p>
               {activeSection.subs.map((sub) => {
                 const example = getExample(genre, activeSection.key, sub.key)
@@ -807,25 +751,14 @@ export default function WorldviewPanel({ projectId }: Props) {
                         </label>
                       )}
                       {!editingSubKey && (
-                        <button
-                          className="btn-text"
-                          style={{ fontSize: '0.7rem', opacity: 0.4, padding: '0 4px' }}
-                          title="删除此子字段"
-                          onClick={() => handleDeleteSubField(activeSection.key, sub.key)}
-                        >
-                          ✕
-                        </button>
+                        <Button variant="ghost" size="xs" title="删除此子字段" onClick={() => handleDeleteSubField(activeSection.key, sub.key)}>✕</Button>
                       )}
                       <div style={{ flex: 1 }} />
                       <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                         {example && (
-                          <button
-                            className="btn-text"
-                            style={{ fontSize: '0.78rem' }}
-                            onClick={() => { setShowExample(showThis ? null : sub.key) }}
-                          >
+                          <Button variant="text" size="sm" onClick={() => { setShowExample(showThis ? null : sub.key) }}>
                             {showThis ? '收起示例' : '📖 看示例'}
-                          </button>
+                          </Button>
                         )}
                       </div>
                     </div>
@@ -866,8 +799,8 @@ export default function WorldviewPanel({ projectId }: Props) {
                     placeholder="子字段名称…"
                     autoFocus
                   />
-                  <button className="btn-text" onClick={() => handleAddSubField(activeSection.key)} disabled={!newSubFieldName.trim()}>✓</button>
-                  <button className="btn-text" onClick={() => { setAddingSubToKey(null); setNewSubFieldName('') }}>✕</button>
+                  <Button variant="text" size="sm" onClick={() => handleAddSubField(activeSection.key)} disabled={!newSubFieldName.trim()}>✓</Button>
+                  <Button variant="text" size="sm" onClick={() => { setAddingSubToKey(null); setNewSubFieldName('') }}>✕</Button>
                 </div>
               )}
               <div ref={subFieldEndRef} />

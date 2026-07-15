@@ -10,6 +10,7 @@ import RewriteButtons from './RewriteButtons'
 import RewritePreview from './RewritePreview'
 import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
 import ConfirmDialog from './ConfirmDialog'
+import Button from './Button'
 
 interface Props {
   projectId: string
@@ -430,7 +431,7 @@ export default function OutlinePanel({ projectId }: Props) {
       <div className="panel-sidebar">
         <div className="panel-sidebar-header">
           <h3>大纲</h3>
-          <button className="btn-small" onClick={handleCreateVolume} title="添加分卷">+</button>
+          <Button variant="primary" size="xs" onClick={handleCreateVolume} title="添加分卷">+</Button>
         </div>
         <div className="panel-list">
           {/* 总纲 */}
@@ -453,20 +454,19 @@ export default function OutlinePanel({ projectId }: Props) {
                     📖 {volLabel}
                   </div>
                   <div style={{ display: 'flex', gap: 2 }}>
-                    <button
+                    <Button variant="ghost" size="xs"
                       className="panel-item-add"
                       onClick={(e) => { e.stopPropagation(); handleCreateChapter(volLabel) }}
                       title="添加章节细纲"
-                    >+</button>
-                    <button
+                    >+</Button>
+                    <Button variant="danger" size="xs"
                       className="panel-item-add"
-                      style={{ color: 'var(--danger)' }}
                       onClick={(e) => {
                         e.stopPropagation()
                         setDeleteTarget({ name: v, label: volLabel, type: 'volume' })
                       }}
                       title="删除分卷"
-                    >✕</button>
+                    >✕</Button>
                   </div>
                 </div>
                 {volChapters.map((c) => (
@@ -477,12 +477,11 @@ export default function OutlinePanel({ projectId }: Props) {
                     >
                       📝 {c.label}
                     </div>
-                    <button
+                    <Button variant="danger" size="xs"
                       className="panel-item-add"
-                      style={{ color: 'var(--danger)' }}
                       onClick={() => setDeleteTarget({ name: c.filename, label: c.label, type: 'chapter' })}
                       title="删除章节细纲"
-                    >✕</button>
+                    >✕</Button>
                   </div>
                 ))}
               </div>
@@ -513,14 +512,9 @@ export default function OutlinePanel({ projectId }: Props) {
                 {dirty && <span style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>未保存</span>}
                 {editing && (
                   <>
-                    <button
-                      className="btn-text"
-                      onClick={() => { void handleAIGenerate() }}
-                      disabled={generatingAi}
-                      style={{ fontSize: '0.85rem' }}
-                    >
-                      {generatingAi ? '⏳ 生成中…' : '✨ AI 辅助'}
-                    </button>
+                    <Button variant="text" size="sm" onClick={() => { void handleAIGenerate() }} disabled={generatingAi} loading={generatingAi}>
+                      {generatingAi ? '生成中…' : '✨ AI 辅助'}
+                    </Button>
                     <RewriteButtons
                       enabled={hasSelection}
                       loading={rewriteState !== null}
@@ -528,31 +522,23 @@ export default function OutlinePanel({ projectId }: Props) {
                       onExpand={() => handleRewriteMode('expand')}
                       onPolish={() => handleRewriteMode('polish')}
                     />
-                    <button
-                      className="btn-text"
-                      onClick={() => { setShowExample(!showExample) }}
-                      style={{ fontSize: '0.85rem' }}
-                    >
+                    <Button variant="text" size="sm" onClick={() => { setShowExample(!showExample) }}>
                       {showExample ? '收起示例' : '📖 看示例'}
-                    </button>
-                    <button
-                      className="btn-text"
-                      onClick={() => {
-                        if (!showPrompt && !editingPrompt.trim()) {
-                          setEditingPrompt(getActiveDefaultPrompt())
-                        }
-                        setShowPrompt(!showPrompt)
-                      }}
-                      style={{ fontSize: '0.85rem' }}
-                    >
+                    </Button>
+                    <Button variant="text" size="sm" onClick={() => {
+                      if (!showPrompt && !editingPrompt.trim()) {
+                        setEditingPrompt(getActiveDefaultPrompt())
+                      }
+                      setShowPrompt(!showPrompt)
+                    }}>
                       {showPrompt ? '关闭提示词' : '✎ 提示词'}
-                    </button>
+                    </Button>
                   </>
                 )}
                 {editing ? (
-                  <button className="btn-primary" onClick={() => { void saveFile() }}>保存</button>
+                  <Button variant="primary" size="md" onClick={() => { void saveFile() }}>保存</Button>
                 ) : (
-                  <button className="btn-secondary" onClick={() => { setEditing(true) }}>编辑</button>
+                  <Button variant="secondary" size="md" onClick={() => { setEditing(true) }}>编辑</Button>
                 )}
               </div>
             </div>
@@ -561,17 +547,13 @@ export default function OutlinePanel({ projectId }: Props) {
               <div className="prompt-editor">
                 <div className="prompt-editor-header">
                   <span>提示词（AI 辅助使用，修改后自动保存到本项目）</span>
-                  <button
-                    className="btn-text"
-                    style={{ fontSize: '0.8rem' }}
-                    onClick={async () => {
-                      setSavingPrompt(true)
-                      await resetPrompt(projectId, promptKey)
-                      setEditingPrompt('')
-                      setShowPrompt(false)
-                      setSavingPrompt(false)
-                    }}
-                  >恢复默认</button>
+                  <Button variant="text" size="sm" onClick={async () => {
+                    setSavingPrompt(true)
+                    await resetPrompt(projectId, promptKey)
+                    setEditingPrompt('')
+                    setShowPrompt(false)
+                    setSavingPrompt(false)
+                  }}>恢复默认</Button>
                 </div>
                 <textarea
                   className="prompt-editor-textarea"
@@ -583,16 +565,11 @@ export default function OutlinePanel({ projectId }: Props) {
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                     {editingPrompt.trim() ? '已保存自定义提示词' : '修改后点保存，AI 将使用你的提示词'}
                   </span>
-                  <button
-                    className="btn-primary"
-                    style={{ fontSize: '0.82rem', padding: '4px 12px' }}
-                    disabled={savingPrompt}
-                    onClick={async () => {
-                      setSavingPrompt(true)
-                      await savePrompt(projectId, promptKey, editingPrompt)
-                      setSavingPrompt(false)
-                    }}
-                  >{savingPrompt ? '保存中…' : '保存提示词'}</button>
+                  <Button variant="primary" size="sm" disabled={savingPrompt} onClick={async () => {
+                    setSavingPrompt(true)
+                    await savePrompt(projectId, promptKey, editingPrompt)
+                    setSavingPrompt(false)
+                  }}>{savingPrompt ? '保存中…' : '保存提示词'}</Button>
                 </div>
               </div>
             )}

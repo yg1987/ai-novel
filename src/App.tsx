@@ -8,6 +8,7 @@ import ProjectView from './components/ProjectView'
 import ProviderConfigPanel from './components/ProviderConfig'
 import SettingsModal from './components/SettingsModal'
 import { ToastContainer } from './utils/toast'
+import Button from './components/Button'
 
 type View = { kind: 'bookshelf' } | { kind: 'project'; id: string }
 
@@ -73,16 +74,16 @@ export default function App() {
       <header className="app-header">
         <h1 className="app-title">AI Novel Writer</h1>
         {view.kind === 'bookshelf' && (
-          <button className="btn-primary" onClick={() => { setShowCreate(true) }}>
+          <Button variant="primary" size="md" onClick={() => { setShowCreate(true) }}>
             + 新建项目
-          </button>
+          </Button>
         )}
-        <button className="btn-text" onClick={() => { setShowProviderConfig(true) }} style={{ marginLeft: 12 }}>
+        <Button variant="text" size="md" onClick={() => { setShowProviderConfig(true) }} style={{ marginLeft: 12 }}>
           ⚙ AI 配置
-        </button>
-        <button className="btn-text" onClick={() => { setShowSettings(true) }} style={{ marginLeft: 8 }}>
+        </Button>
+        <Button variant="text" size="md" onClick={() => { setShowSettings(true) }} style={{ marginLeft: 8 }}>
           🛠 系统设置
-        </button>
+        </Button>
       </header>
 
       {error && (

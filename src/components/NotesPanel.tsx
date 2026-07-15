@@ -15,6 +15,7 @@ import {
 } from '../services/notesStorage'
 import ConfirmDialog from './ConfirmDialog'
 import Pagination from './Pagination'
+import Button from './Button'
 import { usePagination } from '../hooks/usePagination'
 
 type ViewMode = 'timeline' | 'grouped'
@@ -274,16 +275,16 @@ export default function NotesPanel({ projectId, onNavigateToChapter, initialChap
   const stateButton = (n: NoteEntry) => {
     if (n.type === 'todo') {
       return (
-        <button className="btn-text" onClick={() => { handleToggleDone(n.id).catch(console.error) }}>
+        <Button variant="text" size="sm" onClick={() => { handleToggleDone(n.id).catch(console.error) }}>
           {n.done ? '↩ 重开' : '✓ 完成'}
-        </button>
+        </Button>
       )
     }
     if (n.type === 'question') {
       return (
-        <button className="btn-text" onClick={() => { handleToggleResolved(n.id).catch(console.error) }}>
+        <Button variant="text" size="sm" onClick={() => { handleToggleResolved(n.id).catch(console.error) }}>
           {n.resolved ? '↩ 重开' : '✓ 解决'}
-        </button>
+        </Button>
       )
     }
     return null
@@ -318,7 +319,7 @@ export default function NotesPanel({ projectId, onNavigateToChapter, initialChap
         <span className="note-date">{n.createdAt}</span>
         <div className="note-item-actions">
           {stateButton(n)}
-          <button className="btn-text" onClick={(e) => { e.stopPropagation(); setDeleteTarget(n) }} style={{ color: 'var(--danger)' }}>✕</button>
+          <Button variant="text" size="sm" onClick={(e) => { e.stopPropagation(); setDeleteTarget(n) }} style={{ color: 'var(--danger)' }}>✕</Button>
         </div>
       </div>
       {editingId === n.id ? (
@@ -334,9 +335,9 @@ export default function NotesPanel({ projectId, onNavigateToChapter, initialChap
             autoFocus
             rows={3}
           />
-          <div className="note-edit-actions">
-            <button className="btn-text" onClick={() => { saveEdit().catch(console.error) }}>保存</button>
-            <button className="btn-text" onClick={cancelEdit}>取消</button>
+          <div className="dialog-footer" style={{ borderTop: 'none', paddingTop: 0, marginTop: 6 }}>
+            <Button variant="text" size="sm" onClick={cancelEdit}>取消</Button>
+            <Button variant="text" size="sm" onClick={() => { saveEdit().catch(console.error) }}>保存</Button>
           </div>
         </div>
       ) : (
@@ -372,7 +373,7 @@ export default function NotesPanel({ projectId, onNavigateToChapter, initialChap
             <option value="todo">待办</option>
             <option value="question">疑问</option>
           </select>
-          <button className="btn-primary" onClick={() => { handleAdd().catch(console.error) }}>添加</button>
+          <Button variant="primary" size="md" onClick={() => { handleAdd().catch(console.error) }}>添加</Button>
         </div>
         {chapterVolumes.size > 0 && (
           <div className="notes-chapter-row">

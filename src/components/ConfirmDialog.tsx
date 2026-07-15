@@ -1,3 +1,5 @@
+import Button from './Button'
+
 interface Props {
   title: string
   message: string
@@ -22,14 +24,15 @@ export default function ConfirmDialog({
       <div className="dialog confirm-dialog" onClick={(e) => { e.stopPropagation() }}>
         <h2>{title}</h2>
         <p style={{ margin: '12px 0', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{message}</p>
-        <div className="dialog-actions">
-          <button className="btn-secondary" onClick={onCancel}>{cancelText}</button>
-          <button
-            className={danger ? 'btn-danger' : 'btn-primary'}
+        <div className="dialog-footer">
+          <Button variant="secondary" size="md" onClick={onCancel}>{cancelText}</Button>
+          <Button
+            variant={danger ? 'danger' : 'primary'}
+            size="md"
             onClick={onConfirm}
           >
             {confirmText}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

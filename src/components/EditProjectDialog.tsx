@@ -1,5 +1,6 @@
 import { useState, type SyntheticEvent } from 'react'
 import type { ProjectMeta, UpdateProjectInput } from '../types/project'
+import Button from './Button'
 
 interface Props {
   project: ProjectMeta
@@ -84,9 +85,9 @@ export default function EditProjectDialog({ project, onConfirm, onCancel }: Prop
               step={10000}
             />
           </div>
-          <div className="dialog-actions">
-            <button type="button" className="btn-secondary" onClick={onCancel}>取消</button>
-            <button type="submit" className="btn-primary" disabled={!name.trim()}>保存</button>
+          <div className="dialog-footer">
+            <Button variant="secondary" size="md" type="button" onClick={onCancel}>取消</Button>
+            <Button variant="primary" size="md" type="submit" disabled={!name.trim()}>保存</Button>
           </div>
         </form>
       </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ProjectMeta } from '../types/project'
 import ConfirmDialog from './ConfirmDialog'
+import Button from './Button'
 
 interface Props {
   projects: ProjectMeta[]
@@ -57,25 +58,13 @@ export default function ProjectList({ projects, activeId, onSelect, onEdit, onDe
           </div>
           <div className="project-item-actions">
             {onEdit && (
-              <button
-                className="btn-icon"
-                onClick={(e) => { e.stopPropagation(); onEdit(p) }}
-                title="编辑"
-              >
-                ✎
-              </button>
+              <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(p) }} title="编辑">✎</Button>
             )}
             {onDelete && (
-              <button
-                className="btn-icon btn-icon-danger"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setDeleteTarget(p)
-                }}
-                title="删除"
-              >
-                ✕
-              </button>
+              <Button variant="ghost" size="sm" className="btn-icon-danger" onClick={(e) => {
+                e.stopPropagation()
+                setDeleteTarget(p)
+              }} title="删除">✕</Button>
             )}
           </div>
         </div>

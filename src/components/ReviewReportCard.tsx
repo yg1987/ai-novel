@@ -1,4 +1,5 @@
 import type { ReviewIssue } from '../types/review'
+import Button from './Button'
 
 interface Props {
   title: string
@@ -52,13 +53,13 @@ export default function ReviewReportCard({ title, score, passed, issues, onLocat
             )}
             <div className="issue-actions">
               {onLocate && issue.location && (
-                <button className="btn-text" onClick={() => onLocate(issue)}>📍 定位</button>
+                <Button variant="text" size="sm" onClick={() => onLocate(issue)}>📍 定位</Button>
               )}
               {onFix && (
-                <button className="btn-text" onClick={() => onFix(issue)}>🤖 AI 修复</button>
+                <Button variant="text" size="sm" onClick={() => onFix(issue)}>🤖 AI 修复</Button>
               )}
               {onDismiss && (
-                <button className="btn-text" onClick={() => onDismiss(issue)}>✓ 标记已处理</button>
+                <Button variant="text" size="sm" onClick={() => onDismiss(issue)}>✓ 标记已处理</Button>
               )}
             </div>
           </div>
