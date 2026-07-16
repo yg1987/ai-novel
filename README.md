@@ -1,6 +1,9 @@
 # AI Novel Writer
 
-> 🧪 个人练手项目，使用 [OpenCode](https://github.com/opencode-ai/opencode) + DeepSeek 开发，主要目的是熟悉 AI 辅助编程的工作流。代码质量仅供参考。
+> 🧪 个人练手项目，使用 [OpenCode](https://github.com/opencode-ai/opencode) + DeepSeek 开发，主要目的是熟悉 AI 辅助编程的工作流。代码质量仅供参考.
+> 
+> 2026-07-16 仅靠opencode go的订阅撑不住，而且deepseek很不听话，目前跟系统设计文档比其实有很多偏差。
+> 现在使用中转站，试试gpt-5.5。
 
 AI 辅助网文写作桌面工具。Tauri 2 + React + TypeScript + TipTap，本地优先，支持多 AI Provider。
 
