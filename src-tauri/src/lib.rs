@@ -601,6 +601,8 @@ pub fn run() {
             commands::vectorstore::vector_search_chunks,
             commands::stats::append_stat_event,
             commands::stats::compute_daily_stats,
+            commands::stats::compute_chapter_word_counts,
+            commands::stats::compute_project_stats,
             commands::version::list_chapter_versions,
             commands::version::get_chapter_version,
             commands::version::restore_chapter_version,

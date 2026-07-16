@@ -145,6 +145,7 @@ export interface StatEvent {
   duration_ms?: number
   prompt_tokens?: number
   output_tokens?: number
+  event_version?: number
 }
 
 export interface DailyStats {
@@ -153,6 +154,9 @@ export interface DailyStats {
   word_count: number
   ai_generations: number
   sessions: number
+  ai_tokens: number
+  duration_ms: number
+  session_duration_ms: number
 }
 
 export async function appendStatEvent(
@@ -167,6 +171,49 @@ export async function computeDailyStats(
   days: number,
 ): Promise<DailyStats[]> {
   return invoke<DailyStats[]>('compute_daily_stats', { projectId, days })
+}
+
+// ─── Phase A: Chapter word counts (file snapshot) ────────
+
+export interface ChapterWordCount {
+  chapter_id: string
+  title: string
+  volume: string
+  order: number
+  word_count: number
+  char_count: number
+}
+
+export interface ProjectStats {
+  total_words: number
+  avg_words_per_chapter: number
+  max_chapter_words: number
+  min_chapter_words: number
+  total_chapters: number
+  total_volumes: number
+  project_days_elapsed: number
+  total_ai_generations: number
+  total_ai_tokens: number
+  avg_ai_duration_ms: number
+  max_ai_duration_ms: number
+  total_sessions: number
+  total_duration_ms: number
+  total_session_duration_ms: number
+  writing_streak_days: number
+  daily_stats: DailyStats[]
+}
+
+export async function computeChapterWordCounts(
+  projectId: string,
+): Promise<ChapterWordCount[]> {
+  return invoke<ChapterWordCount[]>('compute_chapter_word_counts', { projectId })
+}
+
+export async function computeProjectStats(
+  projectId: string,
+  days: number,
+): Promise<ProjectStats> {
+  return invoke<ProjectStats>('compute_project_stats', { projectId, days })
 }
 
 // ─── Version History ─────────────────────────────

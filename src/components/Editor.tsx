@@ -17,7 +17,7 @@ import type { CheckResult } from '../services/bannedWords'
 import RewritePreview from './RewritePreview'
 import RewriteButtons from './RewriteButtons'
 import Button from './Button'
-import { logAIGenerated, logSessionStart } from '../services/stats'
+import { logAIGenerated, logSessionStart, logSessionEnd } from '../services/stats'
 import { runSavePipeline, runReview } from '../services/savePipeline'
 import { type RewriteMode } from '../services/rewriteService'
 import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
@@ -164,9 +164,10 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
     setSaveFeedback(null)
   }, [chapterId])
 
-  // Log session start on mount
+  // Log session start on mount, end on unmount
   useEffect(() => {
     logSessionStart(projectId)
+    return () => { logSessionEnd(projectId) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 

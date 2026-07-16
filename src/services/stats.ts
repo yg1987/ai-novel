@@ -14,20 +14,25 @@ export function logChapterSaved(
 
   // Compute delta: only count new chars since last save
   const key = `${projectId}:${chapter}`
-  const lastCount = lastChapterContent.get(key) ?? 0
-  const delta = charCount - lastCount
+  const lastCharCount = lastChapterContent.get(key) ?? 0
+  const charDelta = charCount - lastCharCount
   lastChapterContent.set(key, charCount)
 
   // Only log if there's a positive delta (or first save)
-  if (delta <= 0 && lastCount > 0) return
+  if (charDelta <= 0 && lastCharCount > 0) return
 
-  const wordCount = estimateWordCount(plainText)
+  // delta semantic: word_count = estimated new words
+  // estimate delta word count from tail slice of delta chars
+  const deltaPlainText = plainText.slice(lastCharCount)
+  const deltaWordCount = estimateWordCount(deltaPlainText)
+
   const event: StatEvent = {
     timestamp: new Date().toISOString(),
     event_type: 'chapter_saved',
     chapter,
-    char_count: Math.max(delta, charCount), // first save: log full, subsequent: log delta
-    word_count: wordCount,
+    char_count: Math.max(charDelta, charCount), // first save: full, subsequent: delta
+    word_count: deltaWordCount,                 // ← always delta
+    event_version: 1,                           // ← mark new semantic
   }
   apiAppend(projectId, event).catch(console.error)
 }
@@ -48,10 +53,26 @@ export function logAIGenerated(
   apiAppend(projectId, event).catch(console.error)
 }
 
+let sessionStartTime: number | null = null
+
 export function logSessionStart(projectId: string): void {
+  sessionStartTime = Date.now()
   const event: StatEvent = {
     timestamp: new Date().toISOString(),
     event_type: 'session_start',
+  }
+  apiAppend(projectId, event).catch(console.error)
+}
+
+export function logSessionEnd(projectId: string): void {
+  if (sessionStartTime === null) return
+  const durationMs = Date.now() - sessionStartTime
+  sessionStartTime = null
+  const event: StatEvent = {
+    timestamp: new Date().toISOString(),
+    event_type: 'session_end',
+    duration_ms: Math.round(durationMs),
+    event_version: 1,
   }
   apiAppend(projectId, event).catch(console.error)
 }
