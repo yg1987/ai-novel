@@ -111,9 +111,13 @@ async function callAnalysisAPI(
   model: string,
   prompt: string,
 ): Promise<string> {
-  // Use a shorter timeout for analysis (cheap model, quick task)
   const controller = new AbortController()
-  const timeout = setTimeout(() => { controller.abort() }, 30000)
+  let timedOut = false
+  const timeoutMs = 120000
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
 
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -129,7 +133,7 @@ async function callAnalysisAPI(
           { role: 'user', content: prompt },
         ],
         temperature: 0.3,
-        max_tokens: 2048,
+        max_tokens: 8192,
       }),
       signal: controller.signal,
     })
@@ -143,6 +147,11 @@ async function callAnalysisAPI(
       choices?: Array<{ message?: { content?: string } }>
     }
     return data.choices?.[0]?.message?.content ?? ''
+  } catch (error) {
+    if (timedOut || (error instanceof DOMException && error.name === 'AbortError')) {
+      throw new Error(`章节分析超时（超过 ${Math.round(timeoutMs / 1000)} 秒）`)
+    }
+    throw error
   } finally {
     clearTimeout(timeout)
   }
@@ -176,7 +185,8 @@ function parseAnalysisResult(
       suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions.map(String) : undefined,
     }
   } catch {
-    return createEmptySnapshot(chapterNumber, chapterTitle)
+    const preview = raw.replace(/\s+/g, ' ').slice(0, 160)
+    throw new Error(`章节分析返回不是合法 JSON：${preview || '空响应'}`)
   }
 }
 

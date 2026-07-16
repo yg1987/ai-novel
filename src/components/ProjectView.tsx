@@ -152,7 +152,14 @@ export default function ProjectView({ project, onBack }: Props) {
         {tab === 'review' && <ReviewPanel projectId={project.id} currentChapterId={reviewChapterId} onNavigateToForeshadow={handleNavigateToForeshadow} />}
         {tab === 'resource' && <ResourcePanel projectId={project.id} />}
         {tab === 'brainstorm' && <BrainstormPanel projectId={project.id} />}
-        {tab === 'graph' && <RelationshipGraph projectId={project.id} />}
+        {tab === 'graph' && (
+          <RelationshipGraph
+            projectId={project.id}
+            onNavigateToCharacter={handleNavigateToCharacter}
+            onNavigateToChapter={handleNavigateToChapter}
+            onNavigateToForeshadow={handleNavigateToForeshadow}
+          />
+        )}
         {tab === 'trending' && <TrendingPanel />}
         {tab === 'chaptergraph' && <ChapterGraph projectId={project.id} />}
       </div>

@@ -1,6 +1,33 @@
 # AI Novel Writer — 项目约定
 
+## CodeGraph 红线规则
+
+这是本项目最高优先级规则之一。任何涉及**代码分析、结构梳理、调用关系、符号查找、影响范围判断、实现位置定位**的任务，必须先使用 `codegraph`。
+
+**红线：**
+- 严禁在未运行 `codegraph status` 前直接用 `grep` / `rg` / `read` / 文件遍历来找代码
+- 严禁因为当前会话没有暴露专用工具，就声称 `codegraph` 不可用；必须先尝试本机 CLI
+- 严禁跳过索引状态检查，直接凭记忆或全文搜索判断代码结构
+- 严禁把 `grep` / `rg` / `read` 当作 codegraph 的替代品；它们只能用于 codegraph 之后补充细节
+
+**强制流程：**
+1. 先运行 `codegraph status`
+2. 如果索引未同步或有 pending changes，先运行 `codegraph sync`
+3. 根据任务运行 `codegraph explore` / `codegraph query` / `codegraph callers` / `codegraph callees`
+4. 汇总 codegraph 结论后，才允许用 `grep` / `rg` / `read` 精读相关文件
+
+如果 `codegraph` 命令实际执行失败，必须向用户展示失败证据，并说明原因；不得静默降级。
+
 ## 执行纪律
+
+### 变更记录维护
+
+当用户说出以下或类似指令时，必须写入 `doc/变更记录.md`：
+- 「把变更/改动/以上修改写到变更记录文档里」
+- 「记录到变更记录」
+- 「更新变更记录」
+
+**写入要求**：严格遵循 `doc/变更记录.md` 顶部已定义的规则（日期降序、同天序号连续、问题→改进→涉及文件 三段式、列出具体文件路径并标注新建文件）。不得自行修改格式。
 
 ### 不得擅自走 fallback
 

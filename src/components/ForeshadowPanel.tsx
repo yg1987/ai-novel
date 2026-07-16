@@ -132,11 +132,13 @@ const SUGGESTION_COLORS: Record<string, { bg: string; tag: string }> = {
   density: { bg: '#e3f2fd', tag: '🟢 密度' },
 }
 
+const DEFAULT_SUGGESTION_COLORS = SUGGESTION_COLORS.gap!
+
 function SuggestionCard({ suggestion, onAdopt }: {
   suggestion: ForeshadowSuggestion
   onAdopt: (prefill: { name?: string; description?: string; plantedChapterId?: string; relatedCharacters?: string[] }) => void
 }) {
-  const colors = SUGGESTION_COLORS[suggestion.type] ?? SUGGESTION_COLORS.gap
+  const colors = SUGGESTION_COLORS[suggestion.type] ?? DEFAULT_SUGGESTION_COLORS
   return (
     <div style={{ padding: '10px', background: colors.bg, borderRadius: 6, fontSize: '0.84rem', lineHeight: 1.5 }}>
       <div style={{ fontWeight: 600, marginBottom: 4 }}>{colors.tag}</div>

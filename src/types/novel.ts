@@ -153,32 +153,68 @@ export const BANNED_WORD_SEVERITY_LABEL: Record<number, string> = {
   5: '极重',
 }
 
-// ─── Relationship Graph (v0.5) ────────────────────
+// ─── Relationship Graph ────────────────────────────
+
+export type GraphNodeType =
+  | 'character'
+  | 'location'
+  | 'organization'
+  | 'item'
+  | 'event'
+  | 'chapter'
+  | 'foreshadowing'
+
+export type RelationType = 'ally' | 'rival' | 'family' | 'mentor' | 'enemy' | 'friend' | 'love' | 'ambiguous'
+export type RelationTier = 1 | 2 | 3
+
+export const RELATION_META: Record<RelationType, { tier: RelationTier; weight: number; label: string }> = {
+  ally: { tier: 1, weight: 1.5, label: '盟友' },
+  enemy: { tier: 1, weight: 1.5, label: '仇敌' },
+  rival: { tier: 2, weight: 1.2, label: '对手' },
+  love: { tier: 2, weight: 1.2, label: '恋情' },
+  family: { tier: 2, weight: 1.2, label: '血缘' },
+  mentor: { tier: 3, weight: 0.5, label: '师徒' },
+  friend: { tier: 3, weight: 0.5, label: '朋友' },
+  ambiguous: { tier: 3, weight: 0.5, label: '关联' },
+}
+
+export interface InsightItem {
+  type: 'surprising-connection' | 'isolated-node' | 'sparse-community' | 'bridge-node'
+  title: string
+  description: string
+  nodeIds: string[]
+  suggestion: string
+}
 
 export interface GraphNode {
   id: string
   label: string
-  group: string               // 'protagonist' | 'supporter' | 'antagonist' | 'neutral'
-  firstAppearance: number     // chapter number
+  type: GraphNodeType
+  group: string
+  community: number
+  linkCount: number
+  firstAppearance: number
   lastAppearance: number
   appearanceCount: number
-  tags: string[]              // from character card tags if available
+  tags: string[]
 }
 
-export type RelationType = 'ally' | 'rival' | 'family' | 'mentor' | 'enemy' | 'friend' | 'love' | 'ambiguous'
-
 export interface RelationshipLink {
-  source: string              // character name
-  target: string              // character name
+  source: string
+  target: string
   type: RelationType
-  strength: number            // 0.0 - 1.0, computed from co-occurrence count
-  firstMentioned: number      // chapter number
+  tier: RelationTier
+  weight: number
+  strength: number
+  firstMentioned: number
   lastMentioned: number
-  mentions: number            // how many chapters mention this relationship
-  description?: string        // from relationshipChanges if available
+  mentions: number
+  description?: string
+  structural?: boolean
 }
 
 export interface RelationshipGraph {
   nodes: GraphNode[]
   links: RelationshipLink[]
+  insights: InsightItem[]
 }

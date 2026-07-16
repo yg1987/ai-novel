@@ -101,7 +101,7 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
   const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const paragraphBuf = useRef('')
   const stopRequestedRef = useRef(false)
-  const [selectionVersion, setSelectionVersion] = useState(0)
+  const [, setSelectionVersion] = useState(0)
 
   // ─── Custom prompt ─────────────────────────────
   const [showPrompt, setShowPrompt] = useState(false)
