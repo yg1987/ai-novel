@@ -43,7 +43,7 @@ export default function ChapterGraph({ projectId }: Props) {
     setLoading(true)
     loadChapterGraph(projectId)
       .then(setGraph)
-      .catch((e) => setError(String(e)))
+      .catch((error: unknown) => { setError(String(error)) })
       .finally(() => setLoading(false))
   }, [projectId])
 

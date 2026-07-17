@@ -4,6 +4,7 @@
 import { loadProviderConfig, listChapters, getChapterContent, readProjectFile, listProjectFiles } from '../api/tauri'
 import { loadForeshadows } from './foreshadowStorage'
 import { htmlToPlainText } from '../utils/htmlToText'
+import { asString, asStringArray, isRecord } from '../utils/unknown'
 import type {
   ForeshadowInspiration,
   ForeshadowGapSuggestion,
@@ -72,8 +73,10 @@ export async function runForeshadowInspire(
   // Project metadata
   try {
     const metaRaw = await readProjectFile(request.projectId, '', 'project.json')
-    const meta = JSON.parse(metaRaw)
-    contextParts.push(`作品名称：${meta.name || ''}\n类型：${meta.genre || ''}\n简介：${meta.description || ''}`)
+    const meta: unknown = JSON.parse(metaRaw)
+    if (isRecord(meta)) {
+      contextParts.push(`作品名称：${asString(meta.name)}\n类型：${asString(meta.genre)}\n简介：${asString(meta.description)}`)
+    }
   } catch { /* ignore */ }
 
   // Chapters in the selected volume
@@ -178,36 +181,38 @@ function parseInspirationResult(raw: string): ForeshadowInspiration {
   }
 
   try {
-    const parsed = JSON.parse(jsonStr) as Record<string, unknown>
+    const value: unknown = JSON.parse(jsonStr)
+    if (!isRecord(value)) throw new Error('AI 返回的 JSON 根节点不是对象')
+    const parsed = value
     const gaps: ForeshadowGapSuggestion[] = Array.isArray(parsed.gaps)
-      ? parsed.gaps.map((g: any) => ({
+      ? parsed.gaps.filter(isRecord).map((gap) => ({
         type: 'gap' as const,
-        chapterRef: String(g.chapterRef || ''),
-        reason: String(g.reason || ''),
-        suggestion: String(g.suggestion || ''),
-        relatedCharacters: Array.isArray(g.relatedCharacters) ? g.relatedCharacters.map(String) : [],
+        chapterRef: asString(gap.chapterRef),
+        reason: asString(gap.reason),
+        suggestion: asString(gap.suggestion),
+        relatedCharacters: asStringArray(gap.relatedCharacters),
       }))
       : []
 
     const callbacks: ForeshadowCallbackSuggestion[] = Array.isArray(parsed.callbacks)
-      ? parsed.callbacks.map((c: any) => ({
+      ? parsed.callbacks.filter(isRecord).map((callback) => ({
         type: 'callback' as const,
-        sourceChapter: String(c.sourceChapter || ''),
-        element: String(c.element || ''),
-        suggestion: String(c.suggestion || ''),
-        relatedForeshadowId: c.relatedForeshadowId && c.relatedForeshadowId !== 'null'
-          ? String(c.relatedForeshadowId) : undefined,
+        sourceChapter: asString(callback.sourceChapter),
+        element: asString(callback.element),
+        suggestion: asString(callback.suggestion),
+        relatedForeshadowId: typeof callback.relatedForeshadowId === 'string'
+          && callback.relatedForeshadowId !== 'null'
+          ? callback.relatedForeshadowId
+          : undefined,
       }))
       : []
 
-    const density: ForeshadowDensityAssessment | null = parsed.density && typeof parsed.density === 'object'
+    const density: ForeshadowDensityAssessment | null = isRecord(parsed.density)
       ? {
         type: 'density' as const,
-        hotChapters: Array.isArray((parsed.density as any).hotChapters)
-          ? (parsed.density as any).hotChapters.map(String) : [],
-        coldChapters: Array.isArray((parsed.density as any).coldChapters)
-          ? (parsed.density as any).coldChapters.map(String) : [],
-        overallAssessment: String((parsed.density as any).overallAssessment || ''),
+        hotChapters: asStringArray(parsed.density.hotChapters),
+        coldChapters: asStringArray(parsed.density.coldChapters),
+        overallAssessment: asString(parsed.density.overallAssessment),
       }
       : null
 

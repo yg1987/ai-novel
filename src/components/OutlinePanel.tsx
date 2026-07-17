@@ -171,32 +171,35 @@ export default function OutlinePanel({ projectId }: Props) {
 
   // ─── Expected words (chapter only) ────────────────
 
-  const [expectedWords, setExpectedWords] = useState<number | null>(null)
+  const [expectedWordsState, setExpectedWordsState] = useState<{
+    chapterId: string
+    value: number | null
+  } | null>(null)
   const expectedWordsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Derive chapterId from active outline file
   const activeChapterId = activeFile && activeType === 'chapter'
     ? outlineFileToChapterId(activeFile)
     : null
+  const expectedWords = expectedWordsState?.chapterId === activeChapterId
+    ? expectedWordsState.value
+    : null
 
   // Load expectedWords when chapter changes
   useEffect(() => {
-    if (!activeChapterId) {
-      setExpectedWords(null)
-      return
-    }
+    if (!activeChapterId) return
     loadChapterExpectedWords(projectId, activeChapterId)
       .then((v) => {
         if (v != null) {
-          setExpectedWords(v)
+          setExpectedWordsState({ chapterId: activeChapterId, value: v })
         } else {
           // No outline value set — use system default
           loadSettings()
-            .then((s) => { setExpectedWords(s.default_word_count) })
-            .catch(() => { setExpectedWords(4000) })
+            .then((s) => { setExpectedWordsState({ chapterId: activeChapterId, value: s.default_word_count }) })
+            .catch(() => { setExpectedWordsState({ chapterId: activeChapterId, value: 4000 }) })
         }
       })
-      .catch(() => { setExpectedWords(null) })
+      .catch(() => { setExpectedWordsState({ chapterId: activeChapterId, value: null }) })
   }, [projectId, activeChapterId])
 
   const persistExpectedWords = async (id: string, words: number) => {
@@ -302,7 +305,7 @@ export default function OutlinePanel({ projectId }: Props) {
     const chNum = existing.length + 1
     const name = `${volumeLabel}_第${chNum}章.md`
     const label = `第${chNum}章`
-    writeProjectFile(projectId, OUTLINE_CHAPTER_DIR, name, `${label}细纲：\n\n情节点：\n\n`)
+    void writeProjectFile(projectId, OUTLINE_CHAPTER_DIR, name, `${label}细纲：\n\n情节点：\n\n`)
       .then(() => refresh())
       .then(() => { setActiveFile(name); setActiveType('chapter'); setEditing(true) })
       .catch((e: unknown) => { console.error(e) })
@@ -314,7 +317,7 @@ export default function OutlinePanel({ projectId }: Props) {
     if (type === 'volume') {
       const volLabel = name.replace(/\.md$/, '')
       const volChapters = chaptersByVolume(volLabel)
-      Promise.all([
+      void Promise.all([
         deleteProjectFile(projectId, OUTLINE_DIR, name),
         ...volChapters.map((c) => deleteProjectFile(projectId, OUTLINE_CHAPTER_DIR, c.filename)),
       ]).then(() => {
@@ -323,16 +326,16 @@ export default function OutlinePanel({ projectId }: Props) {
           setActiveType('outline')
         }
         setDeleteTarget(null)
-        refresh()
+        void refresh()
       }).catch((e: unknown) => { console.error(e) })
     } else {
-      deleteProjectFile(projectId, OUTLINE_CHAPTER_DIR, name).then(() => {
+      void deleteProjectFile(projectId, OUTLINE_CHAPTER_DIR, name).then(() => {
         if (activeFile === name) {
           setActiveFile('outline.md')
           setActiveType('outline')
         }
         setDeleteTarget(null)
-        refresh()
+        void refresh()
       }).catch((e: unknown) => { console.error(e) })
     }
   }
@@ -467,21 +470,23 @@ export default function OutlinePanel({ projectId }: Props) {
         onPromptChange={setEditingPrompt}
         onResetPrompt={() => {
           setSavingPrompt(true)
-          resetPrompt(projectId, promptKey)
+          void resetPrompt(projectId, promptKey)
             .then(() => {
               setEditingPrompt('')
               setShowPrompt(false)
             })
+            .catch((error: unknown) => { console.error(error) })
             .finally(() => setSavingPrompt(false))
         }}
         onSavePrompt={() => {
           setSavingPrompt(true)
-          savePrompt(projectId, promptKey, editingPrompt)
+          void savePrompt(projectId, promptKey, editingPrompt)
+            .catch((error: unknown) => { console.error(error) })
             .finally(() => setSavingPrompt(false))
         }}
         onToggleExample={() => { setShowExample(!showExample) }}
         onExpectedWordsChange={(value) => {
-          setExpectedWords(value)
+          if (activeChapterId) setExpectedWordsState({ chapterId: activeChapterId, value })
           if (expectedWordsTimer.current) clearTimeout(expectedWordsTimer.current)
           expectedWordsTimer.current = setTimeout(() => {
             if (activeChapterId && value != null) {

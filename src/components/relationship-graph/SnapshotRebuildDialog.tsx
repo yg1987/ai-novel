@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Modal from '../Modal'
 import Button from '../Button'
 import Pagination from '../Pagination'
@@ -104,11 +104,8 @@ export default function SnapshotRebuildDialog({
   const [startChapterId, setStartChapterId] = useState('')
   const [endChapterId, setEndChapterId] = useState('')
 
-  useEffect(() => {
-    if (chapters.length === 0) return
-    setStartChapterId((current) => current || chapters[0]!.id)
-    setEndChapterId((current) => current || chapters[chapters.length - 1]!.id)
-  }, [chapters])
+  const selectedStartChapterId = startChapterId || chapters[0]?.id || ''
+  const selectedEndChapterId = endChapterId || chapters[chapters.length - 1]?.id || ''
 
   const volumes = useMemo(() => [...new Set(chapters.map((chapter) => chapter.volume))].sort(), [chapters])
 
@@ -131,9 +128,9 @@ export default function SnapshotRebuildDialog({
 
   const buildScope = (): SnapshotRegenerationScope => {
     if (scopeKind === 'all') return { kind: 'all' }
-    if (scopeKind === 'single') return { kind: 'single', chapterId: startChapterId }
-    if (scopeKind === 'from') return { kind: 'from', chapterId: startChapterId }
-    return { kind: 'range', startChapterId, endChapterId }
+    if (scopeKind === 'single') return { kind: 'single', chapterId: selectedStartChapterId }
+    if (scopeKind === 'from') return { kind: 'from', chapterId: selectedStartChapterId }
+    return { kind: 'range', startChapterId: selectedStartChapterId, endChapterId: selectedEndChapterId }
   }
 
   return (
@@ -153,10 +150,10 @@ export default function SnapshotRebuildDialog({
             <option value="all">全部章节</option>
           </select>
           {scopeKind !== 'all' && (
-            renderChapterSelect(startChapterId, setStartChapterId)
+            renderChapterSelect(selectedStartChapterId, setStartChapterId)
           )}
           {scopeKind === 'range' && (
-            renderChapterSelect(endChapterId, setEndChapterId)
+            renderChapterSelect(selectedEndChapterId, setEndChapterId)
           )}
         </div>
         {progress && <div className="graph-rebuild-progress">{progress.status === 'running' ? '正在分析' : progress.status === 'success' ? '完成' : '失败'}：{progress.current}/{progress.total} {progress.chapterTitle}{progress.error ? `（${progress.error}）` : ''}</div>}

@@ -5,12 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm run lint:risk",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "lint": "eslint src/",
+    "lint:risk": "eslint src/ --config eslint.risk.config.js --max-warnings 16",
+    "check": "npm run build",
     "format": "prettier --write src/",
     "format:check": "prettier --check src/"
   },

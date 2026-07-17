@@ -60,10 +60,10 @@ export default function ArchiveDialog({ projectId, projectName, onClose, onImpor
               <p className="export-label">导出当前项目为备份文件，或从备份文件导入</p>
 
               <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-                <Button variant="primary" size="md" onClick={handleExport} disabled={working} style={{ flex: 1 }}>
+                <Button variant="primary" size="md" onClick={() => { void handleExport() }} disabled={working} style={{ flex: 1 }}>
                   {working ? '导出中…' : '📤 导出存档'}
                 </Button>
-                <Button variant="primary" size="md" onClick={handleImport} disabled={working} style={{ flex: 1 }}>
+                <Button variant="primary" size="md" onClick={() => { void handleImport() }} disabled={working} style={{ flex: 1 }}>
                   {working ? '导入中…' : '📥 导入存档'}
                 </Button>
               </div>

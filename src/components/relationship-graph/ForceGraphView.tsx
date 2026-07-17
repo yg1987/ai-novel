@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Graph from 'graphology'
 import forceAtlas2 from 'graphology-layout-forceatlas2'
 import { SigmaContainer, useRegisterEvents } from '@react-sigma/core'
+import type { Settings } from 'sigma/settings'
 import '@react-sigma/core/lib/style.css'
 import { COMMUNITY_COLORS, NODE_TYPE_COLORS, initialGraphPosition, nodeSize } from '../../lib/graph-layout'
 import { RELATION_LABELS } from '../../lib/graph-readable'
@@ -9,6 +10,27 @@ import type { GraphLabelVisibility } from '../../lib/graph-mode'
 import type { GraphNode, RelationshipLink } from '../../types/novel'
 
 export interface ContextMenuState { nodeId: string; x: number; y: number }
+
+type SigmaNodeAttributes = Omit<GraphNode, 'type'> & {
+  graphNodeType: GraphNode['type']
+  type: string
+  x: number
+  y: number
+  size: number
+  color: string
+  [key: string]: unknown
+}
+
+type SigmaEdgeAttributes = Omit<RelationshipLink, 'type'> & {
+  relationType: RelationshipLink['type']
+  type: string
+  size: number
+  color: string
+  label: string
+  [key: string]: unknown
+}
+
+type SigmaGraph = Graph<SigmaNodeAttributes, SigmaEdgeAttributes, Record<string, unknown>>
 
 function nodeColor(node: GraphNode): string {
   if (node.community >= 0) return COMMUNITY_COLORS[node.community % COMMUNITY_COLORS.length] ?? NODE_TYPE_COLORS[node.type]
@@ -21,14 +43,8 @@ function edgeColor(edge: RelationshipLink): string {
   return colors[edge.type] ?? '#94a3b8'
 }
 
-function graphDataKey(nodes: GraphNode[], edges: RelationshipLink[]): string {
-  const nodeKey = nodes.map((node) => `${node.id}:${node.type}:${node.community}:${node.linkCount}:${node.label}`).sort().join('|')
-  const edgeKey = edges.map((edge) => `${[edge.source, edge.target].sort().join('::')}:${edge.type}:${edge.weight}:${edge.structural ? 1 : 0}`).sort().join('|')
-  return `${nodeKey}///${edgeKey}`
-}
-
-function createSigmaGraph(nodes: GraphNode[], edges: RelationshipLink[], positionCache: Map<string, { x: number; y: number }>): Graph {
-  const graph = new Graph({ type: 'undirected', multi: false })
+function createSigmaGraph(nodes: GraphNode[], edges: RelationshipLink[], positionCache: Map<string, { x: number; y: number }>): SigmaGraph {
+  const graph = new Graph<SigmaNodeAttributes, SigmaEdgeAttributes, Record<string, unknown>>({ type: 'undirected', multi: false })
   const maxLinks = Math.max(0, ...nodes.map((node) => node.linkCount))
   nodes.forEach((node, index) => {
     const position = positionCache.get(node.id) ?? initialGraphPosition(node, index, nodes.length)
@@ -50,24 +66,25 @@ function createSigmaGraph(nodes: GraphNode[], edges: RelationshipLink[], positio
 }
 
 function GraphEvents({ onSelect, onContext }: { onSelect: (nodeId: string) => void; onContext: (menu: ContextMenuState | null) => void }) {
-  const registerEvents = useRegisterEvents()
+  const registerEvents = useRegisterEvents<SigmaNodeAttributes, SigmaEdgeAttributes, Record<string, unknown>>()
   useEffect(() => {
     registerEvents({
-      clickNode: (event: any) => onSelect(event.node),
-      rightClickNode: (event: any) => {
-        event.event?.preventSigmaDefault?.()
-        const original = event.event?.original ?? event.event
-        original?.preventDefault?.()
-        original?.stopPropagation?.()
-        onContext({ nodeId: event.node, x: original?.clientX ?? 0, y: original?.clientY ?? 0 })
+      clickNode: (event) => onSelect(event.node),
+      rightClickNode: (event) => {
+        event.event.preventSigmaDefault()
+        const original = event.event.original
+        original.preventDefault()
+        original.stopPropagation()
+        const point = original instanceof MouseEvent ? original : original.touches[0]
+        onContext({ nodeId: event.node, x: point?.clientX ?? 0, y: point?.clientY ?? 0 })
       },
       clickStage: () => onContext(null),
-    } as any)
+    })
   }, [onContext, onSelect, registerEvents])
   return null
 }
 
-function GraphMiniMap({ graph, focusedNodeId }: { graph: Graph; focusedNodeId: string | null }) {
+function GraphMiniMap({ graph, focusedNodeId }: { graph: SigmaGraph; focusedNodeId: string | null }) {
   const points = useMemo(() => {
     const next: { id: string; x: number; y: number; color: string }[] = []
     graph.forEachNode((id, attributes) => {
@@ -101,20 +118,19 @@ interface Props {
 }
 
 export default function ForceGraphView({ nodes, edges, focusedNodeId, labelVisibility, onSelect, onContext }: Props) {
-  const positionCache = useRef(new Map<string, { x: number; y: number }>())
-  const dataKey = useMemo(() => graphDataKey(nodes, edges), [nodes, edges])
-  const sigmaGraph = useMemo(() => createSigmaGraph(nodes, edges, positionCache.current), [dataKey])
-  const settings = useMemo(() => ({
+  const [positionCache] = useState(() => new Map<string, { x: number; y: number }>())
+  const sigmaGraph = useMemo(() => createSigmaGraph(nodes, edges, positionCache), [edges, nodes, positionCache])
+  const settings = useMemo<Partial<Settings<SigmaNodeAttributes, SigmaEdgeAttributes, Record<string, unknown>>>>(() => ({
     renderEdgeLabels: false,
     labelRenderedSizeThreshold: 12,
     allowInvalidContainer: true,
-    nodeReducer: (node: string, data: any) => {
+    nodeReducer: (node, data) => {
       const isFocused = node === focusedNodeId || edges.some((edge) => (edge.source === focusedNodeId && edge.target === node) || (edge.target === focusedNodeId && edge.source === node))
       if (focusedNodeId && !isFocused) return { ...data, color: '#d7dde5', label: '' }
       if (labelVisibility === 'minimal') return { ...data, label: '' }
       return data
     },
-    edgeReducer: (_edge: string, data: any) => {
+    edgeReducer: (_edge, data) => {
       if (!focusedNodeId) return data
       const keep = data.source === focusedNodeId || data.target === focusedNodeId
       return keep ? data : { ...data, hidden: true }
@@ -123,7 +139,7 @@ export default function ForceGraphView({ nodes, edges, focusedNodeId, labelVisib
 
   return (
     <div className="graph-sigma-container" onContextMenu={(event) => event.preventDefault()}>
-      <SigmaContainer graph={sigmaGraph} settings={settings as any} className="graph-sigma-canvas" style={{ width: '100%', height: '100%' }}>
+      <SigmaContainer<SigmaNodeAttributes, SigmaEdgeAttributes, Record<string, unknown>> graph={sigmaGraph} settings={settings} className="graph-sigma-canvas" style={{ width: '100%', height: '100%' }}>
         <GraphEvents onSelect={onSelect} onContext={onContext} />
       </SigmaContainer>
       <GraphMiniMap graph={sigmaGraph} focusedNodeId={focusedNodeId} />

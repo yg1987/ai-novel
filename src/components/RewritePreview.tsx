@@ -22,11 +22,16 @@ export default function RewritePreview({ selectedText, beforeText, afterText, de
     setGenerating(true)
     setError(null)
     setResult('')
-    await rewriteText({ selectedText, beforeText, afterText, mode }, {
-      onToken: (text) => setResult((prev) => prev + text),
-      onDone: () => setGenerating(false),
-      onError: (err) => { setError(err); setGenerating(false) },
-    })
+    try {
+      await rewriteText({ selectedText, beforeText, afterText, mode }, {
+        onToken: (text) => setResult((prev) => prev + text),
+        onDone: () => setGenerating(false),
+        onError: (err) => { setError(err); setGenerating(false) },
+      })
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error))
+      setGenerating(false)
+    }
   }, [selectedText, beforeText, afterText, mode])
 
   const handleStop = () => {
@@ -77,10 +82,10 @@ export default function RewritePreview({ selectedText, beforeText, afterText, de
           ) : result ? (
             <>
               <Button variant="primary" size="md" icon="✓" onClick={() => onAccept(result)}>接受</Button>
-              <Button variant="text" size="sm" icon="🔄" onClick={handleGenerate}>重新生成</Button>
+              <Button variant="text" size="sm" icon="🔄" onClick={() => { void handleGenerate() }}>重新生成</Button>
             </>
           ) : (
-            <Button variant="primary" size="md" icon="✨" onClick={handleGenerate}>生成</Button>
+            <Button variant="primary" size="md" icon="✨" onClick={() => { void handleGenerate() }}>生成</Button>
           )}
         </div>
       </div>

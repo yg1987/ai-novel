@@ -52,7 +52,7 @@ export default function BrainstormPanel({ projectId }: Props) {
             </button>
           ))}
         </div>
-        <Button variant="primary" size="md" onClick={handleGenerate} disabled={generating} style={{ width: '100%', marginTop: 12 }}>
+        <Button variant="primary" size="md" onClick={() => { void handleGenerate() }} disabled={generating} style={{ width: '100%', marginTop: 12 }}>
           {generating ? '⏳ 思考中…' : '🚀 开始脑暴'}
         </Button>
         {error && <div className="error-bar" style={{ marginTop: 8 }}>{error}</div>}

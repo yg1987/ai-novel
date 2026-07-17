@@ -244,7 +244,7 @@ function ProviderForm({
       </div>
 
       <div className="fetch-models-row">
-        <button className="fetch-models-btn" onClick={fetchModels} disabled={fetching || !canFetch}>
+        <button className="fetch-models-btn" onClick={() => { void fetchModels() }} disabled={fetching || !canFetch}>
           {fetching ? '获取中…' : '🔍 获取模型列表'}
         </button>
         {models && !fetchError && (

@@ -88,12 +88,6 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
   }, [projectId])
 
   useEffect(() => {
-    if (!editingId) {
-      setForm((prev) => ({ ...prev, plantedChapterId: currentChapterId ?? prev.plantedChapterId }))
-    }
-  }, [currentChapterId, editingId])
-
-  useEffect(() => {
     if (!highlightId) return
     const el = document.getElementById(`foreshadow-${highlightId}`)
     if (!el) return

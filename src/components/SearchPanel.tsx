@@ -27,6 +27,19 @@ const DEFAULT_PAGE_SIZE = 15
 const HISTORY_KEY_PREFIX = 'search_history_'
 const MAX_HISTORY = 10
 
+function loadSearchHistory(projectId: string): string[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY_PREFIX + projectId)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
+
 export default function SearchPanel({ projectId, onOpenFile }: Props) {
   const [query, setQuery] = useState('')
   // allResults 保留搜索返回的完整结果（未过滤），给客户端过滤用
@@ -36,7 +49,7 @@ export default function SearchPanel({ projectId, onOpenFile }: Props) {
   const [includeVector, setIncludeVector] = useState(true)
   const [sourceFilter, setSourceFilter] = useState<string>('all')
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
-  const [searchHistory, setSearchHistory] = useState<string[]>(() => loadHistory())
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => loadSearchHistory(projectId))
 
   const resultsRef = useRef<HTMLDivElement>(null)
 
@@ -48,16 +61,9 @@ export default function SearchPanel({ projectId, onOpenFile }: Props) {
 
   const { paged, page, setPage, totalPages, reset } = usePagination(filteredResults, pageSize)
 
-  function loadHistory(): string[] {
-    try {
-      const raw = localStorage.getItem(HISTORY_KEY_PREFIX + projectId)
-      return raw ? JSON.parse(raw) as string[] : []
-    } catch { return [] }
-  }
-
   const saveHistory = useCallback((q: string) => {
     try {
-      const current = loadHistory()
+      const current = loadSearchHistory(projectId)
       const filtered = current.filter((h) => h !== q)
       const updated = [q, ...filtered].slice(0, MAX_HISTORY)
       localStorage.setItem(HISTORY_KEY_PREFIX + projectId, JSON.stringify(updated))
@@ -83,7 +89,7 @@ export default function SearchPanel({ projectId, onOpenFile }: Props) {
   }, [projectId, sourceFilter, includeVector, reset, saveHistory])
 
   const doSearch = useCallback(() => {
-    doSearchWithQuery(query.trim())
+    void doSearchWithQuery(query.trim())
   }, [query, doSearchWithQuery])
 
   const handleSourceChange = (s: string) => { setSourceFilter(s); reset() }
@@ -143,7 +149,7 @@ export default function SearchPanel({ projectId, onOpenFile }: Props) {
                 <span
                   key={i}
                   className="search-history-tag"
-                  onClick={() => { setQuery(h); doSearchWithQuery(h) }}
+                  onClick={() => { setQuery(h); void doSearchWithQuery(h) }}
                 >
                   {h}
                 </span>

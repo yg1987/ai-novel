@@ -143,7 +143,10 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
     try {
       const raw = await readProjectFile(projectId, CHARACTER_SUBDIR, ORDER_FILE)
       if (raw.trim()) {
-        currentOrder = JSON.parse(raw)
+        const parsed: unknown = JSON.parse(raw)
+        currentOrder = Array.isArray(parsed)
+          ? parsed.filter((item): item is string => typeof item === 'string')
+          : []
       }
     } catch { /* order.json missing or malformed */ }
 
@@ -159,24 +162,17 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
 
     setOrder(mergedOrder)
     setFiles(mergedOrder)
-  }, [projectId])
+    if (initialCharacter && mergedOrder.includes(initialCharacter)) {
+      setActiveFile(initialCharacter)
+    }
+  }, [initialCharacter, projectId])
 
   useEffect(() => {
     refresh().catch((e: unknown) => { console.error(e) })
   }, [refresh])
 
-  // Auto-select character when navigated from foreshadow panel
   useEffect(() => {
-    if (initialCharacter && files.includes(`${initialCharacter}.md`)) {
-      setActiveFile(initialCharacter)
-    }
-  }, [initialCharacter, files])
-
-  useEffect(() => {
-    if (!activeFile) {
-      setContent('')
-      return
-    }
+    if (!activeFile) return
     readProjectFile(projectId, CHARACTER_SUBDIR, `${activeFile}.md`)
       .then(setContent)
       .catch((e: unknown) => { console.error(e) })
@@ -416,26 +412,30 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
         onPolish={() => handleRewriteMode('polish')}
         onTogglePrompt={() => {
           if (!showPrompt && !editingPrompt.trim()) {
-            void buildAIContext(projectId).then((info) => {
-              const def = buildAIPrompt(newName, info)
-              setEditingPrompt(def.system + '\n\n---\n\n' + def.user)
-            })
+            void buildAIContext(projectId)
+              .then((info) => {
+                const def = buildAIPrompt(newName, info)
+                setEditingPrompt(def.system + '\n\n---\n\n' + def.user)
+              })
+              .catch((error: unknown) => { console.error(error) })
           }
           setShowPrompt(!showPrompt)
         }}
         onPromptChange={setEditingPrompt}
         onResetPrompt={() => {
           setSavingPrompt(true)
-          resetPrompt(projectId, promptKey)
+          void resetPrompt(projectId, promptKey)
             .then(() => {
               setEditingPrompt('')
               setShowPrompt(false)
             })
+            .catch((error: unknown) => { console.error(error) })
             .finally(() => setSavingPrompt(false))
         }}
         onSavePrompt={() => {
           setSavingPrompt(true)
-          savePrompt(projectId, promptKey, editingPrompt)
+          void savePrompt(projectId, promptKey, editingPrompt)
+            .catch((error: unknown) => { console.error(error) })
             .finally(() => setSavingPrompt(false))
         }}
         onToggleExample={() => { setShowExample(!showExample) }}

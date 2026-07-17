@@ -440,12 +440,12 @@ export default function ReviewRulesEditor({ projectId, onClose, onSaved }: Props
 
         {/* Footer */}
         <div className="dialog-footer" style={{ justifyContent: 'space-between', padding: '12px 20px', background: 'var(--bg-sidebar)' }}>
-          <Button variant="secondary" size="sm" onClick={handleReset} disabled={busy}>
+          <Button variant="secondary" size="sm" onClick={() => { void handleReset() }} disabled={busy}>
             {resetting ? '恢复中…' : '恢复默认'}
           </Button>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button variant="secondary" size="md" onClick={onClose} disabled={busy}>取消</Button>
-            <Button variant="primary" size="md" onClick={handleSave} disabled={busy}>
+            <Button variant="primary" size="md" onClick={() => { void handleSave() }} disabled={busy}>
               {saving ? '保存中…' : '保存'}
             </Button>
           </div>

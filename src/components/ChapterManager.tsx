@@ -111,7 +111,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
         setLoading(false)
       })
       .catch(() => { setLoading(false) })
-  }, [refresh, loadMeta])
+  }, [activeChapterId, loadMeta, onChapterSelect, refresh])
 
   // Auto-select chapter from initialChapterRef (e.g. navigating from NotesPanel)
   useEffect(() => {
@@ -125,7 +125,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
       // Expand the volume so the chapter is visible
       setCollapsedVolumes((prev) => ({ ...prev, [target.volume]: false }))
     }
-  }, [initialChapterRef, chapters])
+  }, [initialChapterRef, chapters, onChapterSelect])
 
   // ─── Notes data for badges & sidebar ────────────
 
@@ -303,7 +303,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
       onClick: () => {
         copyChapterForPlatform(projectId, ch.volume, ch.id, platform)
           .then(() => showToast(`已复制为${label}格式`))
-          .catch((e) => console.error('Failed to copy chapter:', e))
+          .catch((error: unknown) => { console.error('Failed to copy chapter:', error) })
       },
     }))
 

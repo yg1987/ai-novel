@@ -192,7 +192,7 @@ export default function RelationshipGraph({ projectId, onNavigateToCharacter, on
         setChapters(nextChapters.slice().sort((a, b) => a.order - b.order))
         setLastRegenerationReport(report)
       })
-      .catch((e) => setError(String(e)))
+      .catch((error: unknown) => { setError(String(error)) })
       .finally(() => setChaptersLoading(false))
   }
   const handleRebuildSnapshots = async (scope: SnapshotRegenerationScope) => {
@@ -250,7 +250,7 @@ export default function RelationshipGraph({ projectId, onNavigateToCharacter, on
           <InsightsPanel insights={graph.insights} onFocusInsight={focusInsight} />
         )}
       </aside>
-      {showRebuildDialog && <SnapshotRebuildDialog chapters={chapters} loadingChapters={chaptersLoading} regenerating={regenerating} progress={regenerationProgress} lastReport={lastRegenerationReport} onClose={() => setShowRebuildDialog(false)} onStart={handleRebuildSnapshots} />}
+      {showRebuildDialog && <SnapshotRebuildDialog chapters={chapters} loadingChapters={chaptersLoading} regenerating={regenerating} progress={regenerationProgress} lastReport={lastRegenerationReport} onClose={() => setShowRebuildDialog(false)} onStart={(scope) => { void handleRebuildSnapshots(scope) }} />}
     </div>
   )
 }

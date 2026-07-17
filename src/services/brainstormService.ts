@@ -1,6 +1,7 @@
 // src/services/brainstormService.ts
 import { loadProviderConfig, listChapters, getChapterContent, readProjectFile } from '../api/tauri'
 import { htmlToPlainText } from '../utils/htmlToText'
+import { asString, asStringArray, isRecord } from '../utils/unknown'
 
 export type BrainstormMode = 'plot_twist' | 'scene_idea' | 'character_dev' | 'world_expand'
 
@@ -45,8 +46,10 @@ export async function runBrainstorm(
   // Project metadata
   try {
     const metaRaw = await readProjectFile(request.projectId, '', 'project.json')
-    const meta = JSON.parse(metaRaw)
-    contextParts.push(`项目名称：${meta.name || ''}\n类型：${meta.genre || ''}\n简介：${meta.description || ''}`)
+    const meta: unknown = JSON.parse(metaRaw)
+    if (isRecord(meta)) {
+      contextParts.push(`项目名称：${asString(meta.name)}\n类型：${asString(meta.genre)}\n简介：${asString(meta.description)}`)
+    }
   } catch { /* ignore */ }
 
   // Recent chapters (last 3)
@@ -65,10 +68,14 @@ export async function runBrainstorm(
   // Character states (abbreviated)
   try {
     const cognitionRaw = await readProjectFile(request.projectId, 'memory', 'character-states.json')
-    const cognition = JSON.parse(cognitionRaw)
+    const cognition: unknown = JSON.parse(cognitionRaw)
     const charLines: string[] = ['## 角色状态']
-    for (const c of cognition.characters || []) {
-      charLines.push(`${c.character}：知道[${(c.knows || []).slice(0, 3).join(', ')}]，不知道[${(c.doesNotKnow || []).slice(0, 3).join(', ')}]`)
+    const characters = isRecord(cognition) && Array.isArray(cognition.characters)
+      ? cognition.characters
+      : []
+    for (const character of characters) {
+      if (!isRecord(character)) continue
+      charLines.push(`${asString(character.character)}：知道[${asStringArray(character.knows).slice(0, 3).join(', ')}]，不知道[${asStringArray(character.doesNotKnow).slice(0, 3).join(', ')}]`)
     }
     contextParts.push(charLines.join('\n'))
   } catch { /* ignore */ }
@@ -76,10 +83,13 @@ export async function runBrainstorm(
   // Unresolved foreshadowing
   try {
     const foreshadowRaw = await readProjectFile(request.projectId, 'memory', 'foreshadows.json')
-    const store = JSON.parse(foreshadowRaw)
-    const pending = (store.entries || []).filter((e: any) => e.status !== 'resolved' && e.status !== 'abandoned')
+    const store: unknown = JSON.parse(foreshadowRaw)
+    const entries = isRecord(store) && Array.isArray(store.entries)
+      ? store.entries.filter(isRecord)
+      : []
+    const pending = entries.filter((entry) => entry.status !== 'resolved' && entry.status !== 'abandoned')
     if (pending.length > 0) {
-      contextParts.push(`## 未解伏笔\n${pending.slice(0, 5).map((f: any) => `- ${f.name}：${f.description}`).join('\n')}`)
+      contextParts.push(`## 未解伏笔\n${pending.slice(0, 5).map((entry) => `- ${asString(entry.name)}：${asString(entry.description)}`).join('\n')}`)
     }
   } catch { /* ignore */ }
 

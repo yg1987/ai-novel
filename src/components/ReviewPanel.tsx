@@ -69,6 +69,31 @@ const inputBase: React.CSSProperties = {
   color: 'var(--text)',
 }
 
+function SectionHeader({
+  title,
+  extra,
+  collapsed,
+  onToggle,
+}: {
+  title: string
+  extra?: React.ReactNode
+  collapsed: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div onClick={onToggle} style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '10px 14px', background: 'var(--bg-sidebar)', cursor: 'pointer',
+      borderRadius: 'var(--radius-sm)', userSelect: 'none', marginBottom: 8,
+    }}>
+      <span style={{ ...inputBase, fontWeight: 500 }}>
+        {collapsed ? '▶' : '▼'} {title}
+      </span>
+      {extra}
+    </div>
+  )
+}
+
 export default function ReviewPanel({ projectId, currentChapterId, chapterHtml = '', onNavigateToForeshadow }: Props) {
   const [chapters, setChapters] = useState<ChapterReviewData[]>([])
   const [expandedChapter, setExpandedChapter] = useState<string | null>(null)
@@ -207,19 +232,6 @@ export default function ReviewPanel({ projectId, currentChapterId, chapterHtml =
     )
   }
 
-  const SectionHeader = ({ title, extra }: { title: string; extra?: React.ReactNode }) => (
-    <div onClick={() => toggleSection(title)} style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '10px 14px', background: 'var(--bg-sidebar)', cursor: 'pointer',
-      borderRadius: 'var(--radius-sm)', userSelect: 'none', marginBottom: 8,
-    }}>
-      <span style={{ ...inputBase, fontWeight: 500 }}>
-        {isCollapsed(title) ? '▶' : '▼'} {title}
-      </span>
-      {extra}
-    </div>
-  )
-
   // ─── RENDER ─────────────────────────────────────
 
   return (
@@ -240,20 +252,20 @@ export default function ReviewPanel({ projectId, currentChapterId, chapterHtml =
               💡 展开左侧章节后可运行检查
             </p>
           )}
-          <Button variant="primary" size="md" onClick={handleRunLightCheck}
+          <Button variant="primary" size="md" onClick={() => { void handleRunLightCheck() }}
             disabled={runningReview || noExpandedChapter}
             title={noExpandedChapter ? '请先展开左侧章节' : undefined}
             style={{ width: '100%', marginBottom: 6 }}>
             {runningReview ? '检查中…' : '⚡ 轻量检查'}
           </Button>
-          <Button variant="primary" size="md" onClick={handleRunDeepReview}
+          <Button variant="primary" size="md" onClick={() => { void handleRunDeepReview() }}
             disabled={runningReview || noExpandedChapter}
             title={noExpandedChapter ? '请先展开左侧章节' : undefined}
             style={{ width: '100%', marginBottom: 6 }}>
             {runningReview ? '审查中…' : '🔍 AI 深度审查'}
           </Button>
           <div className="review-section-separator" />
-          <Button variant="secondary" size="md" onClick={handleRunConsistency}
+          <Button variant="secondary" size="md" onClick={() => { void handleRunConsistency() }}
             disabled={runningConsistency || noExpandedChapter}
             title={noExpandedChapter ? '请先展开左侧章节' : undefined}
             style={{ width: '100%' }}>
@@ -310,7 +322,11 @@ export default function ReviewPanel({ projectId, currentChapterId, chapterHtml =
             {/* ── Light Check ── */}
             {activeChapter.lightCheck && (
               <div style={{ marginBottom: 16 }}>
-                <SectionHeader title="禁用词检测" />
+                <SectionHeader
+                  title="禁用词检测"
+                  collapsed={isCollapsed('禁用词检测')}
+                  onToggle={() => { toggleSection('禁用词检测') }}
+                />
                 {!isCollapsed('禁用词检测') && (
                   <div style={{ padding: '0 4px 12px' }}>
                     {activeChapter.lightCheck.checks.map((check, i) => {
@@ -390,6 +406,8 @@ export default function ReviewPanel({ projectId, currentChapterId, chapterHtml =
               <div style={{ marginBottom: 16 }}>
                 <SectionHeader
                   title="AI 深度审查"
+                  collapsed={isCollapsed('AI 深度审查')}
+                  onToggle={() => { toggleSection('AI 深度审查') }}
                   extra={
                     <span style={{
                       ...inputBase, fontWeight: 600, fontSize: '0.9rem',
@@ -437,6 +455,8 @@ export default function ReviewPanel({ projectId, currentChapterId, chapterHtml =
               <div style={{ marginBottom: 16 }}>
                 <SectionHeader
                   title="一致性检查"
+                  collapsed={isCollapsed('一致性检查')}
+                  onToggle={() => { toggleSection('一致性检查') }}
                   extra={<span style={{ ...inputBase, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
                     {consistencyResult.summary.total} 个问题
                   </span>}

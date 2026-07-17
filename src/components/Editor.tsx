@@ -169,7 +169,6 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
   useEffect(() => {
     logSessionStart(projectId)
     return () => { logSessionEnd(projectId) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
   // Save on unmount
@@ -185,7 +184,13 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
         console.log(`[Editor] 卸载 ${chapterId}，无需保存 (内容未变化)`)
       }
     }
-  }, [editor, projectId, chapterId])
+  }, [editor, projectId, volume, chapterId])
+
+  const showFeedback = useCallback((msg: string) => {
+    setSaveFeedback(msg)
+    if (feedbackTimer.current) clearTimeout(feedbackTimer.current)
+    feedbackTimer.current = setTimeout(() => setSaveFeedback(null), 2000)
+  }, [])
 
   const handleSaveNow = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
@@ -200,13 +205,22 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
       .then(() => { showFeedback('✅ 已保存') })
       .catch((e: unknown) => { console.error('Save failed:', e); showFeedback('保存失败') })
       .finally(() => { setSaving(false) })
-  }, [editor, projectId, chapterId, chapterNumber])
+  }, [editor, projectId, volume, chapterId, chapterNumber, showFeedback])
 
-  const showFeedback = useCallback((msg: string) => {
-    setSaveFeedback(msg)
-    if (feedbackTimer.current) clearTimeout(feedbackTimer.current)
-    feedbackTimer.current = setTimeout(() => setSaveFeedback(null), 2000)
-  }, [])
+  /** Remove raw markdown markers from paragraph starts after generation. */
+  const stripMarkdownHeadings = useCallback(() => {
+    if (!editor) return
+    const { doc } = editor.state
+    doc.descendants((node, pos) => {
+      if (node.type.name !== 'paragraph') return
+      const text = node.textContent
+      const stripped = text.replace(/^#{1,3}\s+/, '').replace(/^-\s+/, '')
+      if (stripped !== text) {
+        editor.commands.setTextSelection({ from: pos + 1, to: pos + 1 + node.nodeSize - 2 })
+        editor.commands.insertContent(stripped)
+      }
+    })
+  }, [editor])
 
   const handleGenerate = useCallback(async () => {
     if (!editor || generating) return
@@ -253,26 +267,7 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
       setGenerating(false)
       paragraphBuf.current = ''
     }
-  }, [editor, generating, projectId, chapterId, effectiveWordCount, chapterNumber, editingPrompt])
-
-  /**
-   * Remove markdown heading prefixes (#, ##) and list markers (-) from the
-   * beginning of each paragraph.  TipTap's paragraph nodes don't expect raw
-   * markdown syntax — headings should use the actual heading node.
-   */
-  const stripMarkdownHeadings = useCallback(() => {
-    if (!editor) return
-    const { doc } = editor.state
-    doc.descendants((node, pos) => {
-      if (node.type.name !== 'paragraph') return
-      const text = node.textContent
-      const stripped = text.replace(/^#{1,3}\s+/, '').replace(/^-\s+/, '')
-      if (stripped !== text) {
-        editor.commands.setTextSelection({ from: pos + 1, to: pos + 1 + node.nodeSize - 2 })
-        editor.commands.insertContent(stripped)
-      }
-    })
-  }, [editor])
+  }, [editor, generating, projectId, volume, chapterId, effectiveWordCount, chapterNumber, editingPrompt, stripMarkdownHeadings])
 
   const handleStop = useCallback(() => { stopGeneration(); setGenerating(false); paragraphBuf.current = ''; stopRequestedRef.current = true }, [])
 
@@ -292,7 +287,39 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
       })
       .catch((e: unknown) => { console.error('Review failed:', e) })
       .finally(() => { setReviewing(false) })
-  }, [editor, reviewing, projectId, chapterId, chapterNumber, showFeedback])
+  }, [editor, reviewing, projectId, volume, chapterId, chapterNumber, showFeedback])
+
+  const handleResetWordCount = async () => {
+    try {
+      await deleteChapterWordCountOverride(projectId, chapterId)
+      await refreshWordCount()
+    } catch (error) {
+      console.error('Failed to reset chapter word count:', error)
+    }
+  }
+
+  const handleResetPrompt = async () => {
+    setSavingPrompt(true)
+    try {
+      await resetPrompt(projectId, PROMPT_KEY)
+      setEditingPrompt(DEFAULT_PROMPT)
+    } catch (error) {
+      console.error('Failed to reset prompt:', error)
+    } finally {
+      setSavingPrompt(false)
+    }
+  }
+
+  const handleSavePrompt = async () => {
+    setSavingPrompt(true)
+    try {
+      await savePrompt(projectId, PROMPT_KEY, editingPrompt)
+    } catch (error) {
+      console.error('Failed to save prompt:', error)
+    } finally {
+      setSavingPrompt(false)
+    }
+  }
 
   const handleRewrite = useCallback((mode: RewriteMode) => {
     if (!editor) return
@@ -389,10 +416,7 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
             <Button
               variant="ghost" size="xs"
               title="重置为默认字数"
-              onClick={async () => {
-                await deleteChapterWordCountOverride(projectId, chapterId)
-                void refreshWordCount()
-              }}
+              onClick={() => { void handleResetWordCount() }}
             >↩</Button>
           )}
         </div>
@@ -458,12 +482,7 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
         <div className="prompt-editor">
           <div className="prompt-editor-header">
             <span>AI 生成提示词（修改后点击保存，AI 将使用你的提示词。{'{outline}'}、{'{word_count}'}、{'{previous_ending}'} 会被自动替换为实际内容）</span>
-            <Button variant="text" size="sm" onClick={async () => {
-              setSavingPrompt(true)
-              await resetPrompt(projectId, PROMPT_KEY)
-              setEditingPrompt(DEFAULT_PROMPT)
-              setSavingPrompt(false)
-            }}>恢复默认</Button>
+            <Button variant="text" size="sm" onClick={() => { void handleResetPrompt() }}>恢复默认</Button>
           </div>
           <textarea
             className="prompt-editor-textarea"
@@ -476,11 +495,7 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
               {editingPrompt !== DEFAULT_PROMPT ? '已自定义提示词' : '正在使用默认提示词'}
             </span>
-            <Button variant="primary" size="sm" disabled={savingPrompt} onClick={async () => {
-              setSavingPrompt(true)
-              await savePrompt(projectId, PROMPT_KEY, editingPrompt)
-              setSavingPrompt(false)
-            }}>{savingPrompt ? '保存中…' : '保存提示词'}</Button>
+            <Button variant="primary" size="sm" disabled={savingPrompt} onClick={() => { void handleSavePrompt() }}>{savingPrompt ? '保存中…' : '保存提示词'}</Button>
           </div>
         </div>
       )}

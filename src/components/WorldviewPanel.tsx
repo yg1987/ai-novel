@@ -65,7 +65,10 @@ export default function WorldviewPanel({ projectId }: Props) {
   const rewriteTextareaRef = useRef<HTMLTextAreaElement>(null)
   const subFieldEndRef = useRef<HTMLDivElement>(null)
   const sectionsRef = useRef(sections)
-  sectionsRef.current = sections
+
+  useEffect(() => {
+    sectionsRef.current = sections
+  }, [sections])
 
   const genreMismatch = savedGenre !== null && savedGenre !== genre && !genreMismatchDismissed
   const promptKey = activeSection ? `worldview_${activeSection.key}` : ''

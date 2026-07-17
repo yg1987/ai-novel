@@ -89,7 +89,7 @@ export default function SettingsModal({ visible, onClose }: Props) {
 
         <div className="dialog-footer">
           <Button variant="secondary" size="md" onClick={handleCancel} disabled={saving}>取消</Button>
-          <Button variant="primary" size="md" onClick={handleSave} disabled={saving || !hasChanges}>
+          <Button variant="primary" size="md" onClick={() => { void handleSave() }} disabled={saving || !hasChanges}>
             {saving ? '保存中…' : '保存'}
           </Button>
         </div>

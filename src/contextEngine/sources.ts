@@ -6,6 +6,7 @@ import { loadForeshadows, loadForeshadowConfig } from '../services/foreshadowSto
 import { loadAllNotes, buildChapterRef } from '../services/notesStorage'
 import type { NoteEntry } from '../services/notesStorage'
 import { classifyForeshadows, classifiedForeshadowsToText } from '../services/foreshadowContext'
+import { asString, asStringArray, isRecord } from '../utils/unknown'
 
 const SNAPSHOT_DIR = 'memory/snapshots'
 const COGNITION_FILE = 'character-states.json'
@@ -60,8 +61,8 @@ export const foreshadowDS: DataSource<string> = {
           `${ctx.chapterId}.snapshot.json`,
         )
         if (snapRaw.trim()) {
-          const snap = JSON.parse(snapRaw)
-          if (Array.isArray(snap.characters)) currentChars = snap.characters
+          const snap: unknown = JSON.parse(snapRaw)
+          if (isRecord(snap)) currentChars = asStringArray(snap.characters)
         }
       } catch { /* no snapshot yet */ }
 
@@ -98,8 +99,10 @@ export const recentSummaryDS: DataSource<string> = {
       try {
         const raw = await readProjectFile(ctx.projectId, SNAPSHOT_DIR, `${chId}.snapshot.json`)
         if (raw.trim()) {
-          const snap = JSON.parse(raw)
-          summaries.push(`第${i}章「${snap.chapterTitle || chId}」：${snap.summary || ''}`)
+          const snap: unknown = JSON.parse(raw)
+          if (isRecord(snap)) {
+            summaries.push(`第${i}章「${asString(snap.chapterTitle, chId)}」：${asString(snap.summary)}`)
+          }
         }
       } catch { /* snapshot may not exist */ }
     }

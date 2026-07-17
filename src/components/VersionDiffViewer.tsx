@@ -20,7 +20,7 @@ function computeDiff(oldText: string, newText: string): DiffLine[] {
 
   // Simple LCS-based diff (for typical chapter sizes this is sufficient)
   const dp: number[][] = Array.from({ length: oldLines.length + 1 }, () =>
-    Array(newLines.length + 1).fill(0)
+    Array.from({ length: newLines.length + 1 }, () => 0)
   )
   for (let i = 1; i <= oldLines.length; i++) {
     const oldLine = oldLines[i - 1]!

@@ -115,7 +115,7 @@ export default function ExportDialog({ projectId, projectName, onClose }: Props)
 
         <div className="dialog-footer">
           {!done && (
-            <Button variant="primary" size="md" onClick={handleExport} disabled={exporting}>
+            <Button variant="primary" size="md" onClick={() => { void handleExport() }} disabled={exporting}>
               {exporting ? '导出中…' : '导出'}
             </Button>
           )}

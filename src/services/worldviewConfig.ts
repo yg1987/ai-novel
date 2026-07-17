@@ -2,6 +2,7 @@
 // Worldview section configuration — genre presets + user customization
 
 import { readProjectFile, writeProjectFile } from '../api/tauri'
+import { asString, isRecord } from '../utils/unknown'
 
 export interface SubField {
   key: string
@@ -18,6 +19,40 @@ export interface SectionDef {
 }
 
 const CONFIG_FILE = '_worldview_sections.json'
+
+function parseSubField(value: unknown): SubField | null {
+  if (!isRecord(value)) return null
+  const key = asString(value.key)
+  if (!key) return null
+  return {
+    key,
+    label: asString(value.label, key),
+    hint: asString(value.hint),
+  }
+}
+
+function parseSection(value: unknown): SectionDef | null {
+  if (!isRecord(value)) return null
+  const key = asString(value.key)
+  const file = asString(value.file)
+  if (!key || !file) return null
+  const subs = Array.isArray(value.subs)
+    ? value.subs.map(parseSubField).filter((sub): sub is SubField => sub !== null)
+    : []
+  return {
+    key,
+    label: asString(value.label, key),
+    file,
+    subs,
+    hint: asString(value.hint),
+  }
+}
+
+function parseSections(value: unknown): SectionDef[] | null {
+  if (!Array.isArray(value)) return null
+  const sections = value.map(parseSection).filter((section): section is SectionDef => section !== null)
+  return sections.length > 0 ? sections : null
+}
 
 // ─── Genre presets ────────────────────────────────────────
 
@@ -580,16 +615,13 @@ export function getExample(genre: string, sectionKey: string, subKey: string): s
 export async function loadSections(projectId: string): Promise<SectionDef[] | null> {
   try {
     const raw = await readProjectFile(projectId, 'worldview', CONFIG_FILE)
-    const parsed = JSON.parse(raw)
+    const parsed: unknown = JSON.parse(raw)
     // New format: { genre, sections }
-    if (parsed && !Array.isArray(parsed) && Array.isArray(parsed.sections)) {
-      return parsed.sections as SectionDef[]
+    if (isRecord(parsed)) {
+      return parseSections(parsed.sections)
     }
     // Old format: array of sections
-    if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.key) {
-      return parsed as SectionDef[]
-    }
-    return null
+    return parseSections(parsed)
   } catch {
     return null
   }
@@ -602,11 +634,8 @@ export async function loadSections(projectId: string): Promise<SectionDef[] | nu
 export async function loadSectionsGenre(projectId: string): Promise<string | null> {
   try {
     const raw = await readProjectFile(projectId, 'worldview', CONFIG_FILE)
-    const parsed = JSON.parse(raw)
-    if (parsed && !Array.isArray(parsed) && parsed.genre) {
-      return parsed.genre
-    }
-    return null
+    const parsed: unknown = JSON.parse(raw)
+    return isRecord(parsed) && typeof parsed.genre === 'string' ? parsed.genre : null
   } catch {
     return null
   }
@@ -622,10 +651,8 @@ export async function saveSections(projectId: string, sections: SectionDef[], ge
   if (!resolvedGenre) {
     try {
       const raw = await readProjectFile(projectId, 'worldview', CONFIG_FILE)
-      const existing = JSON.parse(raw)
-      if (existing && !Array.isArray(existing) && existing.genre) {
-        resolvedGenre = existing.genre
-      }
+      const existing: unknown = JSON.parse(raw)
+      if (isRecord(existing) && typeof existing.genre === 'string') resolvedGenre = existing.genre
     } catch { /* ignore */ }
   }
   await writeProjectFile(projectId, 'worldview', CONFIG_FILE, JSON.stringify({ genre: resolvedGenre ?? '', sections }, null, 2))

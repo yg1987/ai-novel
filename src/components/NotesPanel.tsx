@@ -76,6 +76,7 @@ export default function NotesPanel({ projectId, onNavigateToChapter, initialChap
   const [loading, setLoading] = useState(true)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [deleteTarget, setDeleteTarget] = useState<NoteEntry | null>(null)
+  const [currentTime] = useState(() => Date.now())
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -116,7 +117,7 @@ export default function NotesPanel({ projectId, onNavigateToChapter, initialChap
       }
       onHighlightComplete?.()
     }, 150)
-  }, [initialChapterRef, loading])
+  }, [initialChapterRef, initialFilter, loading, onHighlightComplete])
 
   // Reset flag when initialChapterRef clears
   useEffect(() => {
@@ -193,14 +194,13 @@ export default function NotesPanel({ projectId, onNavigateToChapter, initialChap
   // ─── Overdue banner ─────────────────────────────
 
   const overdueCount = useMemo(() => {
-    const now = Date.now()
     const week = 7 * 24 * 60 * 60 * 1000
     return notes.filter((n) => {
       if (n.type !== 'todo' || n.done) return false
       const created = new Date(n.createdAt).getTime()
-      return !isNaN(created) && (now - created) > week
+      return !isNaN(created) && (currentTime - created) > week
     }).length
-  }, [notes])
+  }, [currentTime, notes])
 
   // ─── Grouped view ───────────────────────────────
 

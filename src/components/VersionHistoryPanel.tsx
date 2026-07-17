@@ -110,7 +110,7 @@ export default function VersionHistoryPanel({ projectId, volume, chapterId, onRe
             <div
               key={v.version}
               className={`version-item${selectedVersion === v.version ? ' active' : ''}`}
-              onClick={() => handlePreview(v.version)}
+              onClick={() => { void handlePreview(v.version) }}
             >
               <div className="version-item-header">
                 <span className="version-number">v{v.version}</span>
@@ -127,11 +127,11 @@ export default function VersionHistoryPanel({ projectId, volume, chapterId, onRe
                     <input
                       value={renameValue}
                       onChange={(e) => setRenameValue(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleRename(v.version); if (e.key === 'Escape') setRenamingVersion(null) }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') void handleRename(v.version); if (e.key === 'Escape') setRenamingVersion(null) }}
                       placeholder="版本标记…"
                       autoFocus
                     />
-                    <Button variant="text" size="sm" onClick={() => handleRename(v.version)}>✓</Button>
+                    <Button variant="text" size="sm" onClick={() => { void handleRename(v.version) }}>✓</Button>
                     <Button variant="text" size="sm" onClick={() => setRenamingVersion(null)}>✕</Button>
                   </div>
                 ) : (
@@ -142,7 +142,7 @@ export default function VersionHistoryPanel({ projectId, volume, chapterId, onRe
                 <Button variant="text" size="sm" onClick={(e) => { e.stopPropagation(); setConfirmRestore(v.version) }}>
                   回退
                 </Button>
-                <Button variant="text" size="sm" style={{ color: 'var(--danger)' }} onClick={(e) => { e.stopPropagation(); handleDelete(v.version) }}>
+                <Button variant="text" size="sm" style={{ color: 'var(--danger)' }} onClick={(e) => { e.stopPropagation(); void handleDelete(v.version) }}>
                   删除
                 </Button>
               </div>
@@ -160,7 +160,7 @@ export default function VersionHistoryPanel({ projectId, volume, chapterId, onRe
                 <div className="dialog-footer" style={{ borderTop: 'none', paddingTop: 0, marginTop: 0 }}>
                   <span style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>确认恢复到 v{selectedVersion}？</span>
                   <Button variant="text" size="sm" onClick={() => setConfirmRestore(null)}>取消</Button>
-                  <Button variant="primary" size="sm" onClick={() => handleRestore(selectedVersion)}>确认恢复</Button>
+                  <Button variant="primary" size="sm" onClick={() => { void handleRestore(selectedVersion) }}>确认恢复</Button>
                 </div>
               ) : null}
             </div>

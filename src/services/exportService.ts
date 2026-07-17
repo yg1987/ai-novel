@@ -5,6 +5,7 @@ import { adaptForPlatform, type PublishPlatform } from '../utils/formatAdapter'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
 import { invoke } from '@tauri-apps/api/core'
+import { asString, isRecord } from '../utils/unknown'
 
 export type ExportFormat = 'txt' | 'markdown' | 'epub'
 
@@ -58,8 +59,8 @@ export async function exportAsMarkdown(
   let description = ''
   try {
     const metaRaw = await readProjectFile(projectId, '', 'project.json')
-    const meta = JSON.parse(metaRaw)
-    description = meta.description || ''
+    const meta: unknown = JSON.parse(metaRaw)
+    if (isRecord(meta)) description = asString(meta.description)
   } catch { /* ignore */ }
 
   const lines: string[] = [

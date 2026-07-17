@@ -21,6 +21,7 @@ export function ToastContainer() {
   const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
 
   useEffect(() => {
+    const activeTimers = timers.current
     const handler = (item: ToastItem) => {
       setToasts((prev) => [...prev, item])
 
@@ -30,19 +31,19 @@ export function ToastContainer() {
         )
         const remove = setTimeout(() => {
           setToasts((prev) => prev.filter((t) => t.id !== item.id))
-          timers.current.delete(item.id)
+          activeTimers.delete(item.id)
         }, 300)
-        timers.current.set(item.id, remove)
+        activeTimers.set(item.id, remove)
       }, 2000)
 
-      timers.current.set(item.id, dismiss)
+      activeTimers.set(item.id, dismiss)
     }
 
     listeners.push(handler)
     return () => {
       const idx = listeners.indexOf(handler)
       if (idx >= 0) listeners.splice(idx, 1)
-      for (const t of timers.current.values()) clearTimeout(t)
+      for (const t of activeTimers.values()) clearTimeout(t)
     }
   }, [])
 

@@ -22,13 +22,13 @@ export interface DataSourceResult {
 }
 
 export class DataSourceRegistry {
-  private sources: DataSource<any>[] = []
+  private sources: DataSource<unknown>[] = []
 
-  register<T>(source: DataSource<T>): void {
+  register(source: DataSource<unknown>): void {
     this.sources.push(source)
   }
 
-  registerAll(sources: DataSource<any>[]): void {
+  registerAll(sources: DataSource<unknown>[]): void {
     for (const s of sources) this.register(s)
   }
 
