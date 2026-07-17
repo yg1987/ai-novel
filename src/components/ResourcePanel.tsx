@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { open } from '@tauri-apps/plugin-dialog'
+import { readTextFile } from '@tauri-apps/plugin-fs'
+import { convertFileSrc } from '@tauri-apps/api/core'
 import {
   createMaterial,
   deleteMaterial,
@@ -13,6 +16,8 @@ import {
   saveMaterialCategories,
   saveMaterialKinds,
   updateMaterial,
+  previewWebMaterial,
+  attachMaterialImage,
 } from '../api/tauri'
 import type { ProjectMeta } from '../types/project'
 import type {
@@ -26,9 +31,11 @@ import type {
   MaterialSummary,
   MaterialUsage,
   MaterialWriteInput,
+  WebMaterialPreview,
 } from '../types/material'
 import Button from './Button'
 import MaterialConfigModal from './MaterialConfigModal'
+import MaterialDocumentWorkspace from './MaterialDocumentWorkspace'
 import MaterialEditorModal from './MaterialEditorModal'
 import Modal from './Modal'
 import Pagination from './Pagination'
@@ -119,6 +126,23 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
   const [showConfig, setShowConfig] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<MaterialItem | null>(null)
   const [usages, setUsages] = useState<MaterialUsage[]>([])
+  const [showDocuments, setShowDocuments] = useState(false)
+  const [showWebCapture, setShowWebCapture] = useState(false)
+  const [webUrl, setWebUrl] = useState('')
+  const [webPreview, setWebPreview] = useState<WebMaterialPreview | null>(null)
+  const [webTitle, setWebTitle] = useState('')
+  const [webKindId, setWebKindId] = useState('')
+  const [webCategoryId, setWebCategoryId] = useState('')
+  const [webLoading, setWebLoading] = useState(false)
+  const [showMarkdownImport, setShowMarkdownImport] = useState(false)
+  const [markdownName, setMarkdownName] = useState('')
+  const [markdownContent, setMarkdownContent] = useState('')
+  const [markdownKindId, setMarkdownKindId] = useState('')
+  const [markdownCategoryId, setMarkdownCategoryId] = useState('')
+  const [imagePath, setImagePath] = useState('')
+  const [imageTitle, setImageTitle] = useState('')
+  const [imageDescription, setImageDescription] = useState('')
+  const [showImageImport, setShowImageImport] = useState(false)
 
   const inbox = categories.find((category) => category.systemKey === 'inbox')
   const kindMap = useMemo(() => new Map(kinds.map((kind) => [kind.id, kind.name])), [kinds])
@@ -210,6 +234,7 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
   }
 
   const selectView = (view: string) => {
+    setShowDocuments(false)
     setFavoritesOnly(view === 'favorites')
     setCategoryId(view === 'all' || view === 'favorites'
       ? undefined
@@ -266,6 +291,102 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
     await refreshPage()
   }
 
+  const fetchWebPreview = async () => {
+    setWebLoading(true)
+    try {
+      const preview = await previewWebMaterial(webUrl)
+      setWebPreview(preview)
+      setWebTitle(preview.title)
+      setWebKindId(kinds.find((kind) => !kind.archived)?.id ?? '')
+      setWebCategoryId(inbox?.id ?? '')
+    } catch (cause) {
+      setError(String(cause))
+    } finally {
+      setWebLoading(false)
+    }
+  }
+
+  const saveWebMaterial = async () => {
+    if (!webPreview || !webTitle.trim() || !webKindId || !webCategoryId) return
+    try {
+      const saved = await createMaterial({
+        title: webTitle,
+        kindId: webKindId,
+        content: webPreview.content,
+        sourceType: 'web',
+        sourceName: webPreview.sourceName,
+        sourceUrl: webPreview.sourceUrl,
+        categoryId: webCategoryId,
+        scope: 'projects',
+        projectIds: [projectId],
+      })
+      setShowWebCapture(false)
+      setWebPreview(null)
+      setWebUrl('')
+      setSelectedMaterial(saved)
+      setPage(1)
+      await refreshPage()
+    } catch (cause) {
+      setError(String(cause))
+    }
+  }
+
+  const chooseMarkdown = async () => {
+    try {
+      const path = await open({ filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }], multiple: false })
+      if (typeof path !== 'string') return
+      const content = await readTextFile(path)
+      if (!content.trim()) {
+        setError('Markdown 文件为空，未创建素材')
+        return
+      }
+      const name = path.split(/[\\/]/).pop()?.replace(/\.(md|markdown)$/i, '') || '未命名 Markdown'
+      setMarkdownName(name)
+      setMarkdownContent(content)
+      setMarkdownKindId(kinds.find((kind) => !kind.archived)?.id ?? '')
+      setMarkdownCategoryId(inbox?.id ?? '')
+      setShowMarkdownImport(true)
+    } catch (cause) {
+      setError(String(cause))
+    }
+  }
+
+  const saveMarkdown = async () => {
+    if (!markdownName.trim() || !markdownContent || !markdownKindId || !markdownCategoryId) return
+    try {
+      const saved = await createMaterial({ title: markdownName, kindId: markdownKindId, content: markdownContent, contentFormat: 'markdown', sourceType: 'file', sourceName: `${markdownName}.md`, categoryId: markdownCategoryId, scope: 'projects', projectIds: [projectId] })
+      setShowMarkdownImport(false)
+      setMarkdownContent('')
+      setSelectedMaterial(saved)
+      setPage(1)
+      await refreshPage()
+    } catch (cause) {
+      setError(String(cause))
+    }
+  }
+
+  const chooseImage = async () => {
+    try {
+      const path = await open({ filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp'] }], multiple: false })
+      if (typeof path !== 'string') return
+      setImagePath(path)
+      setImageTitle(path.split(/[\\/]/).pop()?.replace(/\.(jpg|jpeg|png|webp)$/i, '') || '图片参考')
+      setImageDescription('')
+      setShowImageImport(true)
+    } catch (cause) { setError(String(cause)) }
+  }
+
+  const saveImage = async () => {
+    const kind = kinds.find((value) => !value.archived)?.id
+    if (!imagePath || !imageTitle.trim() || !kind || !inbox) return
+    try {
+      const material = await createMaterial({ title: imageTitle, kindId: kind, content: imageDescription, sourceType: 'image', sourceName: imagePath.split(/[\\/]/).pop() ?? '', categoryId: inbox.id, scope: 'projects', projectIds: [projectId] })
+      await attachMaterialImage(material.id, imagePath)
+      setShowImageImport(false); setImagePath(''); setSelectedMaterial(await getMaterial(material.id)); setPage(1)
+      await refreshPage()
+    } catch (cause) { setError(String(cause)) }
+  }
+
   return (
     <div className="material-workspace">
       <aside className="material-library-nav">
@@ -286,6 +407,9 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
           <button className={favoritesOnly ? 'active' : ''} onClick={() => { selectView('favorites'); }}>
             <span className="material-nav-icon">★</span><span>收藏</span>
           </button>
+          <button className={showDocuments ? 'active' : ''} onClick={() => { setShowDocuments(true); setSelectedMaterial(null); }}>
+            <span className="material-nav-icon">▤</span><span>资料源</span>
+          </button>
         </nav>
         <div className="material-nav-section-title">自定义分类</div>
         <div className="material-nav-scroll">
@@ -295,10 +419,14 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
           )}
         </div>
         <div className="material-nav-footer">
-          <Button variant="primary" size="md" onClick={() => { setSelectedMaterial(null); setShowEditor(true) }}>＋ 新建素材</Button>
+          <Button variant="primary" size="md" onClick={() => { setShowDocuments(false); setSelectedMaterial(null); setShowEditor(true) }}>＋ 新建素材</Button>
+          <Button variant="secondary" size="sm" onClick={() => { setShowWebCapture(true) }}>网页摘录</Button>
+          <Button variant="secondary" size="sm" onClick={() => { void chooseMarkdown() }}>导入 Markdown</Button>
+          <Button variant="secondary" size="sm" onClick={() => { void chooseImage() }}>图片参考</Button>
         </div>
       </aside>
 
+      {showDocuments ? <MaterialDocumentWorkspace projectId={projectId} categories={categories} kinds={kinds} /> : <>
       <section className="material-list-pane">
         <div className="material-list-toolbar">
           <input
@@ -422,6 +550,7 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
           </div>
         )}
       </main>
+      </>}
 
       {showEditor && (
         <MaterialEditorModal
@@ -453,6 +582,16 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
           </div>
         </Modal>
       )}
+      {showWebCapture && (
+        <Modal className="material-document-import-modal">
+          <h2>网页摘录</h2>
+          {!webPreview ? <><input value={webUrl} onChange={(event) => { setWebUrl(event.target.value) }} placeholder="https://example.com/article" /><div className="material-modal-footer"><Button variant="secondary" size="md" onClick={() => { setShowWebCapture(false); setWebUrl('') }}>取消</Button><Button variant="primary" size="md" onClick={() => { void fetchWebPreview() }} disabled={!webUrl.trim() || webLoading}>{webLoading ? '正在抓取...' : '获取预览'}</Button></div></> : <><input value={webTitle} onChange={(event) => { setWebTitle(event.target.value) }} placeholder="素材标题" /><select value={webKindId} onChange={(event) => { setWebKindId(event.target.value) }}>{kinds.filter((kind) => !kind.archived).map((kind) => <option key={kind.id} value={kind.id}>{kind.name}</option>)}</select><select value={webCategoryId} onChange={(event) => { setWebCategoryId(event.target.value) }}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><div className="material-document-excerpt-preview">{webPreview.content}</div><div className="material-modal-footer"><Button variant="secondary" size="md" onClick={() => { setWebPreview(null) }}>重新选择</Button><Button variant="primary" size="md" onClick={() => { void saveWebMaterial() }}>保存素材</Button></div></>}
+        </Modal>
+      )}
+      {showMarkdownImport && (
+        <Modal className="material-document-import-modal"><h2>导入 Markdown</h2><input value={markdownName} onChange={(event) => { setMarkdownName(event.target.value) }} placeholder="素材标题" /><select value={markdownKindId} onChange={(event) => { setMarkdownKindId(event.target.value) }}>{kinds.filter((kind) => !kind.archived).map((kind) => <option key={kind.id} value={kind.id}>{kind.name}</option>)}</select><select value={markdownCategoryId} onChange={(event) => { setMarkdownCategoryId(event.target.value) }}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><div className="material-document-excerpt-preview">{markdownContent}</div><div className="material-modal-footer"><Button variant="secondary" size="md" onClick={() => { setShowMarkdownImport(false); setMarkdownContent('') }}>取消</Button><Button variant="primary" size="md" onClick={() => { void saveMarkdown() }}>保存素材</Button></div></Modal>
+      )}
+      {showImageImport && <Modal className="material-document-import-modal"><h2>图片参考</h2><img style={{ display: 'block', width: '100%', maxHeight: 280, objectFit: 'contain' }} src={convertFileSrc(imagePath)} alt="图片预览" /><input value={imageTitle} onChange={(event) => { setImageTitle(event.target.value) }} placeholder="素材标题" /><textarea value={imageDescription} onChange={(event) => { setImageDescription(event.target.value) }} rows={3} placeholder="图片说明" /><div className="material-modal-footer"><Button variant="secondary" size="md" onClick={() => { setShowImageImport(false); setImagePath('') }}>取消</Button><Button variant="primary" size="md" onClick={() => { void saveImage() }}>保存素材</Button></div></Modal>}
     </div>
   )
 }

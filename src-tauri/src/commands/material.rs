@@ -12,6 +12,7 @@ const SCHEMA_VERSION: u32 = 1;
 const INBOX_SYSTEM_KEY: &str = "inbox";
 const LEGACY_RESOURCE_PREFIX: &str = "resources/";
 const MAX_PAGE_SIZE: usize = 100;
+const MAX_IMAGE_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -56,6 +57,12 @@ pub struct MaterialItem {
     pub project_ids: Vec<String>,
     pub favorite: bool,
     pub attachment_ids: Vec<String>,
+    #[serde(default)]
+    pub source_document_id: Option<String>,
+    #[serde(default)]
+    pub source_section_id: Option<String>,
+    #[serde(default)]
+    pub source_locator: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -96,6 +103,9 @@ pub struct CreateMaterialInput {
     pub scope: MaterialScope,
     pub project_ids: Vec<String>,
     pub favorite: Option<bool>,
+    pub source_document_id: Option<String>,
+    pub source_section_id: Option<String>,
+    pub source_locator: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -114,6 +124,9 @@ pub struct UpdateMaterialPatch {
     pub scope: Option<MaterialScope>,
     pub project_ids: Option<Vec<String>>,
     pub favorite: Option<bool>,
+    pub source_document_id: Option<String>,
+    pub source_section_id: Option<String>,
+    pub source_locator: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -177,6 +190,18 @@ pub struct MaterialUsage {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterialImageAttachment {
+    pub id: String,
+    pub material_id: String,
+    pub original_name: String,
+    pub mime_type: String,
+    pub size: u64,
+    pub relative_path: String,
+    pub created_at: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateMaterialUsageInput {
@@ -227,7 +252,7 @@ fn lock_state() -> Result<std::sync::MutexGuard<'static, MaterialState>, String>
         .map_err(|_| "Material library state lock is poisoned".to_string())
 }
 
-fn materials_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn materials_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     app_handle
         .path()
         .app_data_dir()
@@ -263,11 +288,30 @@ fn item_path(root: &Path, material_id: &str) -> PathBuf {
     items_dir(root).join(format!("{material_id}.json"))
 }
 
-fn now_iso() -> String {
+fn image_attachment_path(
+    root: &Path,
+    material_id: &str,
+    attachment_id: &str,
+    extension: &str,
+) -> PathBuf {
+    root.join("attachments")
+        .join("materials")
+        .join(material_id)
+        .join(format!("{attachment_id}.{extension}"))
+}
+
+fn image_attachment_metadata_path(root: &Path, material_id: &str, attachment_id: &str) -> PathBuf {
+    root.join("attachments")
+        .join("materials")
+        .join(material_id)
+        .join(format!("{attachment_id}.json"))
+}
+
+pub(crate) fn now_iso() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
-fn validate_uuid(value: &str, field: &str) -> Result<(), String> {
+pub(crate) fn validate_uuid(value: &str, field: &str) -> Result<(), String> {
     Uuid::parse_str(value)
         .map(|_| ())
         .map_err(|_| format!("{field} must be a valid UUID"))
@@ -324,7 +368,7 @@ fn recover_atomic_directory(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
+pub(crate) fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("Invalid material path: {}", path.display()))?;
@@ -537,6 +581,12 @@ fn validate_material(
         .any(|category| category.id == item.category_id)
     {
         return Err("选择的素材分类不存在".to_string());
+    }
+    if let Some(document_id) = &item.source_document_id {
+        validate_uuid(document_id, "source document id")?;
+    }
+    if let Some(section_id) = &item.source_section_id {
+        validate_uuid(section_id, "source section id")?;
     }
     item.tags = sanitize_tags(std::mem::take(&mut item.tags))?;
     match item.scope {
@@ -869,6 +919,9 @@ pub fn create_material(
         project_ids: input.project_ids,
         favorite: input.favorite.unwrap_or(false),
         attachment_ids: Vec::new(),
+        source_document_id: input.source_document_id,
+        source_section_id: input.source_section_id,
+        source_locator: input.source_locator,
         created_at: now.clone(),
         updated_at: now,
     };
@@ -941,6 +994,15 @@ pub fn update_material(
     if let Some(value) = patch.favorite {
         item.favorite = value;
     }
+    if let Some(value) = patch.source_document_id {
+        item.source_document_id = Some(value);
+    }
+    if let Some(value) = patch.source_section_id {
+        item.source_section_id = Some(value);
+    }
+    if let Some(value) = patch.source_locator {
+        item.source_locator = Some(value);
+    }
     item.updated_at = now_iso();
 
     validate_material(&mut item, &categories, &kinds)?;
@@ -984,9 +1046,90 @@ pub fn delete_material(app_handle: tauri::AppHandle, material_id: String) -> Res
         return Err("素材不存在或已被删除".to_string());
     }
     delete_material_usage(&root, &material_id)?;
+    let attachment_dir = root
+        .join("attachments")
+        .join("materials")
+        .join(&material_id);
+    if attachment_dir.exists() {
+        fs::remove_dir_all(&attachment_dir).map_err(|e| format!("删除素材附件失败: {e}"))?;
+    }
     fs::remove_file(item_path(&root, &material_id)).map_err(|e| format!("删除素材失败: {e}"))?;
     material_state.items.remove(&material_id);
     Ok(())
+}
+
+#[tauri::command]
+pub fn attach_material_image(
+    app_handle: tauri::AppHandle,
+    material_id: String,
+    source_path: String,
+) -> Result<MaterialImageAttachment, String> {
+    validate_uuid(&material_id, "material id")?;
+    let source = Path::new(&source_path);
+    let metadata = fs::metadata(source).map_err(|e| format!("读取图片失败: {e}"))?;
+    if !metadata.is_file() || metadata.len() > MAX_IMAGE_ATTACHMENT_BYTES {
+        return Err("图片无效或超过 10MB 限制".to_string());
+    }
+    let extension = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let mime_type = match extension.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        _ => return Err("仅支持 JPG、PNG 和 WebP 图片".to_string()),
+    };
+    let original_name = source
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "图片文件名无效".to_string())?
+        .to_string();
+    let root = materials_dir(&app_handle)?;
+    let mut state = lock_state()?;
+    ensure_loaded(&mut state, &root)?;
+    let mut item = state
+        .items
+        .get(&material_id)
+        .map(|indexed| indexed.item.clone())
+        .ok_or_else(|| "素材不存在或已被删除".to_string())?;
+    let attachment_id = Uuid::new_v4().to_string();
+    let destination = image_attachment_path(&root, &material_id, &attachment_id, &extension);
+    fs::create_dir_all(destination.parent().unwrap())
+        .map_err(|e| format!("创建图片目录失败: {e}"))?;
+    fs::copy(source, &destination).map_err(|e| format!("复制图片失败: {e}"))?;
+    item.attachment_ids.push(attachment_id.clone());
+    item.updated_at = now_iso();
+    save_item(&root, &item)?;
+    state.items.insert(
+        material_id.clone(),
+        IndexedMaterial {
+            search_text: normalize_search_text(&item),
+            item,
+        },
+    );
+    let attachment = MaterialImageAttachment {
+        id: attachment_id.clone(),
+        material_id: material_id.clone(),
+        original_name,
+        mime_type: mime_type.to_string(),
+        size: metadata.len(),
+        relative_path: destination
+            .strip_prefix(&root)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/"),
+        created_at: now_iso(),
+    };
+    if let Err(error) = atomic_write_json(
+        &image_attachment_metadata_path(&root, &material_id, &attachment_id),
+        &attachment,
+    ) {
+        let _ = fs::remove_file(&destination);
+        return Err(error);
+    }
+    Ok(attachment)
 }
 
 #[tauri::command]
@@ -1256,6 +1399,9 @@ mod tests {
             project_ids: Vec::new(),
             favorite: index % 2 == 0,
             attachment_ids: Vec::new(),
+            source_document_id: None,
+            source_section_id: None,
+            source_locator: None,
             created_at: now_iso(),
             updated_at: now_iso(),
         }

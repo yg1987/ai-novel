@@ -6,6 +6,14 @@ import type { VersionMeta } from '../types/review'
 import type {
   LegacyCleanupSummary,
   MaterialCategory,
+  MaterialDocument,
+  MaterialDocumentDetail,
+  MaterialDocumentImportPreview,
+  MaterialDocumentPage,
+  MaterialDocumentSearchResult,
+  MaterialDocumentSectionContent,
+  WebMaterialPreview,
+  MaterialImageAttachment,
   MaterialFilter,
   MaterialItem,
   MaterialKindDefinition,
@@ -302,6 +310,57 @@ export async function saveMaterialKinds(kinds: MaterialKindDefinition[]): Promis
 
 export async function restoreMaterialKindPresets(): Promise<MaterialKindDefinition[]> {
   return invoke<MaterialKindDefinition[]>('restore_material_kind_presets')
+}
+
+export async function previewMaterialDocumentImport(sourcePath: string): Promise<MaterialDocumentImportPreview> {
+  return invoke<MaterialDocumentImportPreview>('preview_material_document_import', { sourcePath })
+}
+
+export async function importMaterialDocument(
+  sourcePath: string,
+  scope: 'global' | 'projects',
+  projectIds: string[],
+): Promise<MaterialDocument> {
+  return invoke<MaterialDocument>('import_material_document', { sourcePath, scope, projectIds })
+}
+
+export async function listMaterialDocuments(
+  projectId: string | undefined,
+  page = 1,
+  pageSize = 20,
+): Promise<MaterialDocumentPage> {
+  return invoke<MaterialDocumentPage>('list_material_documents', { projectId, page, pageSize })
+}
+
+export async function getMaterialDocument(documentId: string): Promise<MaterialDocumentDetail> {
+  return invoke<MaterialDocumentDetail>('get_material_document', { documentId })
+}
+
+export async function readMaterialDocumentSection(
+  documentId: string,
+  sectionId: string,
+): Promise<MaterialDocumentSectionContent> {
+  return invoke<MaterialDocumentSectionContent>('read_material_document_section', { documentId, sectionId })
+}
+
+export async function searchMaterialDocumentSections(
+  query: string,
+  projectId: string | undefined,
+  limit = 40,
+): Promise<MaterialDocumentSearchResult[]> {
+  return invoke<MaterialDocumentSearchResult[]>('search_material_document_sections', { query, projectId, limit })
+}
+
+export async function deleteMaterialDocument(documentId: string): Promise<void> {
+  await invoke('delete_material_document', { documentId })
+}
+
+export async function previewWebMaterial(sourceUrl: string): Promise<WebMaterialPreview> {
+  return invoke<WebMaterialPreview>('preview_web_material', { sourceUrl })
+}
+
+export async function attachMaterialImage(materialId: string, sourcePath: string): Promise<MaterialImageAttachment> {
+  return invoke<MaterialImageAttachment>('attach_material_image', { materialId, sourcePath })
 }
 
 export async function searchMaterials(

@@ -2,6 +2,7 @@ export type MaterialContentFormat = 'plain_text' | 'markdown'
 export type MaterialScope = 'global' | 'projects'
 export type MaterialSourceType = 'original' | 'book' | 'web' | 'file' | 'image'
 export type MaterialUsageAction = 'insert' | 'ai_context'
+export type MaterialDocumentFormat = 'txt' | 'epub'
 
 export interface CurrentChapterRef {
   projectId: string
@@ -33,6 +34,9 @@ export interface MaterialItem {
   projectIds: string[]
   favorite: boolean
   attachmentIds: string[]
+  sourceDocumentId?: string
+  sourceSectionId?: string
+  sourceLocator?: string
   createdAt: string
   updatedAt: string
 }
@@ -59,6 +63,9 @@ export interface MaterialFilter {
   categoryId?: string
   tag?: string
   favorite?: boolean
+  sourceDocumentId?: string
+  sourceSectionId?: string
+  sourceLocator?: string
   projectId?: string
 }
 
@@ -106,6 +113,9 @@ export interface MaterialWriteInput {
   scope: MaterialScope
   projectIds: string[]
   favorite?: boolean
+  sourceDocumentId?: string
+  sourceSectionId?: string
+  sourceLocator?: string
 }
 
 export type MaterialUpdatePatch = Partial<MaterialWriteInput>
@@ -135,4 +145,97 @@ export interface CreateMaterialUsageInput {
 export interface LegacyCleanupSummary {
   cleanedProjects: number
   skippedProjects: number
+}
+
+export interface MaterialDocumentSection {
+  id: string
+  documentId: string
+  order: number
+  title: string
+  relativePath: string
+  characterCount: number
+}
+
+export interface MaterialDocument {
+  schemaVersion: 1
+  id: string
+  title: string
+  author: string
+  format: MaterialDocumentFormat
+  attachmentId: string
+  scope: MaterialScope
+  projectIds: string[]
+  sectionIds: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MaterialDocumentSectionPreview {
+  order: number
+  title: string
+  characterCount: number
+}
+
+export interface MaterialDocumentImportPreview {
+  fileName: string
+  format: MaterialDocumentFormat
+  title: string
+  author: string
+  sections: MaterialDocumentSectionPreview[]
+}
+
+export interface MaterialDocumentSummary {
+  id: string
+  title: string
+  author: string
+  format: MaterialDocumentFormat
+  scope: MaterialScope
+  projectIds: string[]
+  sectionCount: number
+  updatedAt: string
+}
+
+export interface MaterialDocumentPage {
+  items: MaterialDocumentSummary[]
+  page: number
+  pageSize: number
+  totalItems: number
+  totalPages: number
+}
+
+export interface MaterialDocumentDetail {
+  document: MaterialDocument
+  sections: MaterialDocumentSection[]
+}
+
+export interface MaterialDocumentSectionContent {
+  document: MaterialDocument
+  section: MaterialDocumentSection
+  content: string
+}
+
+export interface MaterialDocumentSearchResult {
+  documentId: string
+  sectionId: string
+  documentTitle: string
+  sectionTitle: string
+  snippet: string
+  score: number
+}
+
+export interface WebMaterialPreview {
+  title: string
+  sourceName: string
+  sourceUrl: string
+  content: string
+}
+
+export interface MaterialImageAttachment {
+  id: string
+  materialId: string
+  originalName: string
+  mimeType: string
+  size: number
+  relativePath: string
+  createdAt: string
 }
