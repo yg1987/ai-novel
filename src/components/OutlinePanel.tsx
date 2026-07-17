@@ -6,11 +6,10 @@ import { loadChapterExpectedWords, saveChapterExpectedWords, loadSettings } from
 import type { TextareaSelection } from '../services/rewriteUtils'
 import { getTextareaSelection, applyTextareaRewrite } from '../services/rewriteUtils'
 import { type RewriteMode } from '../services/rewriteService'
-import RewriteButtons from './RewriteButtons'
-import RewritePreview from './RewritePreview'
-import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
+import type { ContextMenuAction } from './SelectionContextMenu'
 import ConfirmDialog from './ConfirmDialog'
-import Button from './Button'
+import OutlineSidebar from './outline-panel/OutlineSidebar'
+import OutlineEditor from './outline-panel/OutlineEditor'
 
 interface Props {
   projectId: string
@@ -428,248 +427,98 @@ export default function OutlinePanel({ projectId }: Props) {
 
   return (
     <div className="panel-layout">
-      <div className="panel-sidebar">
-        <div className="panel-sidebar-header">
-          <h3>大纲</h3>
-          <Button variant="primary" size="xs" onClick={handleCreateVolume} title="添加分卷">+</Button>
-        </div>
-        <div className="panel-list">
-          {/* 总纲 */}
-          <div
-            className={`panel-item${activeFile === 'outline.md' ? ' active' : ''}`}
-            onClick={() => openFile('outline.md', 'outline')}
-          >
-            📋 总纲
-          </div>
+      <OutlineSidebar
+        volumes={volumes}
+        chapters={chapters}
+        activeFile={activeFile}
+        onOpen={openFile}
+        onCreateVolume={handleCreateVolume}
+        onCreateChapter={handleCreateChapter}
+        onDeleteVolume={(name, label) => setDeleteTarget({ name, label, type: 'volume' })}
+        onDeleteChapter={(name, label) => setDeleteTarget({ name, label, type: 'chapter' })}
+      />
 
-          {/* 分卷 + 归属的章节细纲 */}
-          {volumes.map((v) => {
-            const volLabel = v.replace(/\.md$/, '')
-            const volChapters = chaptersByVolume(volLabel)
-            const isVolActive = activeFile === v
-            return (
-              <div key={v}>
-                <div className={`panel-item${isVolActive ? ' active' : ''}`}>
-                  <div className="panel-item-main" onClick={() => openFile(v, 'volume')}>
-                    📖 {volLabel}
-                  </div>
-                  <div style={{ display: 'flex', gap: 2 }}>
-                    <Button variant="ghost" size="xs"
-                      className="panel-item-add"
-                      onClick={(e) => { e.stopPropagation(); handleCreateChapter(volLabel) }}
-                      title="添加章节细纲"
-                    >+</Button>
-                    <Button variant="danger" size="xs"
-                      className="panel-item-add"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setDeleteTarget({ name: v, label: volLabel, type: 'volume' })
-                      }}
-                      title="删除分卷"
-                    >✕</Button>
-                  </div>
-                </div>
-                {volChapters.map((c) => (
-                  <div key={c.filename} className="panel-sub-item-row">
-                    <div
-                      className={`panel-sub-item${activeFile === c.filename ? ' active' : ''}`}
-                      onClick={() => openFile(c.filename, 'chapter')}
-                    >
-                      📝 {c.label}
-                    </div>
-                    <Button variant="danger" size="xs"
-                      className="panel-item-add"
-                      onClick={() => setDeleteTarget({ name: c.filename, label: c.label, type: 'chapter' })}
-                      title="删除章节细纲"
-                    >✕</Button>
-                  </div>
-                ))}
-              </div>
-            )
-          })}
+      <OutlineEditor
+        activeFile={activeFile}
+        activeType={activeType}
+        content={content}
+        editing={editing}
+        dirty={dirty}
+        generatingAi={generatingAi}
+        aiError={aiError}
+        showPrompt={showPrompt}
+        editingPrompt={editingPrompt}
+        savingPrompt={savingPrompt}
+        showExample={showExample}
+        expectedWords={expectedWords}
+        activeChapterId={activeChapterId}
+        example={EXAMPLES[activeType] ?? '暂无示例'}
+        textareaRef={rewriteTextareaRef}
+        onContentChange={(next) => { setContent(next); setDirty(true) }}
+        onEdit={() => { setEditing(true) }}
+        onSave={() => { void saveFile() }}
+        onAIGenerate={() => { void handleAIGenerate() }}
+        onTogglePrompt={() => {
+          if (!showPrompt && !editingPrompt.trim()) {
+            setEditingPrompt(getActiveDefaultPrompt())
+          }
+          setShowPrompt(!showPrompt)
+        }}
+        onPromptChange={setEditingPrompt}
+        onResetPrompt={() => {
+          setSavingPrompt(true)
+          resetPrompt(projectId, promptKey)
+            .then(() => {
+              setEditingPrompt('')
+              setShowPrompt(false)
+            })
+            .finally(() => setSavingPrompt(false))
+        }}
+        onSavePrompt={() => {
+          setSavingPrompt(true)
+          savePrompt(projectId, promptKey, editingPrompt)
+            .finally(() => setSavingPrompt(false))
+        }}
+        onToggleExample={() => { setShowExample(!showExample) }}
+        onExpectedWordsChange={(value) => {
+          setExpectedWords(value)
+          if (expectedWordsTimer.current) clearTimeout(expectedWordsTimer.current)
+          expectedWordsTimer.current = setTimeout(() => {
+            if (activeChapterId && value != null) {
+              void persistExpectedWords(activeChapterId, value)
+            }
+          }, 800)
+        }}
+        onExpectedWordsCommit={(value) => {
+          if (expectedWordsTimer.current) clearTimeout(expectedWordsTimer.current)
+          if (activeChapterId) void persistExpectedWords(activeChapterId, value)
+        }}
+        onSelectionCheck={checkSelection}
+        onSelectionContextMenu={(e) => {
+          const ta = e.currentTarget
+          if (ta.selectionStart !== ta.selectionEnd) {
+            e.preventDefault()
+            setContextMenu({ x: e.clientX, y: e.clientY })
+          }
+        }}
+        rewriteState={rewriteState}
+        hasSelection={hasSelection}
+        onRewrite={handleRewriteMode}
+        onRewriteAccept={handleRewriteAccept}
+        onRewriteReject={() => setRewriteState(null)}
+        contextMenu={contextMenu}
+        onContextMenuClose={() => setContextMenu(null)}
+        menuItems={menuItems}
+      />
 
-          {volumes.length === 0 && <p className="panel-empty">暂无分卷，点击 + 添加</p>}
-        </div>
-
-        {deleteTarget && (
-          <ConfirmDialog
-            title={deleteTarget.type === 'volume' ? '删除分卷' : '删除章节细纲'}
-            message={`确定删除「${deleteTarget.label}」？${deleteTarget.type === 'volume' ? '\n该分卷下的所有章节细纲也将被删除。' : ''}\n此操作不可恢复。`}
-            confirmText="删除"
-            danger
-            onConfirm={confirmDelete}
-            onCancel={() => { setDeleteTarget(null) }}
-          />
-        )}
-      </div>
-
-      <div className="panel-editor">
-        {activeFile ? (
-          <>
-            <div className="panel-editor-header">
-              <h3>{activeLabel()}</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {dirty && <span style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>未保存</span>}
-                {editing && (
-                  <>
-                    <Button variant="text" size="sm" onClick={() => { void handleAIGenerate() }} disabled={generatingAi} loading={generatingAi}>
-                      {generatingAi ? '生成中…' : '✨ AI 辅助'}
-                    </Button>
-                    <RewriteButtons
-                      enabled={hasSelection}
-                      loading={rewriteState !== null}
-                      onRewrite={() => handleRewriteMode('rewrite')}
-                      onExpand={() => handleRewriteMode('expand')}
-                      onPolish={() => handleRewriteMode('polish')}
-                    />
-                    <Button variant="text" size="sm" onClick={() => { setShowExample(!showExample) }}>
-                      {showExample ? '收起示例' : '📖 看示例'}
-                    </Button>
-                    <Button variant="text" size="sm" onClick={() => {
-                      if (!showPrompt && !editingPrompt.trim()) {
-                        setEditingPrompt(getActiveDefaultPrompt())
-                      }
-                      setShowPrompt(!showPrompt)
-                    }}>
-                      {showPrompt ? '关闭提示词' : '✎ 提示词'}
-                    </Button>
-                  </>
-                )}
-                {editing ? (
-                  <Button variant="primary" size="md" onClick={() => { void saveFile() }}>保存</Button>
-                ) : (
-                  <Button variant="secondary" size="md" onClick={() => { setEditing(true) }}>编辑</Button>
-                )}
-              </div>
-            </div>
-
-            {showPrompt && editing && (
-              <div className="prompt-editor">
-                <div className="prompt-editor-header">
-                  <span>提示词（AI 辅助使用，修改后自动保存到本项目）</span>
-                  <Button variant="text" size="sm" onClick={async () => {
-                    setSavingPrompt(true)
-                    await resetPrompt(projectId, promptKey)
-                    setEditingPrompt('')
-                    setShowPrompt(false)
-                    setSavingPrompt(false)
-                  }}>恢复默认</Button>
-                </div>
-                <textarea
-                  className="prompt-editor-textarea"
-                  value={editingPrompt}
-                  onChange={(e) => { setEditingPrompt(e.target.value) }}
-                  placeholder="在此编写自定义提示词…"
-                />
-                <div className="prompt-editor-footer">
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    {editingPrompt.trim() ? '已保存自定义提示词' : '修改后点保存，AI 将使用你的提示词'}
-                  </span>
-                  <Button variant="primary" size="sm" disabled={savingPrompt} onClick={async () => {
-                    setSavingPrompt(true)
-                    await savePrompt(projectId, promptKey, editingPrompt)
-                    setSavingPrompt(false)
-                  }}>{savingPrompt ? '保存中…' : '保存提示词'}</Button>
-                </div>
-              </div>
-            )}
-
-            {aiError && (
-              <div style={{ padding: '8px 24px', fontSize: '0.85rem', color: 'var(--danger)', background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                AI 生成失败：{aiError}
-              </div>
-            )}
-
-            {showExample && editing && (
-              <div className="sub-field-example" style={{ margin: '8px 24px' }}>
-                <pre>{EXAMPLES[activeType] ?? '暂无示例'}</pre>
-              </div>
-            )}
-
-            {/* Expected words — chapter outline only */}
-            {editing && activeType === 'chapter' && activeChapterId && (
-              <div style={{ padding: '8px 24px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--border)', background: 'var(--bg-card)' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>预计字数:</span>
-                <input
-                  type="number"
-                  className="notes-input"
-                  style={{ width: 100 }}
-                  value={expectedWords ?? ''}
-                  placeholder="4000"
-                  min={500}
-                  max={50000}
-                  step={100}
-                  onChange={(e) => {
-                    const v = e.target.value ? Math.max(500, parseInt(e.target.value, 10) || 500) : null
-                    setExpectedWords(v ? v : null)
-                    if (expectedWordsTimer.current) clearTimeout(expectedWordsTimer.current)
-                    expectedWordsTimer.current = setTimeout(() => {
-                      if (v != null) {
-                        void persistExpectedWords(activeChapterId, v)
-                      }
-                    }, 800)
-                  }}
-                  onBlur={() => {
-                    if (expectedWordsTimer.current) clearTimeout(expectedWordsTimer.current)
-                    if (expectedWords != null) {
-                      void persistExpectedWords(activeChapterId, expectedWords)
-                    }
-                  }}
-                />
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>字</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: 8 }}>
-                  💡 AI 生成时将使用此预计字数目标
-                </span>
-              </div>
-            )}
-
-            {editing ? (
-              <textarea
-                ref={rewriteTextareaRef}
-                className="panel-textarea"
-                value={content}
-                onChange={(e) => { setContent(e.target.value); setDirty(true) }}
-                onMouseUp={checkSelection}
-                onKeyUp={checkSelection}
-                onContextMenu={(e) => {
-                  const ta = e.currentTarget as HTMLTextAreaElement
-                  if (ta.selectionStart !== ta.selectionEnd) {
-                    e.preventDefault()
-                    setContextMenu({ x: e.clientX, y: e.clientY })
-                  }
-                }}
-                placeholder={
-                  activeType === 'outline' ? '撰写全书总纲…' :
-                  activeType === 'volume' ? '撰写本卷大纲…' :
-                  '撰写章节细纲，3-5 个情节点…'
-                }
-              />
-            ) : (
-              <div className="panel-preview">{content || '暂无内容'}</div>
-            )}
-          </>
-        ) : (
-          <div className="panel-placeholder">选择或创建大纲</div>
-        )}
-      </div>
-
-      {rewriteState && (
-        <RewritePreview
-          selectedText={rewriteState.selectedText}
-          beforeText={rewriteState.beforeText}
-          afterText={rewriteState.afterText}
-          defaultMode={rewriteState.mode}
-          onAccept={handleRewriteAccept}
-          onReject={() => setRewriteState(null)}
-        />
-      )}
-
-      {contextMenu && (
-        <SelectionContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          items={menuItems}
-          onClose={() => setContextMenu(null)}
+      {deleteTarget && (
+        <ConfirmDialog
+          title={deleteTarget.type === 'volume' ? '删除分卷' : '删除章节细纲'}
+          message={`确定删除「${deleteTarget.label}」？${deleteTarget.type === 'volume' ? '\n该分卷下的所有章节细纲也将被删除。' : ''}\n此操作不可恢复。`}
+          confirmText="删除"
+          danger
+          onConfirm={confirmDelete}
+          onCancel={() => { setDeleteTarget(null) }}
         />
       )}
     </div>

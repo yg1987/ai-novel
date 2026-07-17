@@ -5,7 +5,7 @@ import { loadAllNotes } from './notesStorage'
 import { calcForeshadowHealth, calcForeshadowDensity, getHealthLabel } from './foreshadowHealth'
 import type { ChapterMeta } from '../types/chapter'
 import { DEFAULT_FORESHADOW_CONFIG } from '../types/novel'
-import { loadChapterReviews } from './reviewService'
+import { loadChapterReviews } from './reviewReportStorage'
 
 /**
  * Pure-function wrapper around stats Tauri commands.

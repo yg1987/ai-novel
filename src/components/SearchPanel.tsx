@@ -6,6 +6,7 @@ import Pagination from './Pagination'
 import Button from './Button'
 import { usePagination } from '../hooks/usePagination'
 import HighlightText from './HighlightText'
+import './SearchPanel.css'
 
 interface Props {
   projectId: string

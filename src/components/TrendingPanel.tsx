@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { getTrendingByGenre, getAllGenres, getTopTrending, type TrendingCategory } from '../services/trendingService'
+import './TrendingPanel.css'
 
 export default function TrendingPanel() {
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null)

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { rewriteText, stopRewrite, type RewriteMode } from '../services/rewriteService'
 import Button from './Button'
+import './RewritePreview.css'
 
 interface Props {
   selectedText: string

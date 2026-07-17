@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { exportAsPlainText, exportAsMarkdown, exportAsEpub, type ExportFormat, type ExportProgress } from '../services/exportService'
 import { loadAllNotes } from '../services/notesStorage'
 import Button from './Button'
+import './ExportDialog.css'
 
 interface Props {
   projectId: string

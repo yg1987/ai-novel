@@ -1,15 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, type KeyboardEvent, type MouseEvent } from 'react'
 import { readProjectFile, writeProjectFile, loadProviderConfig } from '../api/tauri'
 import { buildAIContext } from '../services/aiContext'
 import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
 import type { TextareaSelection } from '../services/rewriteUtils'
 import { getTextareaSelection, applyTextareaRewrite } from '../services/rewriteUtils'
 import { type RewriteMode } from '../services/rewriteService'
-import RewriteButtons from './RewriteButtons'
-import RewritePreview from './RewritePreview'
-import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
-import ConfirmDialog from './ConfirmDialog'
-import Button from './Button'
+import type { ContextMenuAction } from './SelectionContextMenu'
 import {
   type SectionDef,
   type SubField,
@@ -17,72 +13,20 @@ import {
   loadSectionsGenre,
   saveSections,
   getDefaultSections,
-  getExample,
 } from '../services/worldviewConfig'
+import WorldviewBanner from './worldview-panel/WorldviewBanner'
+import WorldviewSidebar from './worldview-panel/WorldviewSidebar'
+import WorldviewEditor from './worldview-panel/WorldviewEditor'
+import WorldviewDialogs from './worldview-panel/WorldviewDialogs'
+import {
+  buildWorldviewContent,
+  getWorldviewDefaultPrompt,
+  parseWorldviewSubs,
+} from './worldview-panel/worldviewMarkdown'
 
 interface Props {
   projectId: string
 }
-
-// ─── Markdown helpers ───────────────────────────────────
-
-/** Parse ## 小节 heading + content from Markdown */
-function parseSubs(content: string, definedKeys: string[]): Record<string, string> {
-  const result: Record<string, string> = {}
-  let currentKey = ''
-  const lines: string[] = []
-
-  for (const line of content.split('\n')) {
-    const m = line.match(/^##\s+(.+)/)
-    if (m) {
-      if (currentKey) result[currentKey] = lines.join('\n').trim()
-      currentKey = m[1]!.trim()
-      lines.length = 0
-    } else if (!line.startsWith('# ')) {
-      lines.push(line)
-    }
-  }
-  if (currentKey) result[currentKey] = lines.join('\n').trim()
-
-  // Ensure all defined keys exist (even if empty)
-  for (const k of definedKeys) {
-    if (!(k in result)) result[k] = ''
-  }
-
-  return result
-}
-
-/** Build Markdown from section title and sub-field values */
-function buildContent(title: string, subs: Record<string, string>): string {
-  const parts = [`# ${title}`]
-  for (const [key, text] of Object.entries(subs)) {
-    parts.push('', `## ${key}`, '')
-    if (text.trim()) {
-      parts.push(text.trim())
-    }
-  }
-  return parts.join('\n')
-}
-
-// ─── Default prompt builder ────────────────────────────
-
-function getDefaultPrompt(section: SectionDef, hasSubs: boolean): string {
-  if (hasSubs) {
-    return `你是一个网文世界观设定助手。根据以下项目信息，为这部小说生成「${section.label}」的设定。
-
-请严格按以下各部分输出，使用 ## 作为小标题：
-
-${section.subs.map(s => `## ${s.label}\n（要求：${s.hint}）`).join('\n\n')}
-
-要求：
-- 每部分控制在 200 字以内
-- 内容要符合小说类型
-- 直接输出小标题+内容，不要加额外说明`
-  }
-  return `你是一个网文世界观设定助手。根据以下项目信息，为这部小说生成「${section.label}」的内容。直接输出内容，控制在 300 字以内，不要加额外说明。`
-}
-
-// ─── Component ──────────────────────────────────────────
 
 export default function WorldviewPanel({ projectId }: Props) {
   const [sections, setSections] = useState<SectionDef[]>([])
@@ -99,93 +43,86 @@ export default function WorldviewPanel({ projectId }: Props) {
   const [hasSelection, setHasSelection] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
 
-  // Section editor state
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null)
   const [editingSectionLabel, setEditingSectionLabel] = useState('')
   const [showAddSection, setShowAddSection] = useState(false)
   const [newSectionName, setNewSectionName] = useState('')
 
-  // Sub-field editor state
   const [editingSubKey, setEditingSubKey] = useState<string | null>(null)
   const [editingSubLabel, setEditingSubLabel] = useState('')
   const [newSubFieldName, setNewSubFieldName] = useState('')
   const [addingSubToKey, setAddingSubToKey] = useState<string | null>(null)
 
-  // Reset confirm
   const [showResetConfirm, setShowResetConfirm] = useState(false)
-
-  // Delete confirm
   const [deletingSectionId, setDeletingSectionId] = useState<string | null>(null)
   const [genre, setGenre] = useState<string>('玄幻')
-
-  // Genre mismatch detection — project genre changed after worldview was initialized
   const [savedGenre, setSavedGenre] = useState<string | null>(null)
   const [genreMismatchDismissed, setGenreMismatchDismissed] = useState(false)
-  const genreMismatch = savedGenre !== null && savedGenre !== genre && !genreMismatchDismissed
-
   const [configLoaded, setConfigLoaded] = useState(false)
+  const [generatingAi, setGeneratingAi] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+
   const rewriteTextareaRef = useRef<HTMLTextAreaElement>(null)
-  const checkSelection = useCallback((e: React.MouseEvent | React.KeyboardEvent) => {
-    const ta = e.currentTarget as HTMLTextAreaElement
+  const subFieldEndRef = useRef<HTMLDivElement>(null)
+  const sectionsRef = useRef(sections)
+  sectionsRef.current = sections
+
+  const genreMismatch = savedGenre !== null && savedGenre !== genre && !genreMismatchDismissed
+  const promptKey = activeSection ? `worldview_${activeSection.key}` : ''
+  const hasSubs = activeSection ? activeSection.subs.length > 0 : false
+  const isFreeform = !hasSubs
+
+  const checkSelection = useCallback((event: MouseEvent<HTMLTextAreaElement> | KeyboardEvent<HTMLTextAreaElement>) => {
+    const ta = event.currentTarget
     setHasSelection(ta.selectionStart !== ta.selectionEnd)
   }, [])
 
-  const subFieldEndRef = useRef<HTMLDivElement>(null)
+  const handleSelectionContextMenu = useCallback((event: MouseEvent<HTMLTextAreaElement>) => {
+    const ta = event.currentTarget
+    if (ta.selectionStart !== ta.selectionEnd) {
+      event.preventDefault()
+      setContextMenu({ x: event.clientX, y: event.clientY })
+    }
+  }, [])
 
   const scrollToNewSubField = useCallback(() => {
-    // Wait for DOM update then scroll the new field into view
     requestAnimationFrame(() => {
       subFieldEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     })
   }, [])
 
-  // ─── Load sections on mount ─────────────────────────
-
   useEffect(() => {
     const init = async () => {
-      // Read project genre
-      let g = '玄幻'
+      let projectGenre = '玄幻'
       try {
         const metaRaw = await readProjectFile(projectId, '', 'project.json')
         const meta = JSON.parse(metaRaw) as { genre?: string }
-        if (meta.genre) g = meta.genre
-      } catch { /* ignore */ }
-      setGenre(g)
-
-      // Load sections from config, or init with genre defaults
-      let secs = await loadSections(projectId)
-      if (!secs || secs.length === 0) {
-        secs = getDefaultSections(g)
-        await saveSections(projectId, secs, g)
+        if (meta.genre) projectGenre = meta.genre
+      } catch {
+        // Project metadata is optional for older projects.
       }
-      setSections(secs)
+      setGenre(projectGenre)
 
-      // Detect genre mismatch
-      const storedGenre = await loadSectionsGenre(projectId)
-      setSavedGenre(storedGenre)
+      let loadedSections = await loadSections(projectId)
+      if (!loadedSections || loadedSections.length === 0) {
+        loadedSections = getDefaultSections(projectGenre)
+        await saveSections(projectId, loadedSections, projectGenre)
+      }
+      setSections(loadedSections)
+      setSavedGenre(await loadSectionsGenre(projectId))
 
-      if (secs.length > 0) {
-        setActiveSection(secs[0]!)
+      if (loadedSections.length > 0) {
+        setActiveSection(loadedSections[0]!)
       }
       setConfigLoaded(true)
     }
     void init()
   }, [projectId])
 
-  // ─── Autosave sections when they change ─────────────
-
-  const sectionsRef = useRef(sections)
-  sectionsRef.current = sections
-
   useEffect(() => {
     if (!configLoaded) return
-    // Debounce: only save if sections actually changed from last save
     saveSections(projectId, sectionsRef.current).catch(console.error)
   }, [sections, configLoaded, projectId])
-
-  const promptKey = activeSection ? `worldview_${activeSection.key}` : ''
-  const hasSubs = activeSection ? activeSection.subs.length > 0 : false
-  const isFreeform = !hasSubs
 
   useEffect(() => {
     if (!activeSection) return
@@ -198,21 +135,18 @@ export default function WorldviewPanel({ projectId }: Props) {
   useEffect(() => {
     if (!activeSection) return
     readProjectFile(projectId, 'worldview', activeSection.file)
-      .then((c) => {
-        setContent(c)
-        setSubValues(parseSubs(c, activeSection.subs.map(s => s.key)))
+      .then((nextContent) => {
+        setContent(nextContent)
+        setSubValues(parseWorldviewSubs(nextContent, activeSection.subs.map((s) => s.key)))
         setDirty(false)
       })
       .catch(console.error)
   }, [projectId, activeSection])
 
-  // ─── Save / edit ────────────────────────────────────
-
   const handleSave = async () => {
     if (!activeSection) return
     if (hasSubs) {
-      const md = buildContent(activeSection.label, subValues)
-      await writeProjectFile(projectId, 'worldview', activeSection.file, md)
+      await writeProjectFile(projectId, 'worldview', activeSection.file, buildWorldviewContent(activeSection.label, subValues))
     } else {
       await writeProjectFile(projectId, 'worldview', activeSection.file, content)
     }
@@ -222,34 +156,45 @@ export default function WorldviewPanel({ projectId }: Props) {
 
   const handleStartEdit = () => {
     if (!activeSection) return
-    setSubValues(parseSubs(content, activeSection.subs.map(s => s.key)))
+    setSubValues(parseWorldviewSubs(content, activeSection.subs.map((s) => s.key)))
     setEditing(true)
   }
 
   const updateSubField = (key: string, value: string) => {
-    setSubValues(prev => ({ ...prev, [key]: value }))
+    setSubValues((prev) => ({ ...prev, [key]: value }))
     setDirty(true)
   }
 
-  // ─── Section management ─────────────────────────────
+  const handleSelectSection = (section: SectionDef) => {
+    setActiveSection(section)
+    setEditing(false)
+  }
 
-  const handleRenameSection = (sectionId: string, newLabel: string) => {
-    if (!newLabel.trim()) return
-    setSections(prev => prev.map(s =>
-      s.key === sectionId ? { ...s, label: newLabel.trim() } : s
+  const handleStartRenameSection = (section: SectionDef) => {
+    setEditingSectionId(section.key)
+    setEditingSectionLabel(section.label)
+  }
+
+  const handleRenameSection = (sectionId: string) => {
+    const newLabel = editingSectionLabel.trim()
+    if (!newLabel) return
+    setSections((prev) => prev.map((section) => (
+      section.key === sectionId ? { ...section, label: newLabel } : section
+    )))
+    setActiveSection((prev) => (
+      prev?.key === sectionId ? { ...prev, label: newLabel } : prev
     ))
     setEditingSectionId(null)
   }
 
   const handleDeleteSection = (sectionId: string) => {
-    const section = sections.find(s => s.key === sectionId)
+    const section = sections.find((item) => item.key === sectionId)
     if (!section) return
-    // Delete the .md file as well
     writeProjectFile(projectId, 'worldview', section.file, '')
       .then(() => {
-        setSections(prev => {
-          const next = prev.filter(s => s.key !== sectionId)
-          if (next.length === 0) return prev // don't allow empty
+        setSections((prev) => {
+          const next = prev.filter((item) => item.key !== sectionId)
+          if (next.length === 0) return prev
           if (activeSection?.key === sectionId) setActiveSection(next[0]!)
           return next
         })
@@ -258,48 +203,49 @@ export default function WorldviewPanel({ projectId }: Props) {
     setDeletingSectionId(null)
   }
 
+  const handleToggleAddSection = (show: boolean) => {
+    setShowAddSection(show)
+    if (!show) setNewSectionName('')
+  }
+
   const handleAddSection = () => {
     const name = newSectionName.trim()
     if (!name) return
     const id = `custom_${Date.now()}`
-    const file = `${id}.md`
-    const newSec: SectionDef = {
+    const newSection: SectionDef = {
       key: id,
       label: name,
-      file,
+      file: `${id}.md`,
       hint: `填写${name}的相关设定`,
       subs: [],
     }
-    setSections(prev => [...prev, newSec])
-    setActiveSection(newSec)
+    setSections((prev) => [...prev, newSection])
+    setActiveSection(newSection)
     setEditing(false)
     setShowAddSection(false)
     setNewSectionName('')
   }
 
-  // ─── Sub-field management ───────────────────────────
-
-  const handleRenameSubField = (sectionKey: string, oldSubKey: string, newLabel: string) => {
-    if (!newLabel.trim()) return
-    const newKey = newLabel.trim()
-    const updatedSections = sections.map(s => {
-      if (s.key !== sectionKey) return s
+  const handleRenameSubField = (sectionKey: string, oldSubKey: string) => {
+    const newLabel = editingSubLabel.trim()
+    if (!newLabel) return
+    const newKey = newLabel
+    const updatedSections = sections.map((section) => {
+      if (section.key !== sectionKey) return section
       return {
-        ...s,
-        subs: s.subs.map(sub =>
-          sub.key === oldSubKey
-            ? { ...sub, key: newKey, label: newLabel.trim() }
-            : sub
-        ),
+        ...section,
+        subs: section.subs.map((sub) => (
+          sub.key === oldSubKey ? { ...sub, key: newKey, label: newLabel } : sub
+        )),
       }
     })
     setSections(updatedSections)
     if (activeSection?.key === sectionKey) {
-      const updated = updatedSections.find(s => s.key === sectionKey)
+      const updated = updatedSections.find((section) => section.key === sectionKey)
       if (updated) setActiveSection(updated)
     }
     if (oldSubKey !== newKey) {
-      setSubValues(prev => {
+      setSubValues((prev) => {
         const next = { ...prev }
         if (oldSubKey in next) {
           next[newKey] = next[oldSubKey]!
@@ -312,16 +258,16 @@ export default function WorldviewPanel({ projectId }: Props) {
   }
 
   const handleDeleteSubField = (sectionKey: string, subKey: string) => {
-    const updatedSections = sections.map(s => {
-      if (s.key !== sectionKey) return s
-      return { ...s, subs: s.subs.filter(sub => sub.key !== subKey) }
+    const updatedSections = sections.map((section) => {
+      if (section.key !== sectionKey) return section
+      return { ...section, subs: section.subs.filter((sub) => sub.key !== subKey) }
     })
     setSections(updatedSections)
     if (activeSection?.key === sectionKey) {
-      const updated = updatedSections.find(s => s.key === sectionKey)
+      const updated = updatedSections.find((section) => section.key === sectionKey)
       if (updated) setActiveSection(updated)
     }
-    setSubValues(prev => {
+    setSubValues((prev) => {
       const next = { ...prev }
       delete next[subKey]
       return next
@@ -336,47 +282,43 @@ export default function WorldviewPanel({ projectId }: Props) {
       label: name,
       hint: `填写${name}的相关内容`,
     }
-    const wasFreeform = sections.find(s => s.key === sectionKey)?.subs.length === 0
-    const updatedSections = sections.map(s => {
-      if (s.key !== sectionKey) return s
-      return { ...s, subs: [...s.subs, newSub] }
+    const wasFreeform = sections.find((section) => section.key === sectionKey)?.subs.length === 0
+    const updatedSections = sections.map((section) => {
+      if (section.key !== sectionKey) return section
+      return { ...section, subs: [...section.subs, newSub] }
     })
     setSections(updatedSections)
     if (activeSection?.key === sectionKey) {
-      const updated = updatedSections.find(s => s.key === sectionKey)
+      const updated = updatedSections.find((section) => section.key === sectionKey)
       if (updated) setActiveSection(updated)
     }
-    // If converting from freeform, move current content into the new sub-field
     if (wasFreeform && content.trim()) {
-      setSubValues(prev => ({ ...prev, [name]: content }))
+      setSubValues((prev) => ({ ...prev, [name]: content }))
       setContent('')
     } else {
-      setSubValues(prev => ({ ...prev, [name]: '' }))
+      setSubValues((prev) => ({ ...prev, [name]: '' }))
     }
     setNewSubFieldName('')
     setAddingSubToKey(null)
     scrollToNewSubField()
   }
 
-  // ─── Reset to genre defaults ────────────────────────
+  const handleCancelAddSubField = () => {
+    setAddingSubToKey(null)
+    setNewSubFieldName('')
+  }
 
   const handleResetToDefaults = () => {
     const defaults = getDefaultSections(genre)
     setSections(defaults)
     setSavedGenre(genre)
     setGenreMismatchDismissed(false)
-    // Save immediately with correct genre, so autosave effect won't read stale genre from disk
-    saveSections(projectId, defaults, genre)
+    saveSections(projectId, defaults, genre).catch(console.error)
     if (defaults.length > 0) setActiveSection(defaults[0]!)
     setEditing(false)
     setDirty(false)
     setShowResetConfirm(false)
   }
-
-  // ─── AI generation ───────────────────────────────────
-
-  const [generatingAi, setGeneratingAi] = useState(false)
-  const [aiError, setAiError] = useState<string | null>(null)
 
   const generateWithAI = async () => {
     if (!activeSection) return
@@ -384,24 +326,19 @@ export default function WorldviewPanel({ projectId }: Props) {
     setAiError(null)
     try {
       const config = await loadProviderConfig()
-      const provider = config.providers.find(p => p.name === config.active_profile)
-      if (!provider) { throw new Error('未配置 AI Provider') }
-      if (!provider.models.analysis) { throw new Error('未配置分析模型，请在 AI 配置中设置') }
+      const provider = config.providers.find((item) => item.name === config.active_profile)
+      if (!provider) throw new Error('未配置 AI Provider')
+      if (!provider.models.analysis) throw new Error('未配置分析模型，请在 AI 配置中设置')
 
-      // Read project info for context
-      let context = await buildAIContext(projectId)
-
+      const context = await buildAIContext(projectId)
       const base = provider.base_url.replace(/\/+$/, '')
-      const headers = {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${provider.api_key}`,
-      }
-
-      const systemPrompt = editingPrompt.trim() || getDefaultPrompt(activeSection, hasSubs)
-
+      const systemPrompt = editingPrompt.trim() || getWorldviewDefaultPrompt(activeSection, hasSubs)
       const res = await fetch(`${base}/chat/completions`, {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${provider.api_key}`,
+        },
         body: JSON.stringify({
           model: provider.models.analysis,
           messages: [
@@ -411,14 +348,14 @@ export default function WorldviewPanel({ projectId }: Props) {
           temperature: 0.8,
           max_tokens: 2048,
         }),
-        })
-        if (!res.ok) throw new Error(`API ${res.status}`)
-        const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-        const raw = data.choices?.[0]?.message?.content ?? ''
+      })
+      if (!res.ok) throw new Error(`API ${res.status}`)
+      const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+      const raw = data.choices?.[0]?.message?.content ?? ''
 
       if (hasSubs) {
-        const parsed = parseSubs(raw, activeSection.subs.map(s => s.key))
-        setSubValues(prev => {
+        const parsed = parseWorldviewSubs(raw, activeSection.subs.map((s) => s.key))
+        setSubValues((prev) => {
           const merged = { ...prev }
           let changed = false
           for (const [key, val] of Object.entries(parsed)) {
@@ -439,34 +376,50 @@ export default function WorldviewPanel({ projectId }: Props) {
         setContent(raw.trim())
         setDirty(true)
       }
-    } catch (e) {
-      setAiError(e instanceof Error ? e.message : String(e))
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : String(error))
     } finally {
       setGeneratingAi(false)
     }
   }
 
-  const previewContent = activeSection && hasSubs
-    ? buildContent(activeSection.label, subValues)
-    : content
+  const handleTogglePrompt = () => {
+    if (!activeSection) return
+    if (!showPrompt && !editingPrompt.trim()) {
+      setEditingPrompt(getWorldviewDefaultPrompt(activeSection, hasSubs))
+    }
+    setShowPrompt(!showPrompt)
+  }
 
-  // ─── Rewrite handlers ──────────────────────────
+  const handleResetPrompt = async () => {
+    setSavingPrompt(true)
+    await resetPrompt(projectId, promptKey)
+    setEditingPrompt('')
+    setShowPrompt(false)
+    setSavingPrompt(false)
+  }
+
+  const handleSavePrompt = async () => {
+    setSavingPrompt(true)
+    await savePrompt(projectId, promptKey, editingPrompt)
+    setSavingPrompt(false)
+  }
 
   const handleRewriteMode = (mode: RewriteMode) => {
     if (!activeSection) return
     if (isFreeform) {
-      const sel = getTextareaSelection(rewriteTextareaRef.current, content)
-      if (!sel) return
-      setRewriteState({ ...sel, mode })
+      const selection = getTextareaSelection(rewriteTextareaRef.current, content)
+      if (!selection) return
+      setRewriteState({ ...selection, mode })
       return
     }
     const textarea = document.activeElement as HTMLTextAreaElement | null
     const key = textarea?.dataset?.subkey
     if (!key || !textarea) return
     const fullContent = subValues[key] ?? ''
-    const sel = getTextareaSelection(textarea, fullContent)
-    if (!sel) return
-    setRewriteState({ ...sel, mode, subKey: key })
+    const selection = getTextareaSelection(textarea, fullContent)
+    if (!selection) return
+    setRewriteState({ ...selection, mode, subKey: key })
   }
 
   const handleRewriteAccept = (newText: string) => {
@@ -483,13 +436,15 @@ export default function WorldviewPanel({ projectId }: Props) {
     setRewriteState(null)
   }
 
+  const previewContent = activeSection && hasSubs
+    ? buildWorldviewContent(activeSection.label, subValues)
+    : content
+
   const menuItems: ContextMenuAction[] = contextMenu ? [
     { label: '✏️ AI 改写', onClick: () => handleRewriteMode('rewrite') },
     { label: '📝 AI 扩写', onClick: () => handleRewriteMode('expand') },
     { label: '✨ AI 润色', onClick: () => handleRewriteMode('polish') },
   ] : []
-
-  // ─── Render ──────────────────────────────────────────
 
   if (!configLoaded || !activeSection) {
     return <div className="panel-layout"><div className="panel-placeholder" style={{ height: 300 }}>加载中…</div></div>
@@ -497,372 +452,100 @@ export default function WorldviewPanel({ projectId }: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-      {/* Genre mismatch banner — top of worldview tab */}
-      {genreMismatch && (
-        <div style={{
-          padding: '8px 16px',
-          background: 'var(--bg-sidebar)',
-          borderBottom: '1px solid var(--border)',
-          fontSize: '0.82rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          flexShrink: 0,
-        }}>
-          <span style={{ flex: 1 }}>
-            项目类型已改为「{genre}」，世界观栏目还是「{savedGenre}」的默认预设。
-          </span>
-          <Button variant="text" size="sm" onClick={() => { setShowResetConfirm(true) }}>重置</Button>
-          <Button variant="text" size="sm" style={{ color: 'var(--text-muted)' }} onClick={() => { setGenreMismatchDismissed(true) }}>忽略</Button>
-        </div>
-      )}
-
-      {/* Inner flex row: sidebar + editor, flex:1 fills remaining height */}
+      <WorldviewBanner
+        genreMismatch={genreMismatch}
+        genre={genre}
+        savedGenre={savedGenre}
+        onReset={() => setShowResetConfirm(true)}
+        onDismiss={() => setGenreMismatchDismissed(true)}
+      />
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        <div className="panel-sidebar">
-        <div className="panel-sidebar-header">
-          <h3>世界观</h3>
-        </div>
-        <div className="panel-list">
-          {sections.map((s) => (
-            <div key={s.key}>
-              {editingSectionId === s.key ? (
-                <div className="panel-item">
-                  <input
-                    className="notes-input"
-                    style={{ flex: 1, fontSize: '0.82rem' }}
-                    value={editingSectionLabel}
-                    onChange={(e) => setEditingSectionLabel(e.target.value)}
-                    onBlur={() => handleRenameSection(s.key, editingSectionLabel)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleRenameSection(s.key, editingSectionLabel)
-                      if (e.key === 'Escape') setEditingSectionId(null)
-                    }}
-                    autoFocus
-                  />
-                </div>
-              ) : (
-                <div
-                  className={`panel-item${s.key === activeSection.key ? ' active' : ''}`}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => { setActiveSection(s); setEditing(false) }}
-                  onDoubleClick={() => { setEditingSectionId(s.key); setEditingSectionLabel(s.label) }}
-                >
-                  <span style={{ flex: 1 }}>{s.label}</span>
-                  <Button variant="ghost" size="xs" title="删除栏目" onClick={(e) => { e.stopPropagation(); setDeletingSectionId(s.key) }}>✕</Button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-        <div style={{ padding: '8px', borderTop: '1px solid var(--border)' }}>
-          {showAddSection ? (
-            <div style={{ display: 'flex', gap: 4 }}>
-              <input
-                className="notes-input"
-                style={{ flex: 1, fontSize: '0.8rem' }}
-                value={newSectionName}
-                onChange={(e) => setNewSectionName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleAddSection(); if (e.key === 'Escape') { setShowAddSection(false); setNewSectionName('') } }}
-                placeholder="栏目名称…"
-                autoFocus
-              />
-              <Button variant="text" size="sm" onClick={handleAddSection} disabled={!newSectionName.trim()}>✓</Button>
-              <Button variant="text" size="sm" onClick={() => { setShowAddSection(false); setNewSectionName('') }}>✕</Button>
-            </div>
-          ) : (
-            <Button variant="text" size="sm" style={{ width: '100%' }} onClick={() => setShowAddSection(true)}>
-              + 添加栏目
-            </Button>
-          )}
-          <Button variant="text" size="sm" style={{ width: '100%', marginTop: 8, borderTop: '1px solid var(--border)' }} onClick={() => setShowResetConfirm(true)}>
-            重置为品类默认
-          </Button>
-        </div>
-      </div>
-
-      {/* Right: editor */}
-      <div className="panel-editor">
-        <div className="panel-editor-header">
-          <h3>{activeSection.label}</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {dirty && <span style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>未保存</span>}
-            {editing && (
-              <>
-                <Button variant="text" size="sm" onClick={() => { void generateWithAI() }} disabled={generatingAi} loading={generatingAi}>
-                  {generatingAi ? '生成中…' : '✨ AI 辅助'}
-                </Button>
-                <RewriteButtons
-                  enabled={hasSelection}
-                  loading={rewriteState !== null}
-                    onRewrite={() => handleRewriteMode('rewrite')}
-                    onExpand={() => handleRewriteMode('expand')}
-                    onPolish={() => handleRewriteMode('polish')}
-                  />
-                  <Button variant="text" size="sm" onClick={() => {
-                    if (!showPrompt && !editingPrompt.trim()) {
-                      setEditingPrompt(getDefaultPrompt(activeSection, hasSubs))
-                    }
-                    setShowPrompt(!showPrompt)
-                  }}>
-                    {showPrompt ? '关闭提示词' : '✎ 提示词'}
-                  </Button>
-              </>
-            )}
-            {editing ? (
-              <Button variant="primary" size="md" onClick={() => { void handleSave() }}>保存</Button>
-            ) : (
-              <Button variant="secondary" size="md" onClick={handleStartEdit}>编辑</Button>
-            )}
-          </div>
-        </div>
-
-        {showPrompt && editing && (
-          <div className="prompt-editor">
-            <div className="prompt-editor-header">
-              <span>提示词（AI 辅助使用，修改后自动保存到本项目的提示词库，换项目不影响）</span>
-              <Button variant="text" size="sm" onClick={async () => {
-                setSavingPrompt(true)
-                await resetPrompt(projectId, promptKey)
-                setEditingPrompt('')
-                setShowPrompt(false)
-                setSavingPrompt(false)
-              }}>恢复默认</Button>
-            </div>
-            <textarea
-              className="prompt-editor-textarea"
-              value={editingPrompt}
-              onChange={(e) => { setEditingPrompt(e.target.value) }}
-              placeholder="在此编写自定义提示词…"
-            />
-            <div className="prompt-editor-footer">
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                {editingPrompt.trim() ? '已保存自定义提示词' : '修改后点保存，AI 将使用你的提示词'}
-              </span>
-              <Button variant="primary" size="sm" disabled={savingPrompt} onClick={async () => {
-                setSavingPrompt(true)
-                await savePrompt(projectId, promptKey, editingPrompt)
-                setSavingPrompt(false)
-              }}>{savingPrompt ? '保存中…' : '保存提示词'}</Button>
-            </div>
-          </div>
-        )}
-
-        {aiError && (
-          <div style={{ padding: '8px 24px', fontSize: '0.85rem', color: 'var(--danger)', background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-            AI 生成失败：{aiError}
-          </div>
-        )}
-
-          {editing ? (
-          isFreeform ? (
-            <div className="panel-editor-inner">
-              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>
-                💡 {activeSection.hint}
-                <Button variant="text" size="sm" onClick={() => setAddingSubToKey(activeSection.key)}>+ 添加子字段</Button>
-              </p>
-              <div className="sub-field">
-                <div className="sub-field-label-row">
-                  <label className="sub-field-label">{activeSection.label}</label>
-                  {(() => {
-                    const ex = getExample(genre, activeSection.key, '_default')
-                    const showThis = showExample === '__freeform__'
-                    return ex ? (
-                      <Button variant="text" size="sm" onClick={() => { setShowExample(showThis ? null : '__freeform__') }}>
-                        {showThis ? '收起示例' : '📖 看示例'}
-                      </Button>
-                    ) : null
-                  })()}
-                </div>
-                {showExample === '__freeform__' && (() => {
-                  const ex = getExample(genre, activeSection.key, '_default')
-                  return ex ? (
-                    <div className="sub-field-example">
-                      <pre>{ex}</pre>
-                    </div>
-                  ) : null
-                })()}
-                <textarea
-                  ref={rewriteTextareaRef}
-                  className="sub-field-textarea"
-                  style={{ minHeight: 300 }}
-                  value={content}
-                  onChange={(e) => { setContent(e.target.value); setDirty(true) }}
-                  onMouseUp={checkSelection}
-                  onKeyUp={checkSelection}
-                  onContextMenu={(e) => {
-                    const ta = e.currentTarget as HTMLTextAreaElement
-                    if (ta.selectionStart !== ta.selectionEnd) {
-                      e.preventDefault()
-                      setContextMenu({ x: e.clientX, y: e.clientY })
-                    }
-                  }}
-                  placeholder={activeSection.hint + '…'}
-                />
-              </div>
-              {addingSubToKey === activeSection.key && (
-                <div style={{ marginTop: 12, display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <input
-                    className="notes-input"
-                    style={{ flex: 1 }}
-                    value={newSubFieldName}
-                    onChange={(e) => setNewSubFieldName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleAddSubField(activeSection.key); if (e.key === 'Escape') { setAddingSubToKey(null); setNewSubFieldName('') } }}
-                    placeholder="子字段名称…"
-                    autoFocus
-                  />
-                  <Button variant="text" size="sm" onClick={() => handleAddSubField(activeSection.key)} disabled={!newSubFieldName.trim()}>✓</Button>
-                  <Button variant="text" size="sm" onClick={() => { setAddingSubToKey(null); setNewSubFieldName('') }}>✕</Button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="panel-editor-inner">
-              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>
-                💡 {activeSection.hint}
-                <Button variant="text" size="sm" onClick={() => setAddingSubToKey(activeSection.key)}>+ 添加子字段</Button>
-              </p>
-              {activeSection.subs.map((sub) => {
-                const example = getExample(genre, activeSection.key, sub.key)
-                const showThis = showExample === sub.key
-                return (
-                  <div key={sub.key} className="sub-field">
-                    <div className="sub-field-label-row">
-                      {editingSubKey === sub.key ? (
-                        <input
-                          className="notes-input"
-                          style={{ flex: 1, fontSize: '0.85rem' }}
-                          value={editingSubLabel}
-                          onChange={(e) => setEditingSubLabel(e.target.value)}
-                          onBlur={() => handleRenameSubField(activeSection.key, sub.key, editingSubLabel)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleRenameSubField(activeSection.key, sub.key, editingSubLabel)
-                            if (e.key === 'Escape') setEditingSubKey(null)
-                          }}
-                          autoFocus
-                        />
-                      ) : (
-                        <label
-                          className="sub-field-label"
-                          onDoubleClick={() => { setEditingSubKey(sub.key); setEditingSubLabel(sub.label) }}
-                          title="双击重命名"
-                        >
-                          {sub.label}
-                        </label>
-                      )}
-                      {!editingSubKey && (
-                        <Button variant="ghost" size="xs" title="删除此子字段" onClick={() => handleDeleteSubField(activeSection.key, sub.key)}>✕</Button>
-                      )}
-                      <div style={{ flex: 1 }} />
-                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                        {example && (
-                          <Button variant="text" size="sm" onClick={() => { setShowExample(showThis ? null : sub.key) }}>
-                            {showThis ? '收起示例' : '📖 看示例'}
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                    <span className="sub-field-hint">{sub.hint}</span>
-                    {showThis && example && (
-                      <div className="sub-field-example">
-                        <pre>{example}</pre>
-                      </div>
-                    )}
-                    <textarea
-                      className="sub-field-textarea"
-                      data-subkey={sub.key}
-                      value={subValues[sub.key] ?? ''}
-                      onChange={(e) => { updateSubField(sub.key, e.target.value) }}
-                      onMouseUp={checkSelection}
-                      onKeyUp={checkSelection}
-                      onContextMenu={(e) => {
-                        const ta = e.currentTarget as HTMLTextAreaElement
-                        if (ta.selectionStart !== ta.selectionEnd) {
-                          e.preventDefault()
-                          setContextMenu({ x: e.clientX, y: e.clientY })
-                        }
-                      }}
-                      placeholder="在这里填写…"
-                    />
-                  </div>
-                )
-              })}
-
-              {addingSubToKey === activeSection.key && (
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: -8, marginBottom: 16 }}>
-                  <input
-                    className="notes-input"
-                    style={{ flex: 1 }}
-                    value={newSubFieldName}
-                    onChange={(e) => setNewSubFieldName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleAddSubField(activeSection.key); if (e.key === 'Escape') { setAddingSubToKey(null); setNewSubFieldName('') } }}
-                    placeholder="子字段名称…"
-                    autoFocus
-                  />
-                  <Button variant="text" size="sm" onClick={() => handleAddSubField(activeSection.key)} disabled={!newSubFieldName.trim()}>✓</Button>
-                  <Button variant="text" size="sm" onClick={() => { setAddingSubToKey(null); setNewSubFieldName('') }}>✕</Button>
-                </div>
-              )}
-              <div ref={subFieldEndRef} />
-            </div>
-          )
-        ) : (
-          <div className="panel-preview">
-            {previewContent.trim() || (
-              <span style={{ color: 'var(--text-muted)' }}>
-                暂无内容，点击编辑添加
-                {activeSection.subs.length > 0 && '（可填写 ' + activeSection.subs.map(s => s.label).join('、') + '）'}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {rewriteState && (
-        <RewritePreview
-          selectedText={rewriteState.selectedText}
-          beforeText={rewriteState.beforeText}
-          afterText={rewriteState.afterText}
-          defaultMode={rewriteState.mode}
-          onAccept={handleRewriteAccept}
-          onReject={() => setRewriteState(null)}
+        <WorldviewSidebar
+          sections={sections}
+          activeSectionKey={activeSection.key}
+          editingSectionId={editingSectionId}
+          editingSectionLabel={editingSectionLabel}
+          showAddSection={showAddSection}
+          newSectionName={newSectionName}
+          onSelectSection={handleSelectSection}
+          onStartRenameSection={handleStartRenameSection}
+          onRenameLabelChange={setEditingSectionLabel}
+          onCommitRenameSection={handleRenameSection}
+          onCancelRenameSection={() => setEditingSectionId(null)}
+          onDeleteSection={setDeletingSectionId}
+          onNewSectionNameChange={setNewSectionName}
+          onAddSection={handleAddSection}
+          onToggleAddSection={handleToggleAddSection}
+          onOpenResetConfirm={() => setShowResetConfirm(true)}
         />
-      )}
-
-      {contextMenu && (
-        <SelectionContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          items={menuItems}
-          onClose={() => setContextMenu(null)}
+        <WorldviewEditor
+          activeSection={activeSection}
+          previewContent={previewContent}
+          content={content}
+          subValues={subValues}
+          editing={editing}
+          dirty={dirty}
+          showExample={showExample}
+          showPrompt={showPrompt}
+          editingPrompt={editingPrompt}
+          savingPrompt={savingPrompt}
+          aiError={aiError}
+          generatingAi={generatingAi}
+          hasSelection={hasSelection}
+          rewriteState={rewriteState}
+          isFreeform={isFreeform}
+          contextMenu={contextMenu}
+          menuItems={menuItems}
+          genre={genre}
+          activeSectionHint={activeSection.hint}
+          rewriteTextareaRef={rewriteTextareaRef}
+          subFieldEndRef={subFieldEndRef}
+          addingSubToKey={addingSubToKey}
+          newSubFieldName={newSubFieldName}
+          editingSubKey={editingSubKey}
+          editingSubLabel={editingSubLabel}
+          onStartEdit={handleStartEdit}
+          onSave={() => { void handleSave() }}
+          onGenerateAi={() => { void generateWithAI() }}
+          onTogglePrompt={handleTogglePrompt}
+          onPromptChange={setEditingPrompt}
+          onResetPrompt={() => { void handleResetPrompt() }}
+          onSavePrompt={() => { void handleSavePrompt() }}
+          onToggleExample={(key) => setShowExample((prev) => (prev === key ? null : key))}
+          onContentChange={(value) => {
+            setContent(value)
+            setDirty(true)
+          }}
+          onUpdateSubField={updateSubField}
+          onSelectionCheck={checkSelection}
+          onSelectionContextMenu={handleSelectionContextMenu}
+          onStartAddSubField={setAddingSubToKey}
+          onNewSubFieldNameChange={setNewSubFieldName}
+          onAddSubField={handleAddSubField}
+          onCancelAddSubField={handleCancelAddSubField}
+          onStartRenameSubField={(subKey, label) => {
+            setEditingSubKey(subKey)
+            setEditingSubLabel(label)
+          }}
+          onRenameSubFieldLabelChange={setEditingSubLabel}
+          onCommitRenameSubField={handleRenameSubField}
+          onCancelRenameSubField={() => setEditingSubKey(null)}
+          onDeleteSubField={handleDeleteSubField}
+          onRewriteMode={handleRewriteMode}
+          onRewriteAccept={handleRewriteAccept}
+          onRewriteReject={() => setRewriteState(null)}
+          onContextMenuClose={() => setContextMenu(null)}
         />
-      )}
-
-      {showResetConfirm && (
-        <ConfirmDialog
-          title="重置为品类默认"
-          message={`确定恢复为「${genre}」品类的默认栏目配置？所有自定义栏目和子字段将被清除，已有内容不受影响。`}
-          confirmText="确定重置"
-          danger
-          onConfirm={() => handleResetToDefaults()}
-          onCancel={() => setShowResetConfirm(false)}
-        />
-      )}
-
-      {deletingSectionId && (() => {
-        const sec = sections.find(s => s.key === deletingSectionId)
-        return sec ? (
-          <ConfirmDialog
-            title="删除栏目"
-            message={`确定删除「${sec.label}」栏目？该栏目的所有内容将被删除。`}
-            confirmText="删除"
-            danger
-            onConfirm={() => handleDeleteSection(deletingSectionId)}
-            onCancel={() => setDeletingSectionId(null)}
-          />
-        ) : null
-      })()}
       </div>
+      <WorldviewDialogs
+        showResetConfirm={showResetConfirm}
+        genre={genre}
+        deletingSection={sections.find((section) => section.key === deletingSectionId) ?? null}
+        onConfirmReset={handleResetToDefaults}
+        onCancelReset={() => setShowResetConfirm(false)}
+        onConfirmDelete={handleDeleteSection}
+        onCancelDelete={() => setDeletingSectionId(null)}
+      />
     </div>
   )
 }

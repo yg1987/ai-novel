@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import type { ChapterMeta } from '../types/chapter'
 import {
   listChapters,
@@ -13,10 +13,12 @@ import { PLATFORM_LABELS, type PublishPlatform } from '../utils/formatAdapter'
 import { showToast } from '../utils/toast'
 import PopupMenu from './PopupMenu'
 import Editor, { type EditorHandle } from './Editor'
-import VersionHistoryPanel from './VersionHistoryPanel'
-import MaterialSidebar from './MaterialSidebar'
 import ConfirmDialog from './ConfirmDialog'
 import Button from './Button'
+import './ChapterManager.css'
+
+const VersionHistoryPanel = lazy(() => import('./VersionHistoryPanel'))
+const MaterialSidebar = lazy(() => import('./MaterialSidebar'))
 
 interface Props {
   projectId: string
@@ -466,15 +468,17 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
       {/* ─── Editor area ─────────────────────────── */}
       <div className="chapter-editor-area">
         {showVersionHistory && activeChapterId ? (
-          <VersionHistoryPanel
-            projectId={projectId}
-            volume={activeVolume}
-            chapterId={activeChapterId}
-            onRestore={() => {
-              setShowVersionHistory(false)
-              setContentVersion((v) => v + 1)
-            }}
-          />
+          <Suspense fallback={<div className="editor-loading">加载版本历史…</div>}>
+            <VersionHistoryPanel
+              projectId={projectId}
+              volume={activeVolume}
+              chapterId={activeChapterId}
+              onRestore={() => {
+                setShowVersionHistory(false)
+                setContentVersion((v) => v + 1)
+              }}
+            />
+          </Suspense>
         ) : activeChapterId ? (
           <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
             {/* Chapter title bar */}
@@ -514,7 +518,9 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
                 />
               </div>
               {showMaterial && (
-                <MaterialSidebar onInsert={(text) => editorRef.current?.insertAtCursor(text)} />
+                <Suspense fallback={<div className="material-sidebar"><div className="editor-loading">加载素材…</div></div>}>
+                  <MaterialSidebar onInsert={(text) => editorRef.current?.insertAtCursor(text)} />
+                </Suspense>
               )}
             </div>
           </div>

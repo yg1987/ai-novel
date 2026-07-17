@@ -1,22 +1,23 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import type { ProjectMeta } from '../types/project'
-import ChapterManager from './ChapterManager'
-import CharacterPanel from './CharacterPanel'
-import WorldviewPanel from './WorldviewPanel'
-import OutlinePanel from './OutlinePanel'
-import NotesPanel from './NotesPanel'
-import ForeshadowPanel from './ForeshadowPanel'
-import SearchPanel from './SearchPanel'
-import StatisticsPanel from './statistics/StatisticsPanel'
-import ReviewPanel from './ReviewPanel'
-import ResourcePanel from './ResourcePanel'
-import BrainstormPanel from './BrainstormPanel'
 import ExportDialog from './ExportDialog'
-import RelationshipGraph from './RelationshipGraph'
-import TrendingPanel from './TrendingPanel'
 import ArchiveDialog from './ArchiveDialog'
-import ChapterGraph from './ChapterGraph'
 import Button from './Button'
+
+const ChapterManager = lazy(() => import('./ChapterManager'))
+const CharacterPanel = lazy(() => import('./CharacterPanel'))
+const WorldviewPanel = lazy(() => import('./WorldviewPanel'))
+const OutlinePanel = lazy(() => import('./OutlinePanel'))
+const NotesPanel = lazy(() => import('./NotesPanel'))
+const ForeshadowPanel = lazy(() => import('./ForeshadowPanel'))
+const SearchPanel = lazy(() => import('./SearchPanel'))
+const StatisticsPanel = lazy(() => import('./statistics/StatisticsPanel'))
+const ReviewPanel = lazy(() => import('./ReviewPanel'))
+const ResourcePanel = lazy(() => import('./ResourcePanel'))
+const BrainstormPanel = lazy(() => import('./BrainstormPanel'))
+const RelationshipGraph = lazy(() => import('./relationship-graph/RelationshipGraph'))
+const TrendingPanel = lazy(() => import('./TrendingPanel'))
+const ChapterGraph = lazy(() => import('./ChapterGraph'))
 
 interface Props {
   project: ProjectMeta
@@ -91,6 +92,46 @@ export default function ProjectView({ project, onBack }: Props) {
     setTab(targetTab)
   }
 
+  const renderTabContent = () => {
+    switch (tab) {
+      case 'writing':
+        return <ChapterManager projectId={project.id} projectName={project.name} onNavigateToReview={handleNavigateToReview} onNavigateToNotes={handleNavigateToNotes} initialChapterRef={navigateChapterRef} onChapterSelect={(chapterId) => setCurrentChapterId(chapterId)} />
+      case 'characters':
+        return <CharacterPanel projectId={project.id} initialCharacter={navigateCharacter} />
+      case 'worldview':
+        return <WorldviewPanel projectId={project.id} />
+      case 'outline':
+        return <OutlinePanel projectId={project.id} />
+      case 'notes':
+        return <NotesPanel projectId={project.id} onNavigateToChapter={handleNavigateToChapter} initialChapterRef={navigateNotesChapterRef} initialFilter={navigateNotesFilter} onHighlightComplete={() => { setNavigateNotesChapterRef(null); setNavigateNotesFilter(null) }} />
+      case 'foreshadow':
+        return <ForeshadowPanel projectId={project.id} currentChapterId={currentChapterId} onNavigateToCharacter={handleNavigateToCharacter} highlightId={navigateForeshadowId} onHighlightComplete={() => setNavigateForeshadowId(null)} />
+      case 'search':
+        return <SearchPanel projectId={project.id} onOpenFile={handleSearchOpenFile} />
+      case 'stats':
+        return <StatisticsPanel projectId={project.id} targetWords={project.target_words} />
+      case 'review':
+        return <ReviewPanel projectId={project.id} currentChapterId={reviewChapterId} onNavigateToForeshadow={handleNavigateToForeshadow} />
+      case 'resource':
+        return <ResourcePanel projectId={project.id} />
+      case 'brainstorm':
+        return <BrainstormPanel projectId={project.id} />
+      case 'graph':
+        return (
+          <RelationshipGraph
+            projectId={project.id}
+            onNavigateToCharacter={handleNavigateToCharacter}
+            onNavigateToChapter={handleNavigateToChapter}
+            onNavigateToForeshadow={handleNavigateToForeshadow}
+          />
+        )
+      case 'trending':
+        return <TrendingPanel />
+      case 'chaptergraph':
+        return <ChapterGraph projectId={project.id} />
+    }
+  }
+
   return (
     <div className="project-view">
       <div className="project-view-header">
@@ -141,27 +182,9 @@ export default function ProjectView({ project, onBack }: Props) {
       </div>
 
       <div className="project-tab-content">
-        {tab === 'writing' && <ChapterManager projectId={project.id} projectName={project.name} onNavigateToReview={handleNavigateToReview} onNavigateToNotes={handleNavigateToNotes} initialChapterRef={navigateChapterRef} onChapterSelect={(chapterId) => setCurrentChapterId(chapterId)} />}
-        {tab === 'characters' && <CharacterPanel projectId={project.id} initialCharacter={navigateCharacter} />}
-        {tab === 'worldview' && <WorldviewPanel projectId={project.id} />}
-        {tab === 'outline' && <OutlinePanel projectId={project.id} />}
-        {tab === 'notes' && <NotesPanel projectId={project.id} onNavigateToChapter={handleNavigateToChapter} initialChapterRef={navigateNotesChapterRef} initialFilter={navigateNotesFilter} onHighlightComplete={() => { setNavigateNotesChapterRef(null); setNavigateNotesFilter(null) }} />}
-        {tab === 'foreshadow' && <ForeshadowPanel projectId={project.id} currentChapterId={currentChapterId} onNavigateToCharacter={handleNavigateToCharacter} highlightId={navigateForeshadowId} onHighlightComplete={() => setNavigateForeshadowId(null)} />}
-        {tab === 'search' && <SearchPanel projectId={project.id} onOpenFile={handleSearchOpenFile} />}
-        {tab === 'stats' && <StatisticsPanel projectId={project.id} targetWords={project.target_words} />}
-        {tab === 'review' && <ReviewPanel projectId={project.id} currentChapterId={reviewChapterId} onNavigateToForeshadow={handleNavigateToForeshadow} />}
-        {tab === 'resource' && <ResourcePanel projectId={project.id} />}
-        {tab === 'brainstorm' && <BrainstormPanel projectId={project.id} />}
-        {tab === 'graph' && (
-          <RelationshipGraph
-            projectId={project.id}
-            onNavigateToCharacter={handleNavigateToCharacter}
-            onNavigateToChapter={handleNavigateToChapter}
-            onNavigateToForeshadow={handleNavigateToForeshadow}
-          />
-        )}
-        {tab === 'trending' && <TrendingPanel />}
-        {tab === 'chaptergraph' && <ChapterGraph projectId={project.id} />}
+        <Suspense fallback={<div className="chapter-loading">加载面板…</div>}>
+          {renderTabContent()}
+        </Suspense>
       </div>
     </div>
   )

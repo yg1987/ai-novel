@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { listResourceCategories, listResourceFiles, readResourceFile } from '../api/tauri'
 import type { FileEntry } from '../api/tauri'
 import Button from './Button'
+import './MaterialSidebar.css'
 
 interface Props {
   onInsert: (text: string) => void

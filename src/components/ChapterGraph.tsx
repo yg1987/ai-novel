@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide, type SimulationNodeDatum, type SimulationLinkDatum } from 'd3-force'
 import { loadChapterGraph, type ChapterGraph } from '../services/chapterGraphService'
+import './GraphShared.css'
 
 interface Props {
   projectId: string

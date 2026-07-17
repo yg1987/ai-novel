@@ -15,7 +15,7 @@ import { loadReviewRules } from './reviewRules'
 import { logChapterSaved } from './stats'
 import { chunkMarkdown } from './textChunker'
 import { embedChunks } from './embeddings'
-import { runAndSaveLightCheck } from './reviewService'
+import { runAndSaveLightCheck } from './reviewLightService'
 import { runConsistencyChecks } from './consistencyCheck'
 
 // ─── Public types ─────────────────────────────────
@@ -117,9 +117,7 @@ async function maybeRunDeepReview(
   throttle.lastTime = now
 
   try {
-    // Dynamic import keeps the top-level dependency graph light;
-    // reviewService is only loaded when a deep review actually fires.
-    const { runDeepReview } = await import('./reviewService')
+    const { runDeepReview } = await import('./reviewDeepService')
     await runDeepReview(projectId, chapterId, html)
     return true
   } catch (e) {

@@ -4,6 +4,7 @@ import StarterKit from '@tiptap/starter-kit'
 import type { VersionMeta } from '../types/review'
 import { listChapterVersions, getChapterVersion, restoreChapterVersion, deleteChapterVersion, renameChapterVersion } from '../api/tauri'
 import Button from './Button'
+import './VersionHistoryPanel.css'
 
 interface Props {
   projectId: string

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { runBrainstorm, type BrainstormMode, type BrainstormResult } from '../services/brainstormService'
 import Button from './Button'
+import './BrainstormPanel.css'
 
 interface Props {
   projectId: string

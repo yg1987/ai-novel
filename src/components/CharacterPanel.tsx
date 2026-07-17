@@ -5,10 +5,11 @@ import { buildAIContext } from '../services/aiContext'
 import type { TextareaSelection } from '../services/rewriteUtils'
 import { getTextareaSelection, applyTextareaRewrite } from '../services/rewriteUtils'
 import { type RewriteMode } from '../services/rewriteService'
-import RewriteButtons from './RewriteButtons'
 import RewritePreview from './RewritePreview'
 import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
-import Button from './Button'
+import CharacterSidebar from './character-panel/CharacterSidebar'
+import CharacterEditor from './character-panel/CharacterEditor'
+import './CharacterPanel.css'
 
 interface Props {
   projectId: string
@@ -377,166 +378,76 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
 
   return (
     <div className="panel-layout">
-      <div className="panel-sidebar">
-        <div className="panel-sidebar-header">
-          <h3>角色</h3>
-        </div>
-        <div className="panel-new-item">
-          <input
-            value={newName}
-            onChange={(e) => { setNewName(e.target.value) }}
-            placeholder="角色名"
-            onKeyDown={(e) => { if (e.key === 'Enter' && !generating) { handleCreate() } }}
-          />
-          <Button variant="primary" size="xs" onClick={handleCreate} disabled={!newName.trim() || isNameDuplicate} title="创建空白角色卡">+</Button>
-        </div>
-        <div className="panel-new-actions">
-          <Button variant="secondary" size="xs" onClick={handleRandomName} title="随机起名">🎲 起名</Button>
-          <Button variant="primary" size="xs" onClick={() => { void handleAICreate() }} disabled={generating || (newName.trim().length > 0 && isNameDuplicate)} title="AI 生成完整角色卡" loading={generating}>
-            {generating ? '生成中' : '✨ AI 创建'}
-          </Button>
-        </div>
-        {aiError && (
-          <div style={{ padding: '4px 8px', fontSize: '0.78rem', color: 'var(--danger)', background: 'var(--bg)' }}>
-            {aiError}
-          </div>
-        )}
-        {isNameDuplicate && (
-          <div style={{ padding: '4px 8px', fontSize: '0.78rem', color: 'var(--text-muted)', background: 'var(--bg)' }}>
-            该角色名已存在
-          </div>
-        )}
-        <div className="panel-list">
-          {files.map((f, idx) => (
-            <div
-              key={f}
-              className={`panel-item${f === activeFile ? ' active' : ''}${dragPreview?.index === idx ? ' dragging' : ''}`}
-              onClick={() => { setActiveFile(f); setEditing(false) }}
-            >
-              <span
-                data-drag-handle
-                style={{ cursor: 'grab', userSelect: 'none' }}
-                onMouseDown={(e) => handleMouseDown(e, idx)}
-              >⠿ {f}</span>
-              <Button variant="danger" size="xs" onClick={(e) => { e.stopPropagation(); handleDelete(f) }} title="删除角色">✕</Button>
-            </div>
-          ))}
-          {files.length === 0 && <p className="panel-empty">暂无角色</p>}
-        </div>
-      </div>
-      <div className="panel-editor">
-        {activeFile ? (
-          <>
-            <div className="panel-editor-header">
-              <h3>{activeFile}</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {editing && (
-                  <>
-                    <Button variant="text" size="sm" onClick={() => { void handleAICreate() }} disabled={generating} loading={generating}>
-                      {generating ? '生成中…' : '✨ AI 辅助'}
-                    </Button>
-                    <RewriteButtons
-                      enabled={hasSelection}
-                      loading={rewriteState !== null}
-                      onRewrite={() => handleRewriteMode('rewrite')}
-                      onExpand={() => handleRewriteMode('expand')}
-                      onPolish={() => handleRewriteMode('polish')}
-                    />
-                    <Button variant="text" size="sm" onClick={async () => {
-                      if (!showPrompt && !editingPrompt.trim()) {
-                        let info = await buildAIContext(projectId)
-                        const def = buildAIPrompt(newName, info)
-                        setEditingPrompt(def.system + '\n\n---\n\n' + def.user)
-                      }
-                      setShowPrompt(!showPrompt)
-                    }}>
-                      {showPrompt ? '关闭提示词' : '✎ 提示词'}
-                    </Button>
-                  </>
-                )}
-                {editing ? (
-                  <Button variant="primary" size="md" onClick={() => { handleSave() }}>保存</Button>
-                ) : (
-                  <Button variant="secondary" size="md" onClick={() => { setEditing(true) }}>编辑</Button>
-                )}
-              </div>
-            </div>
-            {showPrompt && editing && (
-              <div className="prompt-editor">
-                <div className="prompt-editor-header">
-                  <span>提示词（AI 辅助使用，修改后自动保存到本项目的提示词库）</span>
-                  <Button variant="text" size="sm" onClick={async () => {
-                    setSavingPrompt(true)
-                    await resetPrompt(projectId, promptKey)
-                    setEditingPrompt('')
-                    setShowPrompt(false)
-                    setSavingPrompt(false)
-                  }}>恢复默认</Button>
-                </div>
-                <textarea
-                  className="prompt-editor-textarea"
-                  value={editingPrompt}
-                  onChange={(e) => { setEditingPrompt(e.target.value) }}
-                  placeholder="在此编写自定义提示词…"
-                />
-                <div className="prompt-editor-footer">
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    {editingPrompt.trim() ? '已保存自定义提示词' : '修改后点保存，AI 将使用你的提示词'}
-                  </span>
-                  <Button variant="primary" size="sm" disabled={savingPrompt} onClick={async () => {
-                    setSavingPrompt(true)
-                    await savePrompt(projectId, promptKey, editingPrompt)
-                    setSavingPrompt(false)
-                  }}>{savingPrompt ? '保存中…' : '保存提示词'}</Button>
-                </div>
-              </div>
-            )}
-            {editing ? (
-              <div className="panel-editor-inner">
-                <div className="sub-field" style={{ marginBottom: 0 }}>
-                  <div className="sub-field-label-row">
-                    <label className="sub-field-label">角色信息</label>
-                    <Button variant="text" size="sm" onClick={() => { setShowExample(!showExample) }}>
-                      {showExample ? '收起示例' : '📖 看示例'}
-                    </Button>
-                  </div>
-                  {showExample && (
-                    <div className="sub-field-example">
-                      <pre>{CHAR_EXAMPLE}</pre>
-                    </div>
-                  )}
-                  <textarea
-                    ref={rewriteTextareaRef}
-                    className="sub-field-textarea"
-                    style={{ minHeight: 350 }}
-                    value={content}
-                    onChange={(e) => { setContent(e.target.value) }}
-                    onMouseUp={checkSelection}
-                    onKeyUp={checkSelection}
-                    onContextMenu={(e) => {
-                      const ta = e.currentTarget as HTMLTextAreaElement
-                      if (ta.selectionStart !== ta.selectionEnd) {
-                        e.preventDefault()
-                        setContextMenu({ x: e.clientX, y: e.clientY })
-                      }
-                    }}
-                    placeholder={`角色：${activeFile}\n身份/职业：\n外貌特征：\n性格特点：\n背景经历：\n动机目标：\n说话风格：\n标签：[标签1, 标签2, ...]\n\n💡 每行填一项就行，不确定的可以空着，或者点 ✨ AI 辅助 一键生成`}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="panel-preview">{content || <span style={{ color: 'var(--text-muted)' }}>暂无内容，点击编辑填写角色信息</span>}</div>
-            )}
-          </>
-        ) : (
-          <div className="panel-placeholder">
-            <p style={{ marginBottom: 8 }}>选择或创建角色</p>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              在左侧输入角色名，点击 🎲 起名 或 ✨ AI 创建
-            </p>
-          </div>
-        )}
-      </div>
+      <CharacterSidebar
+        files={files}
+        activeFile={activeFile}
+        newName={newName}
+        generating={generating}
+        aiError={aiError}
+        isNameDuplicate={isNameDuplicate}
+        dragPreview={dragPreview}
+        onNewNameChange={setNewName}
+        onCreate={handleCreate}
+        onRandomName={handleRandomName}
+        onAICreate={() => { void handleAICreate() }}
+        onSelect={(name) => { setActiveFile(name); setEditing(false) }}
+        onDelete={handleDelete}
+        onDragStart={handleMouseDown}
+      />
+      <CharacterEditor
+        activeFile={activeFile}
+        content={content}
+        editing={editing}
+        generating={generating}
+        hasSelection={hasSelection}
+        rewriteLoading={rewriteState !== null}
+        showPrompt={showPrompt}
+        editingPrompt={editingPrompt}
+        savingPrompt={savingPrompt}
+        showExample={showExample}
+        example={CHAR_EXAMPLE}
+        textareaRef={rewriteTextareaRef}
+        onContentChange={setContent}
+        onEdit={() => { setEditing(true) }}
+        onSave={handleSave}
+        onAICreate={() => { void handleAICreate() }}
+        onRewrite={() => handleRewriteMode('rewrite')}
+        onExpand={() => handleRewriteMode('expand')}
+        onPolish={() => handleRewriteMode('polish')}
+        onTogglePrompt={() => {
+          if (!showPrompt && !editingPrompt.trim()) {
+            void buildAIContext(projectId).then((info) => {
+              const def = buildAIPrompt(newName, info)
+              setEditingPrompt(def.system + '\n\n---\n\n' + def.user)
+            })
+          }
+          setShowPrompt(!showPrompt)
+        }}
+        onPromptChange={setEditingPrompt}
+        onResetPrompt={() => {
+          setSavingPrompt(true)
+          resetPrompt(projectId, promptKey)
+            .then(() => {
+              setEditingPrompt('')
+              setShowPrompt(false)
+            })
+            .finally(() => setSavingPrompt(false))
+        }}
+        onSavePrompt={() => {
+          setSavingPrompt(true)
+          savePrompt(projectId, promptKey, editingPrompt)
+            .finally(() => setSavingPrompt(false))
+        }}
+        onToggleExample={() => { setShowExample(!showExample) }}
+        onSelectionCheck={checkSelection}
+        onSelectionContextMenu={(e) => {
+          const ta = e.currentTarget
+          if (ta.selectionStart !== ta.selectionEnd) {
+            e.preventDefault()
+            setContextMenu({ x: e.clientX, y: e.clientY })
+          }
+        }}
+      />
 
       {rewriteState && (
         <RewritePreview

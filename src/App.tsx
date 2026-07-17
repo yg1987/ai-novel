@@ -1,14 +1,15 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import type { ProjectMeta, UpdateProjectInput } from './types/project'
 import { listProjects, createProject, updateProject, deleteProject } from './api/tauri'
 import ProjectList from './components/ProjectList'
 import CreateProjectDialog from './components/CreateProjectDialog'
 import EditProjectDialog from './components/EditProjectDialog'
-import ProjectView from './components/ProjectView'
-import ProviderConfigPanel from './components/ProviderConfig'
-import SettingsModal from './components/SettingsModal'
 import { ToastContainer } from './utils/toast'
 import Button from './components/Button'
+
+const ProjectView = lazy(() => import('./components/ProjectView'))
+const ProviderConfigPanel = lazy(() => import('./components/ProviderConfig'))
+const SettingsModal = lazy(() => import('./components/SettingsModal'))
 
 type View = { kind: 'bookshelf' } | { kind: 'project'; id: string }
 
@@ -114,10 +115,12 @@ export default function App() {
             </section>
           </div>
         ) : activeProject ? (
-          <ProjectView
-            project={activeProject}
-            onBack={() => { setView({ kind: 'bookshelf' }) }}
-          />
+          <Suspense fallback={<div className="chapter-loading">加载项目…</div>}>
+            <ProjectView
+              project={activeProject}
+              onBack={() => { setView({ kind: 'bookshelf' }) }}
+            />
+          </Suspense>
         ) : null}
       </main>
 
@@ -137,10 +140,14 @@ export default function App() {
       )}
 
       {showProviderConfig && (
-        <ProviderConfigPanel onClose={() => { setShowProviderConfig(false) }} />
+        <Suspense fallback={null}>
+          <ProviderConfigPanel onClose={() => { setShowProviderConfig(false) }} />
+        </Suspense>
       )}
 
-      <SettingsModal visible={showSettings} onClose={() => { setShowSettings(false) }} />
+      <Suspense fallback={null}>
+        <SettingsModal visible={showSettings} onClose={() => { setShowSettings(false) }} />
+      </Suspense>
       <ToastContainer />
     </div>
   )

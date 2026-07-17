@@ -1,0 +1,547 @@
+/* ─── Chapter Manager ──────────────────────────── */
+
+.chapter-manager {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.chapter-loading,
+.editor-loading,
+.editor-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--text-secondary);
+}
+
+.chapter-sidebar {
+  width: 200px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.chapter-sidebar-header {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chapter-sidebar-header h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  flex: 1;
+}
+
+/* ─── Toolbar ─────────────────────────────── */
+
+.chapter-sidebar-toolbar {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chapter-new-volume-btn {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 0.82rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: center;
+}
+
+.chapter-new-volume-btn:hover {
+  background: var(--bg-hover);
+}
+
+.chapter-new-volume-input {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 0.82rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+}
+
+/* ─── Volume groups ───────────────────────── */
+
+.chapter-volume-header {
+  display: flex;
+  align-items: center;
+  padding: 7px 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.chapter-volume-header:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.chapter-volume-chevron {
+  margin-right: 6px;
+  font-size: 0.7rem;
+  transition: transform 0.15s;
+}
+
+.chapter-volume-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.chapter-volume-name {
+  flex: 1;
+}
+
+.chapter-volume-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.chapter-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.chapter-item {
+  display: flex;
+  align-items: center;
+  padding: 7px 8px 7px 24px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  transition: background 0.1s;
+}
+
+.chapter-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.chapter-item.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.chapter-item.active .chapter-item-actions button {
+  color: #fff;
+}
+
+.chapter-item.active .chapter-item-actions button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.chapter-item-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chapter-item-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.chapter-item:hover .chapter-item-actions {
+  display: flex;
+}
+
+/* ─── Toast notifications ─────────────────── */
+
+.toast-container {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast-item {
+  background: #1a1a2e;
+  color: #fff;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  animation: toast-in 0.25s ease-out;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.toast-item.toast-leaving {
+  animation: toast-out 0.25s ease-in forwards;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-12px); }
+}
+
+/* ─── Add chapter / empty ─────────────────── */
+
+.chapter-add-btn {
+  display: block;
+  width: 100%;
+  padding: 4px 24px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.chapter-add-btn:hover {
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.chapter-volume-empty {
+  padding: 4px 24px 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.chapter-empty {
+  padding: 16px 12px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* ─── Footer ──────────────────────────────── */
+
+.chapter-sidebar-footer {
+  border-top: 1px solid var(--border);
+  padding: 6px 8px;
+  flex-shrink: 0;
+}
+
+.chapter-footer-stats {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.chapter-footer-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* ─── Editor area ─────────────────────────── */
+
+.chapter-editor-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ─── Chapter title bar ──────────────────── */
+
+.chapter-title-bar {
+  display: flex;
+  align-items: center;
+  padding: 10px 24px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.chapter-title-text {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0;
+  flex: 1;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chapter-title-text:hover {
+  color: var(--accent);
+}
+
+.chapter-title-text::after {
+  content: '✎';
+  font-size: 0.9rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.chapter-title-text:hover::after {
+  opacity: 0.6;
+}
+
+.chapter-title-input {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-family: inherit;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--bg-card);
+}
+
+/* ─── Volume rename input ────────────────── */
+
+.chapter-volume-rename-input {
+  flex: 1;
+  padding: 2px 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: inherit;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  outline: none;
+  min-width: 0;
+}
+
+/* ─── Volume delete button ───────────────── */
+
+.volume-delete-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  opacity: 0;
+  flex-shrink: 0;
+}
+
+.chapter-volume-header:hover .volume-delete-btn {
+  opacity: 1;
+}
+
+.volume-delete-btn:hover {
+  color: var(--danger);
+  background: rgba(231, 76, 60, 0.08);
+  border-color: var(--danger);
+}
+
+
+/* ChapterManager: todo badges */
+.chapter-todo-badge {
+  font-size: 0.7rem;
+  margin-left: 6px;
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
+/* ChapterManager: chapter notes in sidebar */
+.chapter-notes-section {
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.chapter-notes-section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  padding: 0 4px;
+}
+
+.chapter-note-mini {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.chapter-note-mini:hover {
+  background: var(--bg-hover);
+}
+
+.chapter-note-mini-icon {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+}
+
+.chapter-note-mini-text {
+  color: var(--text-secondary);
+}
+
+/* ─── Banned words indicator ───────────────────── */
+
+.banned-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  user-select: none;
+}
+
+.banned-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.banned-dot.green { background: #27ae60; }
+.banned-dot.yellow { background: #f39c12; }
+.banned-dot.red { background: #e74c3c; }
+
+.banned-score {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.banned-detail {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.banned-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+
+.banned-detail-list {
+  padding: 8px 16px;
+}
+
+.banned-match {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.banned-severity {
+  font-size: 0.7rem;
+  min-width: 24px;
+}
+
+.banned-severity.severity-5 { color: #e74c3c; }
+.banned-severity.severity-4 { color: #e67e22; }
+.banned-severity.severity-3 { color: #f39c12; }
+.banned-severity.severity-2 { color: #95a5a6; }
+.banned-severity.severity-1 { color: #bdc3c7; }
+
+.banned-pattern {
+  color: var(--text-secondary);
+  min-width: 100px;
+}
+
+.banned-context {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  background: var(--bg);
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: var(--text);
+}
+
+.banned-suggestion {
+  color: var(--accent);
+  font-style: italic;
+}
+
+/* Light check indicator */
+.light-check-indicator {
+  font-size: 0.75rem; padding: 2px 8px; border-radius: 3px;
+  cursor: default;
+}
+.light-check-indicator.passed { color: #28a745; }
+.light-check-indicator.failed { color: #e67e22; }
+
+
+/* ─── Focus Mode ───────────────────────────────── */
+.focus-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+}
+.focus-panel {
+  background: var(--bg-card); border-radius: var(--radius);
+  padding: 32px; min-width: 360px; max-width: 420px;
+  box-shadow: var(--shadow-lg); text-align: center;
+}
+.focus-panel h2 { font-size: 1.3rem; margin-bottom: 20px; }
+.focus-config { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+.focus-config label {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.85rem; font-weight: 600;
+}
+.focus-config input {
+  width: 120px; padding: 6px 10px; border: 1px solid var(--border);
+  border-radius: var(--radius); font-size: 0.85rem; text-align: center;
+}
+.focus-actions { display: flex; gap: 12px; justify-content: center; margin-top: 16px; }
+.focus-active { padding: 48px 32px; }
+.focus-progress-bar {
+  height: 6px; background: var(--bg); border-radius: 3px;
+  overflow: hidden; margin-bottom: 24px;
+}
+.focus-progress-fill {
+  height: 100%; background: var(--accent); border-radius: 3px;
+  transition: width 0.5s ease;
+}
+.focus-timer {
+  font-size: 3rem; font-weight: 700; font-family: monospace;
+  color: var(--accent); margin-bottom: 4px;
+}
+.focus-target { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 24px; }
+.focus-stats {
+  display: flex; justify-content: center; gap: 24px; font-size: 0.85rem;
+  color: var(--text-secondary); margin-bottom: 24px;
+}
+.focus-completed { padding: 16px; }
+.focus-completed-icon { font-size: 3rem; margin-bottom: 12px; }
+.focus-completed h2 { margin-bottom: 12px; }
+.focus-completed p { font-size: 0.9rem; color: var(--text-secondary); margin: 4px 0; }
+.focus-completed-time { font-family: monospace; font-size: 1.1rem !important; color: var(--accent) !important; font-weight: 600; }
+

@@ -1,14 +1,17 @@
-import { useState, useEffect, useCallback } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
 import type { ConsistencyCheckResult, ReviewIssue, ConsistencyIssue } from '../types/review'
-import { runAndSaveLightCheck, runDeepReview, loadChapterReviews } from '../services/reviewService'
-import type { ChapterReviewData } from '../services/reviewService'
+import { runAndSaveLightCheck } from '../services/reviewLightService'
+import { loadChapterReviews } from '../services/reviewReportStorage'
+import type { ChapterReviewData } from '../services/reviewReportStorage'
 import { runConsistencyChecks } from '../services/consistencyCheck'
 import { loadReviewRules } from '../services/reviewRules'
 import type { ReviewRules } from '../services/reviewRules'
 import type { GroupedBannedMatch } from '../services/bannedWords'
 import { listChapters, getChapterContent } from '../api/tauri'
-import ReviewRulesEditor from './ReviewRulesEditor'
 import Button from './Button'
+import './ReviewPanel.css'
+
+const ReviewRulesEditor = lazy(() => import('./ReviewRulesEditor'))
 
 // ─── Props ───────────────────────────────────────
 
@@ -153,6 +156,7 @@ export default function ReviewPanel({ projectId, currentChapterId, chapterHtml =
     setError(null)
     try {
       const rules = await loadReviewRules(projectId)
+      const { runDeepReview } = await import('../services/reviewDeepService')
       await runDeepReview(projectId, expandedChapter!, html, rules.reviewDimensions)
       await refresh()
     } catch (e) { setError(String(e)) }
@@ -467,11 +471,13 @@ export default function ReviewPanel({ projectId, currentChapterId, chapterHtml =
 
       {/* Modal */}
       {showRulesEditor && (
-        <ReviewRulesEditor
-          projectId={projectId}
-          onClose={() => setShowRulesEditor(false)}
-          onSaved={() => {}}
-        />
+        <Suspense fallback={null}>
+          <ReviewRulesEditor
+            projectId={projectId}
+            onClose={() => setShowRulesEditor(false)}
+            onSaved={() => {}}
+          />
+        </Suspense>
       )}
     </div>
   )

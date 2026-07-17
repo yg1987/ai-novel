@@ -1,0 +1,417 @@
+/* ─── Foreshadow panel ─────────────────────────── */
+
+.foreshadow-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  padding: 24px;
+}
+
+.foreshadow-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.foreshadow-stats .stat-active { color: #e67e22; font-weight: 500; }
+.foreshadow-stats .stat-advanced { color: #3498db; font-weight: 500; }
+.foreshadow-stats .stat-done { color: #27ae60; font-weight: 500; }
+.foreshadow-stats .stat-abandoned { color: #95a5a6; }
+
+.foreshadow-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.foreshadow-item {
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  background: var(--bg-card);
+}
+
+.foreshadow-item.critical {
+  border-left: 3px solid #e74c3c;
+}
+
+.foreshadow-item.warning {
+  border-left: 3px solid #f39c12;
+}
+
+.foreshadow-item.normal {
+  border-left: 3px solid var(--border);
+}
+
+.foreshadow-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.foreshadow-status {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.foreshadow-status.status-planted { background: #e67e22; color: #fff; }
+.foreshadow-status.status-advanced { background: #3498db; color: #fff; }
+.foreshadow-status.status-resolved { background: #27ae60; color: #fff; }
+.foreshadow-status.status-abandoned { background: #95a5a6; color: #fff; }
+
+.foreshadow-name {
+  font-weight: 500;
+  font-size: 0.9rem;
+  flex: 1;
+}
+
+.urgency-badge {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.urgency-badge.critical { background: #fdeaea; color: #e74c3c; }
+.urgency-badge.warning { background: #fef5e7; color: #e67e22; }
+.urgency-badge.normal { background: var(--bg); color: var(--text-muted); }
+
+.foreshadow-desc {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.foreshadow-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.foreshadow-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.foreshadow-actions .btn-text {
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.foreshadow-actions .btn-text:hover {
+  text-decoration: none;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.foreshadow-actions .btn-text[style*="var(--danger)"] {
+  border-color: transparent;
+}
+
+.foreshadow-actions .btn-text[style*="var(--danger)"]:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: rgba(231, 76, 60, 0.06);
+}
+
+.foreshadow-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 40px 0;
+}
+
+/* ─── Foreshadow filters & category ─────────────── */
+.foreshadow-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.category-filter {
+  flex-wrap: wrap;
+}
+
+.foreshadow-category-chip {
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-muted);
+}
+
+.foreshadow-category-chip.cat-identity     { background: #e8f5e9; color: #2e7d32; }
+.foreshadow-category-chip.cat-mystery      { background: #ede7f6; color: #4527a0; }
+.foreshadow-category-chip.cat-item         { background: #fff3e0; color: #e65100; }
+.foreshadow-category-chip.cat-relationship { background: #fce4ec; color: #c62828; }
+.foreshadow-category-chip.cat-event        { background: #e3f2fd; color: #1565c0; }
+.foreshadow-category-chip.cat-ability      { background: #fff8e1; color: #f57f17; }
+.foreshadow-category-chip.cat-power        { background: #f3e5f5; color: #6a1b9a; }
+
+.foreshadow-importance {
+  font-size: 0.7rem;
+  color: #f39c12;
+  letter-spacing: 1px;
+}
+
+.foreshadow-notes {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: var(--bg);
+  border-radius: 4px;
+}
+
+/* ─── Foreshadow clues timeline ─────────────────── */
+.foreshadow-clues {
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--bg);
+  border-radius: 4px;
+}
+
+.foreshadow-clues-title {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.foreshadow-clue-item {
+  display: flex;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+
+.foreshadow-clue-chapter {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  min-width: 80px;
+}
+
+.foreshadow-clue-desc {
+  color: var(--text-muted);
+}
+
+
+/* ─── Foreshadow form ─────────────────────────── */
+.foreshadow-form {
+  width: 520px;
+  max-width: 95vw;
+}
+.foreshadow-form h3 {
+  margin: 0 0 16px;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.foreshadow-form .form-group {
+  margin-bottom: 12px;
+}
+.foreshadow-form .form-group label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.foreshadow-form .form-group input,
+.foreshadow-form .form-group textarea,
+.foreshadow-form .form-group select {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+}
+.foreshadow-form .form-row {
+  display: flex;
+  gap: 12px;
+}
+.foreshadow-form .form-row .form-group {
+  flex: 1;
+}
+
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+.advanced-toggle:hover { color: var(--accent); }
+.advanced-toggle .arrow { transition: transform 0.15s; }
+.advanced-toggle .arrow.open { transform: rotate(90deg); }
+
+/* ─── Foreshadow character chips ──────────────── */
+.foreshadow-chars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.foreshadow-char-chip {
+  display: inline-block;
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.foreshadow-char-chip:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+
+/* ─── Foreshadow small modals ─────────────────── */
+.foreshadow-advance-modal,
+.foreshadow-delete-modal {
+  width: 400px;
+  max-width: 90vw;
+}
+.foreshadow-advance-modal p,
+.foreshadow-delete-modal p {
+  font-size: 0.9rem;
+  margin: 0 0 12px;
+}
+.foreshadow-advance-modal textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+}
+.foreshadow-delete-modal small {
+  color: var(--text-muted);
+}
+
+/* ─── Foreshadow add button in stats bar ────────── */
+.foreshadow-stats .btn.btn-primary {
+  margin-left: auto;
+}
+
+/* ─── Urgency levels ──────────── */
+.urgency-critical { border-left: 3px solid var(--urgency-critical); background: var(--urgency-critical-bg); }
+.urgency-upcoming { border-left: 3px solid var(--urgency-upcoming); background: var(--urgency-upcoming-bg); }
+.urgency-active { border-left: 3px solid var(--urgency-active); background: var(--urgency-active-bg); }
+.urgency-background { border-left: 3px solid var(--urgency-background); background: var(--urgency-background-bg); }
+.foreshadow-highlight { box-shadow: 0 0 0 3px #3182ce; transition: box-shadow 0.3s; }
+
+/* ─── Character dropdown ──────── */
+.character-dropdown-btn { width: 100%; text-align: left; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-input); cursor: pointer; }
+.character-dropdown-panel { max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; margin-top: 4px; padding: 4px 0; background: var(--bg-input); }
+.character-dropdown-item { display: flex; align-items: center; gap: 6px; padding: 4px 10px; cursor: pointer; font-size: 13px; }
+.character-dropdown-item:hover { background: var(--bg-hover); }
+.character-chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 8px; background: var(--bg-tag); border-radius: 12px; font-size: 12px; margin: 2px; }
+.character-chip button { background: none; border: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; color: var(--text-muted); }
+.character-chip button:hover { color: var(--text); }
+.character-chips { margin-top: 6px; }
+
+/* ─── Clues editor ────────────── */
+.clues-editor { display: flex; flex-direction: column; gap: 6px; }
+.clue-row { display: flex; gap: 6px; align-items: center; }
+.clue-row select { width: 140px; flex-shrink: 0; }
+.clue-row input { flex: 1; }
+
+
+/* ─── Foreshadow Health Card ──────────────────────── */
+.foreshadow-health-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.84rem;
+}
+.foreshadow-health-score {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.foreshadow-health-bar {
+  height: 8px;
+  background: var(--bg-sidebar);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.foreshadow-health-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+.foreshadow-health-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* ─── Foreshadow Config Panel ─────────────────────── */
+.foreshadow-config-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.foreshadow-config-panel label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+.foreshadow-config-panel .config-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.foreshadow-config-panel input[type="number"] {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+}
+.foreshadow-config-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+

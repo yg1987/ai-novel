@@ -1,4 +1,5 @@
 // src/components/Pagination.tsx
+import './Pagination.css'
 
 interface PaginationProps {
   /** 当前页码（1-based） */

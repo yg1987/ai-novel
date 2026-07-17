@@ -8,15 +8,17 @@ import {
   applyFilter,
   generateId,
   parseChapterRef,
-  buildChapterRef,
   type NoteEntry,
   type NoteType,
   type FilterView,
 } from '../services/notesStorage'
 import ConfirmDialog from './ConfirmDialog'
 import Pagination from './Pagination'
-import Button from './Button'
 import { usePagination } from '../hooks/usePagination'
+import NotesComposer from './notes-panel/NotesComposer'
+import NotesToolbar from './notes-panel/NotesToolbar'
+import NotesList from './notes-panel/NotesList'
+import './notes-panel/NotesPanel.css'
 
 type ViewMode = 'timeline' | 'grouped'
 
@@ -266,30 +268,6 @@ export default function NotesPanel({ projectId, onNavigateToChapter, initialChap
 
   // ─── Render helpers ─────────────────────────────
 
-  const typeIcon = (n: NoteEntry): string => {
-    if (n.type === 'question') return '❓'
-    if (n.type === 'todo') return '☐'
-    return '📝'
-  }
-
-  const stateButton = (n: NoteEntry) => {
-    if (n.type === 'todo') {
-      return (
-        <Button variant="text" size="sm" onClick={() => { handleToggleDone(n.id).catch(console.error) }}>
-          {n.done ? '↩ 重开' : '✓ 完成'}
-        </Button>
-      )
-    }
-    if (n.type === 'question') {
-      return (
-        <Button variant="text" size="sm" onClick={() => { handleToggleResolved(n.id).catch(console.error) }}>
-          {n.resolved ? '↩ 重开' : '✓ 解决'}
-        </Button>
-      )
-    }
-    return null
-  }
-
   const filterEmptyLabel = (): string => {
     switch (filter) {
       case 'note': return '备注'
@@ -303,122 +281,30 @@ export default function NotesPanel({ projectId, onNavigateToChapter, initialChap
 
   const chapterVolumes = useMemo(() => groupChaptersByVolume(chapterList), [chapterList])
 
-  const renderNoteItem = (n: NoteEntry) => (
-    <div key={n.id} className={`note-item ${n.type}${n.done ? ' done' : ''}${n.resolved ? ' resolved' : ''}`}>
-      <div className="note-item-header">
-        <span className="note-type-badge">{typeIcon(n)}</span>
-        {n.chapterRef && (
-          <span
-            className="note-chapter-tag"
-            onClick={(e) => { e.stopPropagation(); onNavigateToChapter?.(n.chapterRef) }}
-            title="点击跳转到该章节"
-          >
-            📖 {resolveChapterName(n.chapterRef, chapterList)}
-          </span>
-        )}
-        <span className="note-date">{n.createdAt}</span>
-        <div className="note-item-actions">
-          {stateButton(n)}
-          <Button variant="text" size="sm" onClick={(e) => { e.stopPropagation(); setDeleteTarget(n) }} style={{ color: 'var(--danger)' }}>✕</Button>
-        </div>
-      </div>
-      {editingId === n.id ? (
-        <div className="note-edit-area">
-          <textarea
-            className="note-edit-textarea"
-            value={editContent}
-            onChange={(e) => { setEditContent(e.target.value) }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit().catch(console.error) }
-              if (e.key === 'Escape') cancelEdit()
-            }}
-            autoFocus
-            rows={3}
-          />
-          <div className="dialog-footer" style={{ borderTop: 'none', paddingTop: 0, marginTop: 6 }}>
-            <Button variant="text" size="sm" onClick={cancelEdit}>取消</Button>
-            <Button variant="text" size="sm" onClick={() => { saveEdit().catch(console.error) }}>保存</Button>
-          </div>
-        </div>
-      ) : (
-        <div
-          className={`note-content${n.done ? ' done-text' : ''}${n.resolved ? ' resolved-text' : ''}`}
-          onClick={() => { startEdit(n) }}
-          title="点击编辑"
-        >
-          {n.content}
-        </div>
-      )}
-    </div>
-  )
-
   // ─── Render ─────────────────────────────────────
 
   return (
     <div className="notes-panel">
-      <div className="notes-input-area">
-        <div className="notes-input-row">
-          <textarea
-            className="notes-input"
-            value={newContent}
-            onChange={(e) => { setNewContent(e.target.value) }}
-            placeholder="添加备注、待办或疑问…"
-            rows={2}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAdd().catch(console.error) }
-            }}
-          />
-          <select value={newType} onChange={(e) => { setNewType(e.target.value as NoteType) }}>
-            <option value="note">备注</option>
-            <option value="todo">待办</option>
-            <option value="question">疑问</option>
-          </select>
-          <Button variant="primary" size="md" onClick={() => { handleAdd().catch(console.error) }}>添加</Button>
-        </div>
-        {chapterVolumes.size > 0 && (
-          <div className="notes-chapter-row">
-            <select value={newChapterRef} onChange={(e) => { setNewChapterRef(e.target.value) }}>
-              <option value="">项目级（不关联章节）</option>
-              {[...chapterVolumes.entries()].map(([volume, chs]) => (
-                <optgroup key={volume} label={volume}>
-                  {chs.map((ch) => (
-                    <option key={buildChapterRef(ch.volume, ch.id)} value={buildChapterRef(ch.volume, ch.id)}>
-                      {ch.title}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
+      <NotesComposer
+        content={newContent}
+        type={newType}
+        chapterRef={newChapterRef}
+        chapterVolumes={chapterVolumes}
+        onContentChange={setNewContent}
+        onTypeChange={setNewType}
+        onChapterRefChange={setNewChapterRef}
+        onAdd={() => { handleAdd().catch(console.error) }}
+      />
 
-      <div className="notes-toolbar">
-        <div className="notes-filter">
-          {FILTER_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              className={`tab-btn${filter === opt.value ? ' active' : ''}`}
-              onClick={() => { handleFilterChange(opt.value) }}
-            >
-              {opt.label}
-              <span className="notes-filter-count">
-                {' '}{opt.value === 'all' ? notes.length : countFiltered(notes, opt.value)}
-              </span>
-            </button>
-          ))}
-        </div>
-        <div className="notes-view-toggle">
-          <button
-            className={`tab-btn${viewMode === 'timeline' ? ' active' : ''}`}
-            onClick={() => { handleViewModeChange('timeline') }}
-          >📋 时间线</button>
-          <button
-            className={`tab-btn${viewMode === 'grouped' ? ' active' : ''}`}
-            onClick={() => { handleViewModeChange('grouped') }}
-          >📂 按章节</button>
-        </div>
-      </div>
+      <NotesToolbar
+        notes={notes}
+        filter={filter}
+        viewMode={viewMode}
+        options={FILTER_OPTIONS}
+        countFiltered={countFiltered}
+        onFilterChange={handleFilterChange}
+        onViewModeChange={handleViewModeChange}
+      />
 
       {overdueCount > 0 && (
         <div className="notes-overdue-banner">
@@ -426,41 +312,26 @@ export default function NotesPanel({ projectId, onNavigateToChapter, initialChap
         </div>
       )}
 
-      <div className="notes-list">
-        {loading ? (
-          <p className="notes-empty">加载中…</p>
-        ) : viewMode === 'grouped' && groupedPaged ? (
-          groupedPaged.items.length === 0 ? (
-            <p className="notes-empty">暂无{filterEmptyLabel()}</p>
-          ) : (
-            groupedPaged.items.map((item) => {
-              if (item.kind === 'group-header') {
-                const isCollapsed = collapsedGroups.has(item.key)
-                return (
-                  <div
-                    key={`gh-${item.key}`}
-                    className="notes-group-header"
-                    data-notes-group={item.key}
-                    onClick={() => { toggleGroupCollapse(item.key) }}
-                  >
-                    <span className="notes-group-caret">{isCollapsed ? '▶' : '▼'}</span>
-                    <span className="notes-group-title">{item.title}</span>
-                    <span className="notes-group-count">{item.count}</span>
-                  </div>
-                )
-              }
-              return renderNoteItem(item.note)
-            })
-          )
-        ) : (
-          <>
-            {paged.map(renderNoteItem)}
-            {filtered.length === 0 && !loading && (
-              <p className="notes-empty">暂无{filterEmptyLabel()}</p>
-            )}
-          </>
-        )}
-      </div>
+      <NotesList
+        loading={loading}
+        viewMode={viewMode}
+        timelineItems={paged}
+        groupedItems={viewMode === 'grouped' && groupedPaged ? groupedPaged.items : null}
+        filterEmptyLabel={filterEmptyLabel()}
+        collapsedGroups={collapsedGroups}
+        editContent={editContent}
+        editingId={editingId}
+        resolveChapterName={(ref) => resolveChapterName(ref, chapterList)}
+        onToggleGroup={toggleGroupCollapse}
+        onNavigateToChapter={onNavigateToChapter}
+        onStartEdit={startEdit}
+        onEditContentChange={setEditContent}
+        onSaveEdit={() => { saveEdit().catch(console.error) }}
+        onCancelEdit={cancelEdit}
+        onToggleDone={(id) => { handleToggleDone(id).catch(console.error) }}
+        onToggleResolved={(id) => { handleToggleResolved(id).catch(console.error) }}
+        onDelete={setDeleteTarget}
+      />
 
       <Pagination
         currentPage={page}

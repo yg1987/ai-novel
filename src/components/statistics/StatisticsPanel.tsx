@@ -1,9 +1,11 @@
-import { useState } from 'react'
-import WordCountSection from './WordCountSection'
-import AIUsageSection from './AIUsageSection'
-import WritingHabitsSection from './WritingHabitsSection'
-import ProjectScaleSection from './ProjectScaleSection'
-import HealthSection from './HealthSection'
+import { lazy, Suspense, useState } from 'react'
+import './StatisticsPanel.css'
+
+const WordCountSection = lazy(() => import('./WordCountSection'))
+const AIUsageSection = lazy(() => import('./AIUsageSection'))
+const WritingHabitsSection = lazy(() => import('./WritingHabitsSection'))
+const ProjectScaleSection = lazy(() => import('./ProjectScaleSection'))
+const HealthSection = lazy(() => import('./HealthSection'))
 
 interface Props {
   projectId: string
@@ -58,21 +60,23 @@ export default function StatisticsPanel({ projectId, targetWords = 0 }: Props) {
       {/* ─── Content ─── */}
       <div className="panel-editor">
         <div className="stats-content">
-          {activeSection === 'words' && (
-            <WordCountSection projectId={projectId} days={days} targetWords={targetWords} />
-          )}
-          {activeSection === 'ai' && (
-            <AIUsageSection projectId={projectId} days={days} />
-          )}
-          {activeSection === 'habits' && (
-            <WritingHabitsSection projectId={projectId} days={days} />
-          )}
-          {activeSection === 'scale' && (
-            <ProjectScaleSection projectId={projectId} days={days} />
-          )}
-          {activeSection === 'health' && (
-            <HealthSection projectId={projectId} days={days} />
-          )}
+          <Suspense fallback={<div className="section-placeholder">加载中…</div>}>
+            {activeSection === 'words' && (
+              <WordCountSection projectId={projectId} days={days} targetWords={targetWords} />
+            )}
+            {activeSection === 'ai' && (
+              <AIUsageSection projectId={projectId} days={days} />
+            )}
+            {activeSection === 'habits' && (
+              <WritingHabitsSection projectId={projectId} days={days} />
+            )}
+            {activeSection === 'scale' && (
+              <ProjectScaleSection projectId={projectId} days={days} />
+            )}
+            {activeSection === 'health' && (
+              <HealthSection projectId={projectId} days={days} />
+            )}
+          </Suspense>
         </div>
       </div>
     </div>
