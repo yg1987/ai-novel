@@ -1,86 +1,123 @@
-import { useState, useEffect, useCallback } from 'react'
-import { listResourceCategories, listResourceFiles, readResourceFile } from '../api/tauri'
-import type { FileEntry } from '../api/tauri'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  getMaterial,
+  initializeMaterialLibrary,
+  listMaterialCategories,
+  listMaterialKinds,
+  listMaterials,
+} from '../api/tauri'
+import type {
+  MaterialCategory,
+  MaterialItem,
+  MaterialKindDefinition,
+  MaterialSummary,
+} from '../types/material'
 import Button from './Button'
 import './MaterialSidebar.css'
 
 interface Props {
+  projectId: string
   onInsert: (text: string) => void
 }
 
-export default function MaterialSidebar({ onInsert }: Props) {
-  const [categories, setCategories] = useState<string[]>([])
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-  const [files, setFiles] = useState<FileEntry[]>([])
-  const [selectedFile, setSelectedFile] = useState<string | null>(null)
-  const [previewText, setPreviewText] = useState('')
+export default function MaterialSidebar({ projectId, onInsert }: Props) {
+  const [categories, setCategories] = useState<MaterialCategory[]>([])
+  const [kinds, setKinds] = useState<MaterialKindDefinition[]>([])
+  const [selectedCategory, setSelectedCategory] = useState('')
+  const [materials, setMaterials] = useState<MaterialSummary[]>([])
+  const [selectedMaterial, setSelectedMaterial] = useState<MaterialItem | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => { listResourceCategories().then(setCategories).catch(console.error) }, [])
+  const kindMap = useMemo(() => new Map(kinds.map((kind) => [kind.id, kind.name])), [kinds])
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      await initializeMaterialLibrary()
+      const [nextCategories, nextKinds, page] = await Promise.all([
+        listMaterialCategories(),
+        listMaterialKinds(),
+        listMaterials({
+          projectId,
+          categoryId: selectedCategory || undefined,
+        }, 1, 100),
+      ])
+      setCategories(nextCategories)
+      setKinds(nextKinds)
+      setMaterials(page.items)
+      if (selectedMaterial && !page.items.some((item) => item.id === selectedMaterial.id)) {
+        setSelectedMaterial(null)
+      }
+    } catch (cause) {
+      setError(String(cause))
+    } finally {
+      setLoading(false)
+    }
+  }, [projectId, selectedCategory, selectedMaterial])
 
   useEffect(() => {
-    if (selectedCategory) {
-      listResourceFiles(selectedCategory)
-        .then((fs) => setFiles(fs.filter((f) => f.name !== '.gitkeep')))
-        .catch(console.error)
-      setSelectedFile(null)
-      setPreviewText('')
-    }
-  }, [selectedCategory])
+    const timer = window.setTimeout(() => { void refresh() }, 0)
+    return () => { window.clearTimeout(timer) }
+  }, [refresh])
 
-  const handleSelectFile = useCallback(async (filename: string) => {
-    if (!selectedCategory) return
-    setSelectedFile(filename)
+  const handleSelect = async (materialId: string) => {
+    setError(null)
     try {
-      const content = await readResourceFile(selectedCategory, filename)
-      setPreviewText(content.slice(0, 500))
-    } catch { setPreviewText('') }
-  }, [selectedCategory])
+      setSelectedMaterial(await getMaterial(materialId))
+    } catch (cause) {
+      setSelectedMaterial(null)
+      setError(String(cause))
+    }
+  }
 
   return (
     <div className="material-sidebar">
       <div className="material-sidebar-header">
         <h4>素材库</h4>
+        <span>{materials.length} 条</span>
       </div>
 
       <select
         className="material-category-select"
-        value={selectedCategory ?? ''}
-        onChange={(e) => setSelectedCategory(e.target.value || null)}
+        value={selectedCategory}
+        onChange={(event) => { setSelectedCategory(event.target.value); setSelectedMaterial(null) }}
       >
-        <option value="">选择分类…</option>
-        {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+        <option value="">全部可见素材</option>
+        {[...categories].sort((a, b) => a.order - b.order).map((category) => (
+          <option key={category.id} value={category.id}>{category.name}</option>
+        ))}
       </select>
 
+      {error && <div className="material-sidebar-error">{error}</div>}
       <div className="material-file-list">
-        {files.map((f) => (
-          <div
-            key={f.name}
-            className={`material-file-item${selectedFile === f.name ? ' active' : ''}`}
-            onClick={() => handleSelectFile(f.name)}
+        {loading && <p className="material-empty">加载中…</p>}
+        {!loading && materials.map((material) => (
+          <button
+            key={material.id}
+            className={`material-file-item${selectedMaterial?.id === material.id ? ' active' : ''}`}
+            onClick={() => { void handleSelect(material.id) }}
           >
-            {f.name.replace(/\.md$/i, '')}
-          </div>
+            <strong>{material.title}</strong>
+            <span>{kindMap.get(material.kindId) ?? '未知类型'}{material.favorite ? ' · ★' : ''}</span>
+          </button>
         ))}
-        {selectedCategory && files.length === 0 && (
-          <p className="material-empty">该分类暂无素材</p>
-        )}
+        {!loading && materials.length === 0 && <p className="material-empty">当前范围暂无素材</p>}
       </div>
 
-      {selectedFile ? (
+      {selectedMaterial ? (
         <div className="material-preview">
           <div className="material-preview-header">
-            <span className="material-filename">{selectedFile}</span>
-            <Button variant="primary" size="sm"
-              onClick={() => onInsert(previewText)}>
-              插入
+            <span className="material-filename">{selectedMaterial.title}</span>
+            <Button variant="primary" size="sm" onClick={() => { onInsert(selectedMaterial.content); }} disabled={!selectedMaterial.content}>
+              插入全文
             </Button>
           </div>
-          <pre className="material-preview-content">{previewText}</pre>
+          <pre className="material-preview-content">{selectedMaterial.content || '（空）'}</pre>
         </div>
       ) : (
-        <p className="material-empty" style={{ padding: 16 }}>
-          {selectedCategory ? '选择素材文件预览' : '选择分类后浏览素材，点击「插入」添加到编辑器光标位置'}
-        </p>
+        <p className="material-empty material-sidebar-hint">选择素材后可预览并插入全文</p>
       )}
     </div>
   )

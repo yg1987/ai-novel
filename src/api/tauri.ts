@@ -3,6 +3,17 @@ import type { ProjectMeta, CreateProjectInput, UpdateProjectInput } from '../typ
 import type { ChapterMeta } from '../types/chapter'
 import type { ProviderConfig } from '../types/provider'
 import type { VersionMeta } from '../types/review'
+import type {
+  LegacyCleanupSummary,
+  MaterialCategory,
+  MaterialFilter,
+  MaterialItem,
+  MaterialKindDefinition,
+  MaterialPage,
+  MaterialSearchResult,
+  MaterialUpdatePatch,
+  MaterialWriteInput,
+} from '../types/material'
 
 export async function createProject(input: CreateProjectInput): Promise<ProjectMeta> {
   return invoke<ProjectMeta>('create_project', {
@@ -227,39 +238,74 @@ export async function getChapterVersion(projectId: string, volume: string, chapt
 }
 
 export async function restoreChapterVersion(projectId: string, volume: string, chapterId: string, version: number): Promise<void> {
-  return invoke<void>('restore_chapter_version', { projectId, volume, chapterId, version })
+  await invoke('restore_chapter_version', { projectId, volume, chapterId, version })
 }
 
 export async function deleteChapterVersion(projectId: string, volume: string, chapterId: string, version: number): Promise<void> {
-  return invoke<void>('delete_chapter_version', { projectId, volume, chapterId, version })
+  await invoke('delete_chapter_version', { projectId, volume, chapterId, version })
 }
 
 export async function renameChapterVersion(projectId: string, volume: string, chapterId: string, version: number, label: string): Promise<void> {
-  return invoke<void>('rename_chapter_version', { projectId, volume, chapterId, version, label })
+  await invoke('rename_chapter_version', { projectId, volume, chapterId, version, label })
 }
 
-// ─── Resource Library ─────────────────────────────
+// ─── Material Library ─────────────────────────────
 
-export async function listResourceCategories(): Promise<string[]> {
-  return invoke<string[]>('list_resource_categories')
+export async function initializeMaterialLibrary(): Promise<LegacyCleanupSummary> {
+  return invoke<LegacyCleanupSummary>('initialize_material_library')
 }
 
-export async function listResourceFiles(category: string): Promise<FileEntry[]> {
-  return invoke<FileEntry[]>('list_resource_files', { category })
+export async function listMaterials(
+  filter: MaterialFilter,
+  page = 1,
+  pageSize = 20,
+): Promise<MaterialPage> {
+  return invoke<MaterialPage>('list_materials', { filter, page, pageSize })
 }
 
-export async function readResourceFile(category: string, filename: string): Promise<string> {
-  return invoke<string>('read_resource_file', { category, filename })
+export async function getMaterial(materialId: string): Promise<MaterialItem> {
+  return invoke<MaterialItem>('get_material', { materialId })
 }
 
-export async function writeResourceFile(category: string, filename: string, content: string): Promise<void> {
-  return invoke<void>('write_resource_file', { category, filename, content })
+export async function createMaterial(input: MaterialWriteInput): Promise<MaterialItem> {
+  return invoke<MaterialItem>('create_material', { input })
 }
 
-export async function deleteResourceFile(category: string, filename: string): Promise<void> {
-  return invoke<void>('delete_resource_file', { category, filename })
+export async function updateMaterial(
+  materialId: string,
+  patch: MaterialUpdatePatch,
+): Promise<MaterialItem> {
+  return invoke<MaterialItem>('update_material', { materialId, patch })
 }
 
-export async function searchResourceFiles(query: string, maxResults?: number): Promise<SearchResult[]> {
-  return invoke<SearchResult[]>('search_resource_files', { query, maxResults: maxResults ?? 10 })
+export async function deleteMaterial(materialId: string): Promise<void> {
+  await invoke('delete_material', { materialId })
+}
+
+export async function listMaterialCategories(): Promise<MaterialCategory[]> {
+  return invoke<MaterialCategory[]>('list_material_categories')
+}
+
+export async function saveMaterialCategories(categories: MaterialCategory[]): Promise<void> {
+  await invoke('save_material_categories', { categories })
+}
+
+export async function listMaterialKinds(): Promise<MaterialKindDefinition[]> {
+  return invoke<MaterialKindDefinition[]>('list_material_kinds')
+}
+
+export async function saveMaterialKinds(kinds: MaterialKindDefinition[]): Promise<void> {
+  await invoke('save_material_kinds', { kinds })
+}
+
+export async function restoreMaterialKindPresets(): Promise<MaterialKindDefinition[]> {
+  return invoke<MaterialKindDefinition[]>('restore_material_kind_presets')
+}
+
+export async function searchMaterials(
+  query: string,
+  filter: MaterialFilter,
+  limit = 20,
+): Promise<MaterialSearchResult[]> {
+  return invoke<MaterialSearchResult[]>('search_materials', { query, filter, limit })
 }

@@ -519,7 +519,7 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
               </div>
               {showMaterial && (
                 <Suspense fallback={<div className="material-sidebar"><div className="editor-loading">加载素材…</div></div>}>
-                  <MaterialSidebar onInsert={(text) => editorRef.current?.insertAtCursor(text)} />
+                  <MaterialSidebar projectId={projectId} onInsert={(text) => editorRef.current?.insertAtCursor(text)} />
                 </Suspense>
               )}
             </div>

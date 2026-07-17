@@ -1,5 +1,5 @@
 // src/services/search.ts
-import { searchProjectFiles, vectorSearchChunks, searchResourceFiles } from '../api/tauri'
+import { searchMaterials, searchProjectFiles, vectorSearchChunks } from '../api/tauri'
 import type { SearchResult } from '../api/tauri'
 import { embedText } from './embeddings'
 
@@ -30,7 +30,7 @@ export function tokenizeQuery(query: string): string[] {
   return [...new Set([...tokens, ...expanded])]
 }
 
-export type SearchSource = 'characters' | 'worldview' | 'chapters' | 'notes' | 'outline' | 'memory' | 'resources'
+export type SearchSource = 'characters' | 'worldview' | 'chapters' | 'notes' | 'outline' | 'memory' | 'materials'
 
 export interface HybridSearchOptions {
   sources?: SearchSource[]
@@ -51,7 +51,10 @@ export async function hybridSearch(
   // 1. Keyword search (always) — expand query with CJK bigrams
   const expandedTokens = tokenizeQuery(query)
   const keywordQuery = expandedTokens.length > 0 ? expandedTokens.join(' ') : query
-  const keywordPromise = searchProjectFiles(projectId, keywordQuery, sources as string[], topK)
+  const projectSources = sources.filter((source) => source !== 'materials')
+  const keywordPromise = sources.length > 0 && projectSources.length === 0
+    ? Promise.resolve([] as SearchResult[])
+    : searchProjectFiles(projectId, keywordQuery, projectSources, topK)
 
   // 2. Vector search (optional) — filter by source if active
   let vectorPromise: Promise<Array<{ path: string; score: number; heading_path: string; chunk_text: string }> | null> = Promise.resolve(null)
@@ -62,7 +65,8 @@ export async function hybridSearch(
         if (!embedding) return null
         // Over-fetch a bit to compensate for post-filtering
         const fetchK = hasSourceFilter ? topK * 3 : topK
-        const results = await vectorSearchChunks(projectId, embedding, fetchK)
+        const results = (await vectorSearchChunks(projectId, embedding, fetchK))
+          .filter((result) => !result.page_id.startsWith('resources/'))
         // Filter by source prefix if specific source is selected
         const filtered = hasSourceFilter
           ? results.filter(r => sources.some(s => r.page_id.startsWith(s + '/')))
@@ -72,38 +76,46 @@ export async function hybridSearch(
     })()
   }
 
-  // 3. Resource workspace-level search (skip if a specific non-resource source is selected)
-  let resourcePromise: Promise<SearchResult[]> = Promise.resolve([])
-  if (!hasSourceFilter || sources.includes('resources')) {
-    resourcePromise = searchResourceFiles(query, topK).catch(() => [] as SearchResult[])
+  // 3. Structured material search, scoped to materials visible in this project.
+  let materialPromise: Promise<SearchResult[]> = Promise.resolve([])
+  if (!hasSourceFilter || sources.includes('materials')) {
+    materialPromise = searchMaterials(query, { projectId }, topK)
+      .then((results) => results.map((result) => ({
+        path: `materials/${result.materialId}`,
+        filename: result.title,
+        snippet: result.snippet,
+        score: result.score,
+        source: 'materials',
+      })))
+      .catch(() => [] as SearchResult[])
   }
 
   // 4. Run all three
-  const [keywordResults, vectorResults, resourceResults] = await Promise.all([
+  const [keywordResults, vectorResults, materialResults] = await Promise.all([
     keywordPromise,
     vectorPromise,
-    resourcePromise,
+    materialPromise,
   ])
 
   // 5. RRF fusion (3 ranks)
-  const rankMap = new Map<string, { keywordRank: number | null; vectorRank: number | null; resourceRank: number | null }>()
+  const rankMap = new Map<string, { keywordRank: number | null; vectorRank: number | null; materialRank: number | null }>()
 
   keywordResults?.forEach((r, i) => {
     const key = r.path
-    if (!rankMap.has(key)) rankMap.set(key, { keywordRank: null, vectorRank: null, resourceRank: null })
+    if (!rankMap.has(key)) rankMap.set(key, { keywordRank: null, vectorRank: null, materialRank: null })
     rankMap.get(key)!.keywordRank = i + 1
   })
 
   vectorResults?.forEach((r, i) => {
     const key = r.path
-    if (!rankMap.has(key)) rankMap.set(key, { keywordRank: null, vectorRank: null, resourceRank: null })
+    if (!rankMap.has(key)) rankMap.set(key, { keywordRank: null, vectorRank: null, materialRank: null })
     rankMap.get(key)!.vectorRank = i + 1
   })
 
-  resourceResults?.forEach((r, i) => {
+  materialResults?.forEach((r, i) => {
     const key = r.path
-    if (!rankMap.has(key)) rankMap.set(key, { keywordRank: null, vectorRank: null, resourceRank: null })
-    rankMap.get(key)!.resourceRank = i + 1
+    if (!rankMap.has(key)) rankMap.set(key, { keywordRank: null, vectorRank: null, materialRank: null })
+    rankMap.get(key)!.materialRank = i + 1
   })
 
   // 6. Compute RRF score with proper data for vector-only results
@@ -112,11 +124,11 @@ export async function hybridSearch(
     let rrfScore = 0
     if (ranks.keywordRank !== null) rrfScore += 1 / (RRF_K + ranks.keywordRank)
     if (ranks.vectorRank !== null) rrfScore += 1 / (RRF_K + ranks.vectorRank)
-    if (ranks.resourceRank !== null) rrfScore += 1 / (RRF_K + ranks.resourceRank)
+    if (ranks.materialRank !== null) rrfScore += 1 / (RRF_K + ranks.materialRank)
 
-    // Find best source data: keyword > resource > vector
+    // Find best source data: project keyword > material > vector.
     const keywordHit = keywordResults?.find((r) => r.path === path)
-    const resourceHit = resourceResults?.find((r) => r.path === path)
+    const materialHit = materialResults?.find((r) => r.path === path)
     const vectorHit = vectorResults?.find((r) => r.path === path)
 
     if (keywordHit) {
@@ -128,13 +140,13 @@ export async function hybridSearch(
         source: keywordHit.source,
         rrfScore,
       })
-    } else if (resourceHit) {
+    } else if (materialHit) {
       merged.push({
-        path: resourceHit.path,
-        filename: resourceHit.filename,
-        snippet: resourceHit.snippet ?? '',
-        score: resourceHit.score,
-        source: resourceHit.source,
+        path: materialHit.path,
+        filename: materialHit.filename,
+        snippet: materialHit.snippet ?? '',
+        score: materialHit.score,
+        source: materialHit.source,
         rrfScore,
       })
     } else if (vectorHit) {

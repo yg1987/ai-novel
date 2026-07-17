@@ -68,6 +68,61 @@ fn validate_page_id(page_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_page_prefix(prefix: &str) -> Result<(), String> {
+    if prefix.is_empty()
+        || !prefix
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '/' | '-' | '_'))
+    {
+        return Err("Invalid page_id prefix".to_string());
+    }
+    Ok(())
+}
+
+pub async fn delete_page_prefix(
+    app_handle: &tauri::AppHandle,
+    project_id: &str,
+    prefix: &str,
+) -> Result<(), String> {
+    validate_page_prefix(prefix)?;
+    let uri = lancedb_uri(app_handle, project_id)?;
+    if !std::path::Path::new(&uri).exists() {
+        return Ok(());
+    }
+    let db = connect(&uri)
+        .execute()
+        .await
+        .map_err(|e| format!("Failed to connect to LanceDB: {e}"))?;
+    let table_names = db
+        .table_names()
+        .execute()
+        .await
+        .map_err(|e| format!("Failed to list tables: {e}"))?;
+    if !table_names.iter().any(|name| name == TABLE_NAME) {
+        return Ok(());
+    }
+    let table = db
+        .open_table(TABLE_NAME)
+        .execute()
+        .await
+        .map_err(|e| format!("Failed to open table: {e}"))?;
+    let filter = format!("page_id LIKE '{prefix}%'");
+    table
+        .delete(&filter)
+        .await
+        .map_err(|e| format!("Failed to delete vector pages with prefix {prefix}: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn vector_delete_page_prefix(
+    app_handle: tauri::AppHandle,
+    project_id: String,
+    page_id_prefix: String,
+) -> Result<(), String> {
+    delete_page_prefix(&app_handle, &project_id, &page_id_prefix).await
+}
+
 /// Build a RecordBatch from upsert chunks with the given schema.
 fn build_batch(chunks: &[ChunkUpsertInput], schema: Arc<Schema>) -> Result<RecordBatch, String> {
     let dim = match schema.column_with_name("vector") {
@@ -245,6 +300,9 @@ pub async fn vector_search_chunks(
             .ok_or("Missing _distance column")?;
 
         for i in 0..batch.num_rows() {
+            if page_ids.value(i).starts_with("resources/") {
+                continue;
+            }
             let distance = distances.value(i);
             out.push(ChunkSearchResult {
                 chunk_id: chunk_ids.value(i).to_string(),

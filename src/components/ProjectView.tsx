@@ -37,6 +37,7 @@ export default function ProjectView({ project, onBack }: Props) {
   const [navigateForeshadowId, setNavigateForeshadowId] = useState<string | null>(null)
   const [navigateNotesChapterRef, setNavigateNotesChapterRef] = useState<string | null>(null)
   const [navigateNotesFilter, setNavigateNotesFilter] = useState<string | null>(null)
+  const [navigateMaterialId, setNavigateMaterialId] = useState<string | null>(null)
 
   const handleNavigateToReview = (chapterId: string) => {
     setReviewChapterId(chapterId)
@@ -73,7 +74,7 @@ export default function ProjectView({ project, onBack }: Props) {
       notes: 'notes',
       outline: 'outline',
       memory: 'notes',
-      resources: 'resource',
+      materials: 'resource',
     }
 
     const targetTab = tabMap[source]
@@ -87,6 +88,11 @@ export default function ProjectView({ project, onBack }: Props) {
       if (name) {
         setNavigateCharacter(name)
       }
+    }
+
+    if (source === 'materials') {
+      const materialId = path.replace(/^materials[/\\]/, '')
+      if (materialId) setNavigateMaterialId(materialId)
     }
 
     setTab(targetTab)
@@ -113,7 +119,7 @@ export default function ProjectView({ project, onBack }: Props) {
       case 'review':
         return <ReviewPanel projectId={project.id} currentChapterId={reviewChapterId} onNavigateToForeshadow={handleNavigateToForeshadow} />
       case 'resource':
-        return <ResourcePanel projectId={project.id} />
+        return <ResourcePanel projectId={project.id} initialMaterialId={navigateMaterialId} onMaterialOpened={() => { setNavigateMaterialId(null) }} />
       case 'brainstorm':
         return <BrainstormPanel projectId={project.id} />
       case 'graph':

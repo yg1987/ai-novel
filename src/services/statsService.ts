@@ -1,4 +1,4 @@
-import { computeProjectStats, computeChapterWordCounts, listProjectFiles, listResourceCategories, listResourceFiles, listChapters } from '../api/tauri'
+import { computeProjectStats, computeChapterWordCounts, listProjectFiles, listMaterials, listChapters } from '../api/tauri'
 import type { ProjectStats, ChapterWordCount, DailyStats } from '../api/tauri'
 import { loadForeshadows } from './foreshadowStorage'
 import { loadAllNotes } from './notesStorage'
@@ -80,25 +80,19 @@ export interface ProjectScale {
 }
 
 export async function getProjectScale(projectId: string): Promise<ProjectScale> {
-  const [charFiles, outlineFiles, subOutlineFiles, allNotes, categories] = await Promise.all([
+  const [charFiles, outlineFiles, subOutlineFiles, allNotes, materialPage] = await Promise.all([
     listProjectFiles(projectId, 'characters').catch(() => []),
     listProjectFiles(projectId, 'outline').catch(() => []),
     listProjectFiles(projectId, 'outline/细纲').catch(() => []),
     loadAllNotes(projectId).catch(() => []),
-    listResourceCategories().catch(() => []),
+    listMaterials({ projectId }, 1, 1).catch(() => null),
   ])
 
   // Count only .md files for characters/worldview (skip order.json etc.)
   const countMd = (files: { name: string }[]) =>
     files.filter((f) => f.name.endsWith('.md')).length
 
-  // Count all resource files across categories
-  const resourceCounts = await Promise.all(
-    categories.map((cat) =>
-      listResourceFiles(cat).then((files) => files.length).catch(() => 0),
-    ),
-  )
-  const resources = resourceCounts.reduce((a, b) => a + b, 0)
+  const resources = materialPage?.totalItems ?? 0
 
   return {
     characters: countMd(charFiles),

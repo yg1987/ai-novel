@@ -189,6 +189,8 @@ fn update_project(
 fn delete_project(app_handle: tauri::AppHandle, project_id: String) -> Result<(), String> {
     let dir = project_dir(&app_handle, &project_id)?;
 
+    commands::material::detach_project(&app_handle, &project_id)?;
+
     let mut projects = load_index(&app_handle)?;
     projects.retain(|p| p.id != project_id);
     save_index(&app_handle, &projects)?;
@@ -599,6 +601,7 @@ pub fn run() {
             commands::search::search_project_files,
             commands::vectorstore::vector_upsert_chunks,
             commands::vectorstore::vector_search_chunks,
+            commands::vectorstore::vector_delete_page_prefix,
             commands::stats::append_stat_event,
             commands::stats::compute_daily_stats,
             commands::stats::compute_chapter_word_counts,
@@ -608,12 +611,18 @@ pub fn run() {
             commands::version::restore_chapter_version,
             commands::version::delete_chapter_version,
             commands::version::rename_chapter_version,
-            commands::resource::list_resource_categories,
-            commands::resource::list_resource_files,
-            commands::resource::read_resource_file,
-            commands::resource::write_resource_file,
-            commands::resource::delete_resource_file,
-            commands::search::search_resource_files,
+            commands::material::initialize_material_library,
+            commands::material::list_materials,
+            commands::material::get_material,
+            commands::material::create_material,
+            commands::material::update_material,
+            commands::material::delete_material,
+            commands::material::list_material_categories,
+            commands::material::save_material_categories,
+            commands::material::list_material_kinds,
+            commands::material::save_material_kinds,
+            commands::material::restore_material_kind_presets,
+            commands::material::search_materials,
             commands::export::export_project_epub,
             commands::archive::archive_project,
             commands::archive::import_project,
