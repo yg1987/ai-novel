@@ -20,14 +20,23 @@ pub struct VersionIndex {
 
 /// chapters/{volume}/.history/{chapter_id}/
 fn history_dir(project_dir: &PathBuf, volume: &str, chapter_id: &str) -> PathBuf {
-    project_dir.join("chapters").join(volume).join(".history").join(chapter_id)
+    project_dir
+        .join("chapters")
+        .join(volume)
+        .join(".history")
+        .join(chapter_id)
 }
 
 fn index_path(project_dir: &PathBuf, volume: &str, chapter_id: &str) -> PathBuf {
     history_dir(project_dir, volume, chapter_id).join("_index.json")
 }
 
-fn version_file_path(project_dir: &PathBuf, volume: &str, chapter_id: &str, version: u32) -> PathBuf {
+fn version_file_path(
+    project_dir: &PathBuf,
+    volume: &str,
+    chapter_id: &str,
+    version: u32,
+) -> PathBuf {
     history_dir(project_dir, volume, chapter_id).join(format!("v{}.md", version))
 }
 
@@ -36,8 +45,14 @@ pub fn count_chars(text: &str) -> u32 {
 }
 
 pub fn count_words(text: &str) -> u32 {
-    let chinese = text.chars().filter(|c| c >= & '\u{4e00}' && c <= & '\u{9fff}').count() as u32;
-    let english = text.split_whitespace().filter(|w| w.chars().any(|c| c.is_ascii_alphabetic())).count() as u32;
+    let chinese = text
+        .chars()
+        .filter(|c| c >= &'\u{4e00}' && c <= &'\u{9fff}')
+        .count() as u32;
+    let english = text
+        .split_whitespace()
+        .filter(|w| w.chars().any(|c| c.is_ascii_alphabetic()))
+        .count() as u32;
     chinese + english
 }
 
@@ -49,11 +64,15 @@ fn load_index(path: &PathBuf) -> VersionIndex {
             }
         }
     }
-    VersionIndex { versions: vec![], max_versions: 20 }
+    VersionIndex {
+        versions: vec![],
+        max_versions: 20,
+    }
 }
 
 fn save_index(path: &PathBuf, index: &VersionIndex) -> Result<(), String> {
-    let content = serde_json::to_string_pretty(index).map_err(|e| format!("Serialize error: {}", e))?;
+    let content =
+        serde_json::to_string_pretty(index).map_err(|e| format!("Serialize error: {}", e))?;
     fs::write(path, &content).map_err(|e| format!("Write error: {}", e))
 }
 
@@ -109,15 +128,20 @@ pub fn restore_chapter_version(
     let content = fs::read_to_string(&file_path).map_err(|e| format!("Read error: {}", e))?;
 
     // Backup current content first
-    let chapter_path = dir.join("chapters").join(&volume).join(format!("{}.md", chapter_id));
+    let chapter_path = dir
+        .join("chapters")
+        .join(&volume)
+        .join(format!("{}.md", chapter_id));
     if chapter_path.exists() {
-        let current = fs::read_to_string(&chapter_path).map_err(|e| format!("Read error: {}", e))?;
+        let current =
+            fs::read_to_string(&chapter_path).map_err(|e| format!("Read error: {}", e))?;
         if !current.trim().is_empty() {
             let idx_path = index_path(&dir, &volume, &chapter_id);
             let mut index = load_index(&idx_path);
             let next_ver = index.versions.iter().map(|v| v.version).max().unwrap_or(0) + 1;
             let backup_path = version_file_path(&dir, &volume, &chapter_id, next_ver);
-            fs::create_dir_all(backup_path.parent().unwrap()).map_err(|e| format!("Dir error: {}", e))?;
+            fs::create_dir_all(backup_path.parent().unwrap())
+                .map_err(|e| format!("Dir error: {}", e))?;
             fs::write(&backup_path, &current).map_err(|e| format!("Write error: {}", e))?;
             index.versions.push(VersionMeta {
                 version: next_ver,

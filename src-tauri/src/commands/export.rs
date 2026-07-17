@@ -1,7 +1,7 @@
+use epub_builder::{EpubBuilder, EpubContent, ZipLibrary};
 use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
-use epub_builder::{EpubBuilder, EpubContent, ZipLibrary};
 
 /// Collect chapter info: (order, title, plain text content)
 fn collect_chapters(project_dir: &PathBuf) -> Result<Vec<(u32, String, String)>, String> {
@@ -13,8 +13,8 @@ fn collect_chapters(project_dir: &PathBuf) -> Result<Vec<(u32, String, String)>,
     let mut chapters: Vec<(u32, String, String)> = Vec::new();
 
     // Walk volume subdirectories (chapters/{volume}/ch*.md)
-    let entries = fs::read_dir(&chapters_dir)
-        .map_err(|e| format!("Failed to read chapters dir: {e}"))?;
+    let entries =
+        fs::read_dir(&chapters_dir).map_err(|e| format!("Failed to read chapters dir: {e}"))?;
 
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
@@ -27,8 +27,8 @@ fn collect_chapters(project_dir: &PathBuf) -> Result<Vec<(u32, String, String)>,
             continue;
         }
 
-        let vol_entries = fs::read_dir(&vol_dir)
-            .map_err(|e| format!("Failed to read volume dir {name}: {e}"))?;
+        let vol_entries =
+            fs::read_dir(&vol_dir).map_err(|e| format!("Failed to read volume dir {name}: {e}"))?;
 
         for ve in vol_entries.flatten() {
             let fname = ve.file_name().to_string_lossy().to_string();
@@ -36,7 +36,8 @@ fn collect_chapters(project_dir: &PathBuf) -> Result<Vec<(u32, String, String)>,
                 continue;
             }
             let id = fname.trim_end_matches(".md").to_string();
-            let order = id.strip_prefix("ch")
+            let order = id
+                .strip_prefix("ch")
                 .and_then(|s| s.parse::<u32>().ok())
                 .unwrap_or(0);
 
@@ -44,9 +45,7 @@ fn collect_chapters(project_dir: &PathBuf) -> Result<Vec<(u32, String, String)>,
                 .map_err(|e| format!("Failed to read {fname}: {e}"))?;
 
             // Strip HTML tags to get plain text for EPUB
-            let body = content
-                .replace('<', "")
-                .replace('>', "\n");
+            let body = content.replace('<', "").replace('>', "\n");
 
             let title = format!("第{order}章");
             chapters.push((order, title, body));
@@ -72,17 +71,26 @@ pub fn export_project_epub(
         if meta_path.exists() {
             if let Ok(content) = fs::read_to_string(&meta_path) {
                 if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&content) {
-                    meta.get("name").and_then(|v| v.as_str()).unwrap_or("Untitled").to_string()
-                } else { "Untitled".to_string() }
-            } else { "Untitled".to_string() }
-        } else { "Untitled".to_string() }
+                    meta.get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Untitled")
+                        .to_string()
+                } else {
+                    "Untitled".to_string()
+                }
+            } else {
+                "Untitled".to_string()
+            }
+        } else {
+            "Untitled".to_string()
+        }
     };
 
     let zip = ZipLibrary::new().map_err(|e| format!("Zip init error: {e}"))?;
-    let mut builder = EpubBuilder::new(zip)
-        .map_err(|e| format!("Epub init error: {e}"))?;
+    let mut builder = EpubBuilder::new(zip).map_err(|e| format!("Epub init error: {e}"))?;
 
-    builder.metadata("title", &project_name)
+    builder
+        .metadata("title", &project_name)
         .map_err(|e| format!("Metadata error: {e}"))?;
 
     // Add each chapter
@@ -100,21 +108,23 @@ pub fn export_project_epub(
             title = title,
             body = body.replace('\n', "</p>\n<p>"),
         );
-        builder.add_content(
-            EpubContent::new(format!("chapter_{order}.xhtml"), html.as_bytes())
-                .title(title.clone()),
-        ).map_err(|e| format!("Add content error: {e}"))?;
+        builder
+            .add_content(
+                EpubContent::new(format!("chapter_{order}.xhtml"), html.as_bytes())
+                    .title(title.clone()),
+            )
+            .map_err(|e| format!("Add content error: {e}"))?;
     }
 
     // Generate EPUB into memory buffer
     let mut buf = Cursor::new(Vec::new());
-    builder.generate(&mut buf)
+    builder
+        .generate(&mut buf)
         .map_err(|e| format!("Epub generate error: {e}"))?;
     let epub_data = buf.into_inner();
 
     // Write to output path
-    fs::write(&output_path, &epub_data)
-        .map_err(|e| format!("Write epub error: {e}"))?;
+    fs::write(&output_path, &epub_data).map_err(|e| format!("Write epub error: {e}"))?;
 
     Ok(output_path)
 }

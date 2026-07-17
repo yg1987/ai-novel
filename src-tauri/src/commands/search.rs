@@ -37,12 +37,14 @@ fn extract_snippet(text: &str, query_lower: &str, max_len: usize) -> String {
         let raw_start = pos.saturating_sub(40);
         let raw_end = (pos + query_lower.len() + 40).min(text.len());
         // Find nearest char boundary before raw_start
-        let start = text.char_indices()
+        let start = text
+            .char_indices()
             .take_while(|(i, _)| *i <= raw_start)
             .last()
             .map_or(0, |(i, _)| i);
         // Find nearest char boundary at or after raw_end
-        let end = text.char_indices()
+        let end = text
+            .char_indices()
             .skip_while(|(i, _)| *i < raw_end)
             .next()
             .map_or(text.len(), |(i, _)| i);
@@ -62,10 +64,21 @@ fn search_directory(
     results: &mut Vec<SearchResult>,
     max_results: usize,
 ) {
-    if results.len() >= max_results { return; }
-    if !dir.exists() { return; }
+    if results.len() >= max_results {
+        return;
+    }
+    if !dir.exists() {
+        return;
+    }
     let query_lower = query.to_lowercase();
-    search_dir_recursive(dir, project_dir, &query_lower, subdir_label, results, max_results);
+    search_dir_recursive(
+        dir,
+        project_dir,
+        &query_lower,
+        subdir_label,
+        results,
+        max_results,
+    );
 }
 
 fn search_dir_recursive(
@@ -76,24 +89,41 @@ fn search_dir_recursive(
     results: &mut Vec<SearchResult>,
     max_results: usize,
 ) {
-    if results.len() >= max_results { return; }
+    if results.len() >= max_results {
+        return;
+    }
 
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
-            if results.len() >= max_results { break; }
+            if results.len() >= max_results {
+                break;
+            }
             let path = entry.path();
 
             if path.is_dir() {
                 // Recurse into non-hidden subdirectories
-                if path.file_name().map_or(true, |n| n.to_string_lossy().starts_with('.')) {
+                if path
+                    .file_name()
+                    .map_or(true, |n| n.to_string_lossy().starts_with('.'))
+                {
                     continue;
                 }
-                search_dir_recursive(&path, project_dir, query_lower, subdir_label, results, max_results);
+                search_dir_recursive(
+                    &path,
+                    project_dir,
+                    query_lower,
+                    subdir_label,
+                    results,
+                    max_results,
+                );
                 continue;
             }
 
             // Skip hidden files
-            if path.file_name().map_or(true, |n| n.to_string_lossy().starts_with('.')) {
+            if path
+                .file_name()
+                .map_or(true, |n| n.to_string_lossy().starts_with('.'))
+            {
                 continue;
             }
 
@@ -107,11 +137,12 @@ fn search_dir_recursive(
             if let Ok(content) = fs::read_to_string(&path) {
                 let score = score_match(&content, query_lower);
                 if score > 0.0 {
-                    let rel_path = path.strip_prefix(project_dir)
-                        .unwrap_or(&path);
+                    let rel_path = path.strip_prefix(project_dir).unwrap_or(&path);
                     results.push(SearchResult {
                         path: rel_path.to_string_lossy().to_string(),
-                        filename: path.file_name().map_or(String::new(), |n| n.to_string_lossy().to_string()),
+                        filename: path
+                            .file_name()
+                            .map_or(String::new(), |n| n.to_string_lossy().to_string()),
                         snippet: extract_snippet(&content, query_lower, 120),
                         score,
                         source: subdir_label.to_string(),
@@ -154,7 +185,11 @@ pub fn search_project_files(
         }
     }
 
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(max);
 
     Ok(results)

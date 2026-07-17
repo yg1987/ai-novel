@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 use std::fs;
 use std::path::PathBuf;
+use tauri::Manager;
 use uuid::Uuid;
 
 mod commands;
@@ -76,8 +76,7 @@ fn create_project_skeleton(dir: &PathBuf, meta: &ProjectMeta) -> Result<(), Stri
         "tracks/review-reports",
     ];
     for d in &dirs {
-        fs::create_dir_all(dir.join(d))
-            .map_err(|e| format!("Failed to create dir {d}: {e}"))?;
+        fs::create_dir_all(dir.join(d)).map_err(|e| format!("Failed to create dir {d}: {e}"))?;
     }
 
     let meta_json =
@@ -114,8 +113,7 @@ fn create_project(
     };
 
     let dir = project_dir(&app_handle, &meta.id)?;
-    fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create project dir: {e}"))?;
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create project dir: {e}"))?;
 
     create_project_skeleton(&dir, &meta)?;
 
@@ -214,16 +212,24 @@ pub struct ChapterMeta {
 
 /// Build chapter file path: chapters/{volume}/{chapter_id}.md
 fn chapter_path(dir: &PathBuf, volume: &str, chapter_id: &str) -> PathBuf {
-    dir.join("chapters").join(volume).join(format!("{chapter_id}.md"))
+    dir.join("chapters")
+        .join(volume)
+        .join(format!("{chapter_id}.md"))
 }
 
 /// Build chapter history path: chapters/{volume}/.history/{chapter_id}/
 fn chapter_history_dir(dir: &PathBuf, volume: &str, chapter_id: &str) -> PathBuf {
-    dir.join("chapters").join(volume).join(".history").join(chapter_id)
+    dir.join("chapters")
+        .join(volume)
+        .join(".history")
+        .join(chapter_id)
 }
 
 #[tauri::command]
-fn list_chapters(app_handle: tauri::AppHandle, project_id: String) -> Result<Vec<ChapterMeta>, String> {
+fn list_chapters(
+    app_handle: tauri::AppHandle,
+    project_id: String,
+) -> Result<Vec<ChapterMeta>, String> {
     let dir = project_dir(&app_handle, &project_id)?.join("chapters");
     if !dir.exists() {
         return Ok(vec![]);
@@ -235,9 +241,13 @@ fn list_chapters(app_handle: tauri::AppHandle, project_id: String) -> Result<Vec
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         // Skip hidden dirs and non-dirs
-        if name.starts_with('.') { continue; }
+        if name.starts_with('.') {
+            continue;
+        }
         let vol_dir = dir.join(&name);
-        if !vol_dir.is_dir() { continue; }
+        if !vol_dir.is_dir() {
+            continue;
+        }
 
         // Read ch*.md files in this volume directory
         if let Ok(vol_entries) = fs::read_dir(&vol_dir) {
@@ -245,7 +255,8 @@ fn list_chapters(app_handle: tauri::AppHandle, project_id: String) -> Result<Vec
                 let fname = ve.file_name().to_string_lossy().to_string();
                 if fname.starts_with("ch") && fname.ends_with(".md") {
                     let id = fname.trim_end_matches(".md").to_string();
-                    let order = id.strip_prefix("ch")
+                    let order = id
+                        .strip_prefix("ch")
                         .and_then(|s| s.parse::<u32>().ok())
                         .unwrap_or(0);
                     chapters.push(ChapterMeta {
@@ -329,8 +340,7 @@ fn commit_chapter_version(
 
     // Save version snapshot
     let history_dir = chapter_history_dir(&dir, &volume, &chapter_id);
-    fs::create_dir_all(&history_dir)
-        .map_err(|e| format!("Failed to create history dir: {e}"))?;
+    fs::create_dir_all(&history_dir).map_err(|e| format!("Failed to create history dir: {e}"))?;
 
     let idx_path = history_dir.join("_index.json");
     let mut index = commands::version::load_index_for_save(&idx_path);
@@ -357,10 +367,9 @@ fn commit_chapter_version(
         }
     }
 
-    let idx_json = serde_json::to_string_pretty(&index)
-        .map_err(|e| format!("Serialize error: {e}"))?;
-    fs::write(&idx_path, &idx_json)
-        .map_err(|e| format!("Failed to write index: {e}"))?;
+    let idx_json =
+        serde_json::to_string_pretty(&index).map_err(|e| format!("Serialize error: {e}"))?;
+    fs::write(&idx_path, &idx_json).map_err(|e| format!("Failed to write index: {e}"))?;
 
     // Write current content to chapter file
     fs::write(&chapter_path, &content).map_err(|e| format!("Failed to write chapter: {e}"))
@@ -372,7 +381,9 @@ fn get_chapter_outline(
     project_id: String,
     chapter_id: String,
 ) -> Result<String, String> {
-    let dir = project_dir(&app_handle, &project_id)?.join("outline").join("细纲");
+    let dir = project_dir(&app_handle, &project_id)?
+        .join("outline")
+        .join("细纲");
 
     // 1. Try direct match: ch001.md
     let path = dir.join(format!("{chapter_id}.md"));
@@ -381,7 +392,10 @@ fn get_chapter_outline(
     }
 
     // 2. Fallback: search by chapter number for old naming convention (卷1_第1章.md)
-    if let Some(num) = chapter_id.strip_prefix("ch").and_then(|s| s.parse::<u32>().ok()) {
+    if let Some(num) = chapter_id
+        .strip_prefix("ch")
+        .and_then(|s| s.parse::<u32>().ok())
+    {
         let needle = format!("第{}章", num);
         if let Ok(entries) = fs::read_dir(&dir) {
             for entry in entries.flatten() {
@@ -488,7 +502,10 @@ fn load_provider_config(app_handle: tauri::AppHandle) -> Result<ProviderConfig, 
 }
 
 #[tauri::command]
-fn save_provider_config(app_handle: tauri::AppHandle, config: ProviderConfig) -> Result<(), String> {
+fn save_provider_config(
+    app_handle: tauri::AppHandle,
+    config: ProviderConfig,
+) -> Result<(), String> {
     let path = provider_config_path(&app_handle)?;
     let content = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Failed to serialize config: {e}"))?;
@@ -503,7 +520,11 @@ pub struct FileEntry {
     pub name: String,
 }
 
-fn project_subdir(app_handle: &tauri::AppHandle, project_id: &str, subdir: &str) -> Result<PathBuf, String> {
+fn project_subdir(
+    app_handle: &tauri::AppHandle,
+    project_id: &str,
+    subdir: &str,
+) -> Result<PathBuf, String> {
     Ok(project_dir(app_handle, project_id)?.join(subdir))
 }
 
@@ -522,7 +543,9 @@ fn list_project_files(
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         // Skip hidden files/folders
-        if name.starts_with('.') { continue; }
+        if name.starts_with('.') {
+            continue;
+        }
         files.push(FileEntry { name });
     }
     files.sort_by(|a, b| a.name.cmp(&b.name));

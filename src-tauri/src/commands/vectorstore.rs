@@ -1,11 +1,10 @@
-use lancedb::connect;
-use lancedb::query::{ExecutableQuery, QueryBase};
 use arrow_array::{
-    ArrayRef, Float32Array, RecordBatch, StringArray, UInt32Array,
-    FixedSizeListArray,
+    ArrayRef, FixedSizeListArray, Float32Array, RecordBatch, StringArray, UInt32Array,
 };
 use arrow_schema::{DataType, Field, Schema};
 use futures::TryStreamExt;
+use lancedb::connect;
+use lancedb::query::{ExecutableQuery, QueryBase};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::Manager;
@@ -50,10 +49,7 @@ fn make_schema(dim: i32) -> Arc<Schema> {
         Field::new("chunk_text", DataType::Utf8, false),
         Field::new(
             "vector",
-            DataType::FixedSizeList(
-                Arc::new(Field::new("item", DataType::Float32, true)),
-                dim,
-            ),
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Float32, true)), dim),
             false,
         ),
     ]))
@@ -70,9 +66,9 @@ fn validate_page_id(page_id: &str) -> Result<(), String> {
 
 fn validate_page_prefix(prefix: &str) -> Result<(), String> {
     if prefix.is_empty()
-        || !prefix
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '/' | '-' | '_'))
+        || !prefix.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '/' | '-' | '_')
+        })
     {
         return Err("Invalid page_id prefix".to_string());
     }
@@ -162,14 +158,12 @@ fn build_batch(chunks: &[ChunkUpsertInput], schema: Arc<Schema>) -> Result<Recor
         Arc::new(UInt32Array::from(chunk_indices)),
         Arc::new(StringArray::from(heading_paths)),
         Arc::new(StringArray::from(chunk_texts)),
-        Arc::new(
-            FixedSizeListArray::new(
-                Arc::new(Field::new("item", DataType::Float32, true)),
-                dim,
-                Arc::new(Float32Array::from(flat_vectors)),
-                None,
-            ),
-        ),
+        Arc::new(FixedSizeListArray::new(
+            Arc::new(Field::new("item", DataType::Float32, true)),
+            dim,
+            Arc::new(Float32Array::from(flat_vectors)),
+            None,
+        )),
     ];
 
     RecordBatch::try_new(schema, columns).map_err(|e| format!("Failed to create RecordBatch: {e}"))
@@ -315,6 +309,10 @@ pub async fn vector_search_chunks(
         }
     }
 
-    out.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    out.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(out.into_iter().take(top_k).collect())
 }

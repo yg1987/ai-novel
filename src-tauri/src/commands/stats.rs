@@ -74,8 +74,8 @@ pub fn append_stat_event(
     fs::create_dir_all(&dir).map_err(|e| format!("Failed to create stats dir: {e}"))?;
 
     let file_path = current_month_file(&dir);
-    let line = serde_json::to_string(&event)
-        .map_err(|e| format!("Failed to serialize event: {e}"))?;
+    let line =
+        serde_json::to_string(&event).map_err(|e| format!("Failed to serialize event: {e}"))?;
 
     let mut file = OpenOptions::new()
         .append(true)
@@ -202,16 +202,21 @@ pub fn compute_chapter_word_counts(
     let entries = fs::read_dir(&dir).map_err(|e| format!("Failed to read chapters dir: {e}"))?;
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') { continue; }
+        if name.starts_with('.') {
+            continue;
+        }
         let vol_dir = dir.join(&name);
-        if !vol_dir.is_dir() { continue; }
+        if !vol_dir.is_dir() {
+            continue;
+        }
 
         if let Ok(vol_entries) = fs::read_dir(&vol_dir) {
             for ve in vol_entries.flatten() {
                 let fname = ve.file_name().to_string_lossy().to_string();
                 if fname.starts_with("ch") && fname.ends_with(".md") {
                     let chapter_id = fname.trim_end_matches(".md").to_string();
-                    let order = chapter_id.strip_prefix("ch")
+                    let order = chapter_id
+                        .strip_prefix("ch")
                         .and_then(|s| s.parse::<u32>().ok())
                         .unwrap_or(0);
 
@@ -277,9 +282,21 @@ pub fn compute_project_stats(
 
     let total_chapters = chapter_counts.len() as u32;
     let total_words: u32 = chapter_counts.iter().map(|c| c.word_count).sum();
-    let avg_words_per_chapter = if total_chapters > 0 { total_words / total_chapters } else { 0 };
-    let max_chapter_words = chapter_counts.iter().map(|c| c.word_count).max().unwrap_or(0);
-    let min_chapter_words = chapter_counts.iter().map(|c| c.word_count).min().unwrap_or(0);
+    let avg_words_per_chapter = if total_chapters > 0 {
+        total_words / total_chapters
+    } else {
+        0
+    };
+    let max_chapter_words = chapter_counts
+        .iter()
+        .map(|c| c.word_count)
+        .max()
+        .unwrap_or(0);
+    let min_chapter_words = chapter_counts
+        .iter()
+        .map(|c| c.word_count)
+        .min()
+        .unwrap_or(0);
 
     // 2. Volume count
     let mut volumes: Vec<String> = chapter_counts.iter().map(|c| c.volume.clone()).collect();
@@ -294,14 +311,26 @@ pub fn compute_project_stats(
         if let Ok(content) = fs::read_to_string(&project_path) {
             if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&content) {
                 if let Some(created) = meta.get("created_at").and_then(|v| v.as_str()) {
-                    if let Ok(parsed) = chrono::NaiveDateTime::parse_from_str(created, "%Y-%m-%dT%H:%M:%S") {
+                    if let Ok(parsed) =
+                        chrono::NaiveDateTime::parse_from_str(created, "%Y-%m-%dT%H:%M:%S")
+                    {
                         let elapsed = chrono::Local::now().naive_local() - parsed;
                         elapsed.num_days().max(0) as u32
-                    } else { 0 }
-                } else { 0 }
-            } else { 0 }
-        } else { 0 }
-    } else { 0 };
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        } else {
+            0
+        }
+    } else {
+        0
+    };
 
     // 4. Daily stats (events)
     let daily_stats = compute_daily_stats(app_handle.clone(), project_id.clone(), days)?;
@@ -314,7 +343,9 @@ pub fn compute_project_stats(
     let total_sessions: u32 = daily_stats.iter().map(|d| d.sessions).sum();
     let avg_ai_duration_ms = if total_ai_generations > 0 {
         total_duration_ms / total_ai_generations as u64
-    } else { 0 };
+    } else {
+        0
+    };
     let max_ai_duration_ms = daily_stats.iter().map(|d| d.duration_ms).max().unwrap_or(0);
 
     // 6. Writing streak (backward: consecutive active days from today)
@@ -323,9 +354,8 @@ pub fn compute_project_stats(
         d.sort_by(|a, b| b.date.cmp(&a.date));
         d
     };
-    let writing_streak_days: u32 = sorted_days.iter()
-        .take_while(|d| d.word_count > 0)
-        .count() as u32;
+    let writing_streak_days: u32 =
+        sorted_days.iter().take_while(|d| d.word_count > 0).count() as u32;
 
     Ok(ProjectStats {
         total_words,
