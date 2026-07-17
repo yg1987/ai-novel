@@ -1,8 +1,9 @@
 import { getChapterOutline, getChapterContent, readProjectFile, listChapters } from '../api/tauri'
 import { DataSourceRegistry } from './dataSource'
-import { cognitionDS, foreshadowDS, styleDS, recentSummaryDS, notesDS } from './sources'
+import { cognitionDS, foreshadowDS, styleDS, recentSummaryDS, notesDS, materialDS } from './sources'
 import { estimateTokens, truncateToBudget, getDefaultSystemPrompt } from './budget'
 import type { ContextLoadContext } from './dataSource'
+import type { MaterialContextSelection } from '../types/material'
 
 export interface ContextPack {
   systemPrompt: string
@@ -11,9 +12,31 @@ export interface ContextPack {
   sources: string[]
   outlineContent: string
   previousEnding: string
+  materialSelections: MaterialContextSelection[]
 }
 
 const MAX_PROMPT_TOKENS = 4096
+const MATERIAL_TOKEN_BUDGET = 800
+
+function fitMaterials(selections: MaterialContextSelection[]): MaterialContextSelection[] {
+  let remaining = MATERIAL_TOKEN_BUDGET
+  const fitted: MaterialContextSelection[] = []
+  for (const selection of selections) {
+    if (remaining <= 0) break
+    const label = `【${selection.title}】\n`
+    const available = remaining - estimateTokens(label)
+    if (available <= 0) break
+    let excerpt = selection.excerpt
+    if (estimateTokens(excerpt) > available) {
+      let end = excerpt.length
+      while (end > 0 && estimateTokens(excerpt.slice(0, end)) > available) end = Math.floor(end * 0.8)
+      excerpt = `${excerpt.slice(0, end)}\n[素材摘录已按本章预算截断]`
+    }
+    fitted.push({ ...selection, excerpt })
+    remaining -= estimateTokens(`${label}${excerpt}`)
+  }
+  return fitted
+}
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
@@ -24,10 +47,12 @@ export async function buildContext(
   volume: string,
   chapterId: string,
   targetWords: number,
+  materialSelections: MaterialContextSelection[] = [],
 ): Promise<ContextPack> {
   const chapters = await listChapters(projectId)
   const chapterNumber = chapters.find(c => c.id === chapterId)?.order ?? 0
-  const ctx: ContextLoadContext = { projectId, volume, chapterId, chapterNumber, targetWords }
+  const fittedMaterials = fitMaterials(materialSelections)
+  const ctx: ContextLoadContext = { projectId, volume, chapterId, chapterNumber, targetWords, materialSelections: fittedMaterials }
 
   // 1. Load outline. If empty, fall back to project metadata
   const outline = await getChapterOutline(projectId, chapterId)
@@ -56,7 +81,7 @@ export async function buildContext(
 
   // 2. Load context sources via DataSourceRegistry
   const registry = new DataSourceRegistry()
-  registry.registerAll([recentSummaryDS, cognitionDS, foreshadowDS, notesDS, styleDS])
+  registry.registerAll([recentSummaryDS, cognitionDS, foreshadowDS, materialDS, notesDS, styleDS])
   const loaded = await registry.loadAll(ctx)
   const assembled = registry.assemble(loaded)
 
@@ -104,5 +129,6 @@ export async function buildContext(
     sources: assembled.map((s) => s.name),
     outlineContent: chapterGuide,
     previousEnding,
+    materialSelections: fittedMaterials,
   }
 }

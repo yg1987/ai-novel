@@ -164,3 +164,13 @@ export const notesDS: DataSource<string> = {
     } catch { return '' }
   },
 }
+
+export const materialDS: DataSource<string> = {
+  name: '本章选用素材',
+  priority: 8,
+  async load(ctx: ContextLoadContext): Promise<string> {
+    return ctx.materialSelections
+      .map((selection) => `【${selection.title}】\n${selection.excerpt}`)
+      .join('\n\n')
+  },
+}

@@ -22,6 +22,7 @@ import './Editor.css'
 import { runSavePipeline, runReview } from '../services/savePipeline'
 import { type RewriteMode } from '../services/rewriteService'
 import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
+import type { MaterialContextSelection } from '../types/material'
 
 const PROMPT_KEY = 'chapter_generate'
 
@@ -61,6 +62,9 @@ interface Props {
   onContentChange?: (content: string) => void
   chapterNumber?: number
   onNavigateToReview?: (chapterId: string) => void
+  materialContextSelections?: MaterialContextSelection[]
+  onMaterialContextUsed?: (selections: MaterialContextSelection[]) => void
+  onSaveSelection?: () => void
 }
 
 const AUTOSAVE_DELAY = 3000
@@ -74,13 +78,15 @@ const SourceLabel: Record<string, string> = {
 
 export interface EditorHandle {
   insertAtCursor: (text: string) => void
+  getSelectedText: () => string
+  focus: () => void
 }
 
 interface EditorInnerProps extends Props {
   initialContent: string
 }
 
-const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, volume, chapterId, initialContent, onContentChange, chapterNumber = 1, onNavigateToReview }, ref) => {
+const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, volume, chapterId, initialContent, onContentChange, chapterNumber = 1, onNavigateToReview, materialContextSelections = [], onMaterialContextUsed, onSaveSelection }, ref) => {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSaved = useRef(initialContent)
   const generateStartTime = useRef(0)
@@ -231,7 +237,7 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
     stopRequestedRef.current = false
     editor.commands.focus()
     try {
-      const ctx = await buildContext(projectId, volume, chapterId, effectiveWordCount)
+      const ctx = await buildContext(projectId, volume, chapterId, effectiveWordCount, materialContextSelections)
       const { from } = editor.state.selection
       editor.commands.insertContentAt(from, '<p></p>')
 
@@ -262,12 +268,13 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
         },
         onError: (err) => { console.error(err); setGenerating(false); paragraphBuf.current = '' },
       }, ctx.maxTokens)
+      if (ctx.materialSelections.length > 0) onMaterialContextUsed?.(ctx.materialSelections)
     } catch (e) {
       console.error('Generation failed:', e)
       setGenerating(false)
       paragraphBuf.current = ''
     }
-  }, [editor, generating, projectId, volume, chapterId, effectiveWordCount, chapterNumber, editingPrompt, stripMarkdownHeadings])
+  }, [editor, generating, projectId, volume, chapterId, effectiveWordCount, chapterNumber, editingPrompt, materialContextSelections, onMaterialContextUsed, stripMarkdownHeadings])
 
   const handleStop = useCallback(() => { stopGeneration(); setGenerating(false); paragraphBuf.current = ''; stopRequestedRef.current = true }, [])
 
@@ -355,6 +362,12 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
       editor.commands.focus()
       editor.commands.insertContentAt(editor.state.selection.from, text)
     },
+    getSelectedText: () => {
+      if (!editor) return ''
+      const { from, to } = editor.state.selection
+      return from === to ? '' : editor.state.doc.textBetween(from, to, ' ')
+    },
+    focus: () => { editor?.commands.focus() },
   }))
 
   // Real-time word count from editor content, computed during render so it's always current
@@ -428,6 +441,14 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
           onExpand={() => handleRewrite('expand')}
           onPolish={() => handleRewrite('polish')}
         />
+        <Button
+          variant="ghost"
+          size="sm"
+          onMouseDown={(event) => { event.preventDefault() }}
+          onClick={() => { onSaveSelection?.() }}
+          disabled={editor.state.selection.from === editor.state.selection.to}
+          title="将当前选文存为素材"
+        >存为素材</Button>
 
         {generationComplete && (
           <span className="generation-complete-badge">✅ 生成完成，可以保存</span>

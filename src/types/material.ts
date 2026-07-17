@@ -1,6 +1,20 @@
 export type MaterialContentFormat = 'plain_text' | 'markdown'
 export type MaterialScope = 'global' | 'projects'
 export type MaterialSourceType = 'original' | 'book' | 'web' | 'file' | 'image'
+export type MaterialUsageAction = 'insert' | 'ai_context'
+
+export interface CurrentChapterRef {
+  projectId: string
+  volume: string
+  chapterId: string
+  chapterTitle: string
+}
+
+export interface MaterialContextSelection {
+  materialId: string
+  title: string
+  excerpt: string
+}
 
 export interface MaterialItem {
   schemaVersion: 1
@@ -95,6 +109,28 @@ export interface MaterialWriteInput {
 }
 
 export type MaterialUpdatePatch = Partial<MaterialWriteInput>
+
+export interface MaterialUsage {
+  id: string
+  materialId: string
+  action: MaterialUsageAction
+  projectId: string
+  volume: string
+  chapterId: string
+  chapterTitle: string
+  excerpt: string
+  createdAt: string
+}
+
+export interface CreateMaterialUsageInput {
+  materialId: string
+  action: MaterialUsageAction
+  projectId: string
+  volume: string
+  chapterId: string
+  chapterTitle: string
+  excerpt: string
+}
 
 export interface LegacyCleanupSummary {
   cleanedProjects: number

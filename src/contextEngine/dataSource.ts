@@ -5,6 +5,7 @@ export interface ContextLoadContext {
   chapterId: string
   chapterNumber: number
   targetWords: number
+  materialSelections: Array<{ materialId: string; title: string; excerpt: string }>
 }
 
 export interface DataSource<T> {

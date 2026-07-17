@@ -6,6 +6,7 @@ import {
   initializeMaterialLibrary,
   listMaterialCategories,
   listMaterialKinds,
+  listMaterialUsages,
   listMaterials,
   listProjects,
   restoreMaterialKindPresets,
@@ -15,12 +16,15 @@ import {
 } from '../api/tauri'
 import type { ProjectMeta } from '../types/project'
 import type {
+  CurrentChapterRef,
   MaterialCategory,
   MaterialFilter,
   MaterialItem,
+  MaterialContextSelection,
   MaterialKindDefinition,
   MaterialPage,
   MaterialSummary,
+  MaterialUsage,
   MaterialWriteInput,
 } from '../types/material'
 import Button from './Button'
@@ -34,6 +38,9 @@ interface Props {
   projectId: string
   initialMaterialId?: string | null
   onMaterialOpened?: () => void
+  currentChapter: CurrentChapterRef | null
+  materialContextSelections: MaterialContextSelection[]
+  onMaterialContextChange: (selections: MaterialContextSelection[]) => void
 }
 
 const EMPTY_PAGE: MaterialPage = {
@@ -91,7 +98,7 @@ function CategoryTree({
   )
 }
 
-export default function ResourcePanel({ projectId, initialMaterialId, onMaterialOpened }: Props) {
+export default function ResourcePanel({ projectId, initialMaterialId, onMaterialOpened, currentChapter, materialContextSelections, onMaterialContextChange }: Props) {
   const [categories, setCategories] = useState<MaterialCategory[]>([])
   const [kinds, setKinds] = useState<MaterialKindDefinition[]>([])
   const [projects, setProjects] = useState<ProjectMeta[]>([])
@@ -111,11 +118,18 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
   const [showEditor, setShowEditor] = useState(false)
   const [showConfig, setShowConfig] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<MaterialItem | null>(null)
+  const [usages, setUsages] = useState<MaterialUsage[]>([])
 
   const inbox = categories.find((category) => category.systemKey === 'inbox')
   const kindMap = useMemo(() => new Map(kinds.map((kind) => [kind.id, kind.name])), [kinds])
   const categoryMap = useMemo(() => new Map(categories.map((category) => [category.id, category.name])), [categories])
   const projectMap = useMemo(() => new Map(projects.map((project) => [project.id, project.name])), [projects])
+
+  const addSelectedToContext = () => {
+    if (!selectedMaterial || !currentChapter || !selectedMaterial.content) return
+    const next = materialContextSelections.filter((selection) => selection.materialId !== selectedMaterial.id)
+    onMaterialContextChange([...next, { materialId: selectedMaterial.id, title: selectedMaterial.title, excerpt: selectedMaterial.content }])
+  }
 
   const filter = useMemo<MaterialFilter>(() => ({
     query: query.trim() || undefined,
@@ -171,7 +185,9 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
     setDetailLoading(true)
     setError(null)
     try {
-      setSelectedMaterial(await getMaterial(materialId))
+      const material = await getMaterial(materialId)
+      setSelectedMaterial(material)
+      setUsages(await listMaterialUsages(materialId))
     } catch (cause) {
       setSelectedMaterial(null)
       setError(String(cause))
@@ -364,6 +380,7 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
                 <h2>{selectedMaterial.title}</h2>
               </div>
               <div className="material-detail-actions">
+                <Button variant="secondary" size="sm" onClick={addSelectedToContext} disabled={!currentChapter || !selectedMaterial.content} title={currentChapter ? '加入本章 AI 上下文' : '请先在写作页选择章节'}>加入本章上下文</Button>
                 <Button variant="text" size="sm" onClick={() => { void handleToggleFavorite() }} title={selectedMaterial.favorite ? '取消收藏' : '收藏'}>
                   {selectedMaterial.favorite ? '★' : '☆'}
                 </Button>
@@ -392,6 +409,10 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
                   <div><dt>标签</dt><dd>{selectedMaterial.tags.length > 0 ? selectedMaterial.tags.map((itemTag) => `#${itemTag}`).join('  ') : '无'}</dd></div>
                   <div><dt>更新</dt><dd>{formatDate(selectedMaterial.updatedAt)}</dd></div>
                 </dl>
+              </section>
+              <section className="material-detail-section">
+                <h3>使用记录</h3>
+                {usages.length === 0 ? <p>尚未在章节中使用。</p> : <ul>{usages.map((usage) => <li key={usage.id}>{usage.chapterTitle} · {usage.action === 'insert' ? '插入' : 'AI 上下文'} · {formatDate(usage.createdAt)}</li>)}</ul>}
               </section>
             </div>
           </>

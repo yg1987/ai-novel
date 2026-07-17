@@ -646,6 +646,8 @@ pub fn run() {
             commands::material::save_material_kinds,
             commands::material::restore_material_kind_presets,
             commands::material::search_materials,
+            commands::material::create_material_usage,
+            commands::material::list_material_usages,
             commands::export::export_project_epub,
             commands::archive::archive_project,
             commands::archive::import_project,

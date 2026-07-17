@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from 'react'
 import type { ProjectMeta } from '../types/project'
+import type { CurrentChapterRef, MaterialContextSelection } from '../types/material'
 import ExportDialog from './ExportDialog'
 import ArchiveDialog from './ArchiveDialog'
 import Button from './Button'
@@ -32,7 +33,8 @@ export default function ProjectView({ project, onBack }: Props) {
   const [showArchive, setShowArchive] = useState(false)
   const [reviewChapterId, setReviewChapterId] = useState<string | null>(null)
   const [navigateChapterRef, setNavigateChapterRef] = useState<string | null>(null)
-  const [currentChapterId, setCurrentChapterId] = useState<string | null>(null)
+  const [currentChapter, setCurrentChapter] = useState<CurrentChapterRef | null>(null)
+  const [materialContextSelections, setMaterialContextSelections] = useState<MaterialContextSelection[]>([])
   const [navigateCharacter, setNavigateCharacter] = useState<string | null>(null)
   const [navigateForeshadowId, setNavigateForeshadowId] = useState<string | null>(null)
   const [navigateNotesChapterRef, setNavigateNotesChapterRef] = useState<string | null>(null)
@@ -98,10 +100,15 @@ export default function ProjectView({ project, onBack }: Props) {
     setTab(targetTab)
   }
 
+  const handleChapterSelect = (chapter: CurrentChapterRef) => {
+    setCurrentChapter(chapter)
+    setMaterialContextSelections([])
+  }
+
   const renderTabContent = () => {
     switch (tab) {
       case 'writing':
-        return <ChapterManager projectId={project.id} projectName={project.name} onNavigateToReview={handleNavigateToReview} onNavigateToNotes={handleNavigateToNotes} initialChapterRef={navigateChapterRef} onChapterSelect={(chapterId) => setCurrentChapterId(chapterId)} />
+        return <ChapterManager projectId={project.id} projectName={project.name} onNavigateToReview={handleNavigateToReview} onNavigateToNotes={handleNavigateToNotes} initialChapterRef={navigateChapterRef} onChapterSelect={handleChapterSelect} currentChapter={currentChapter} materialContextSelections={materialContextSelections} onMaterialContextChange={setMaterialContextSelections} onOpenMaterial={(materialId) => { setNavigateMaterialId(materialId); setTab('resource') }} />
       case 'characters':
         return <CharacterPanel projectId={project.id} initialCharacter={navigateCharacter} />
       case 'worldview':
@@ -111,7 +118,7 @@ export default function ProjectView({ project, onBack }: Props) {
       case 'notes':
         return <NotesPanel projectId={project.id} onNavigateToChapter={handleNavigateToChapter} initialChapterRef={navigateNotesChapterRef} initialFilter={navigateNotesFilter} onHighlightComplete={() => { setNavigateNotesChapterRef(null); setNavigateNotesFilter(null) }} />
       case 'foreshadow':
-        return <ForeshadowPanel projectId={project.id} currentChapterId={currentChapterId} onNavigateToCharacter={handleNavigateToCharacter} highlightId={navigateForeshadowId} onHighlightComplete={() => setNavigateForeshadowId(null)} />
+        return <ForeshadowPanel projectId={project.id} currentChapterId={currentChapter?.chapterId ?? null} onNavigateToCharacter={handleNavigateToCharacter} highlightId={navigateForeshadowId} onHighlightComplete={() => setNavigateForeshadowId(null)} />
       case 'search':
         return <SearchPanel projectId={project.id} onOpenFile={handleSearchOpenFile} />
       case 'stats':
@@ -119,7 +126,7 @@ export default function ProjectView({ project, onBack }: Props) {
       case 'review':
         return <ReviewPanel projectId={project.id} currentChapterId={reviewChapterId} onNavigateToForeshadow={handleNavigateToForeshadow} />
       case 'resource':
-        return <ResourcePanel projectId={project.id} initialMaterialId={navigateMaterialId} onMaterialOpened={() => { setNavigateMaterialId(null) }} />
+        return <ResourcePanel projectId={project.id} initialMaterialId={navigateMaterialId} onMaterialOpened={() => { setNavigateMaterialId(null) }} currentChapter={currentChapter} materialContextSelections={materialContextSelections} onMaterialContextChange={setMaterialContextSelections} />
       case 'brainstorm':
         return <BrainstormPanel projectId={project.id} />
       case 'graph':

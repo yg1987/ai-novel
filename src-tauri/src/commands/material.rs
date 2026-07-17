@@ -163,6 +163,32 @@ pub struct MaterialSearchResult {
     pub score: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterialUsage {
+    pub id: String,
+    pub material_id: String,
+    pub action: String,
+    pub project_id: String,
+    pub volume: String,
+    pub chapter_id: String,
+    pub chapter_title: String,
+    pub excerpt: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateMaterialUsageInput {
+    pub material_id: String,
+    pub action: String,
+    pub project_id: String,
+    pub volume: String,
+    pub chapter_id: String,
+    pub chapter_title: String,
+    pub excerpt: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct CleanupState {
@@ -732,6 +758,10 @@ fn save_item(root: &Path, item: &MaterialItem) -> Result<(), String> {
     atomic_write_json(&item_path(root, &item.id), item)
 }
 
+fn usage_path(root: &Path, usage_id: &str) -> PathBuf {
+    usage_dir(root).join(format!("{usage_id}.json"))
+}
+
 #[tauri::command]
 pub async fn initialize_material_library(
     app_handle: tauri::AppHandle,
@@ -957,6 +987,74 @@ pub fn delete_material(app_handle: tauri::AppHandle, material_id: String) -> Res
     fs::remove_file(item_path(&root, &material_id)).map_err(|e| format!("删除素材失败: {e}"))?;
     material_state.items.remove(&material_id);
     Ok(())
+}
+
+#[tauri::command]
+pub fn create_material_usage(
+    app_handle: tauri::AppHandle,
+    input: CreateMaterialUsageInput,
+) -> Result<MaterialUsage, String> {
+    validate_uuid(&input.material_id, "material id")?;
+    validate_uuid(&input.project_id, "project id")?;
+    if input.volume.trim().is_empty()
+        || input.chapter_id.trim().is_empty()
+        || input.chapter_title.trim().is_empty()
+    {
+        return Err("素材使用记录必须关联完整章节信息".to_string());
+    }
+    if input.action != "insert" && input.action != "ai_context" {
+        return Err("未知的素材使用动作".to_string());
+    }
+    let root = materials_dir(&app_handle)?;
+    let mut material_state = lock_state()?;
+    ensure_loaded(&mut material_state, &root)?;
+    if !material_state.items.contains_key(&input.material_id) {
+        return Err("素材不存在或已被删除".to_string());
+    }
+    let usage = MaterialUsage {
+        id: Uuid::new_v4().to_string(),
+        material_id: input.material_id,
+        action: input.action,
+        project_id: input.project_id,
+        volume: input.volume,
+        chapter_id: input.chapter_id,
+        chapter_title: input.chapter_title,
+        excerpt: input.excerpt,
+        created_at: now_iso(),
+    };
+    atomic_write_json(&usage_path(&root, &usage.id), &usage)?;
+    Ok(usage)
+}
+
+#[tauri::command]
+pub fn list_material_usages(
+    app_handle: tauri::AppHandle,
+    material_id: String,
+) -> Result<Vec<MaterialUsage>, String> {
+    validate_uuid(&material_id, "material id")?;
+    let root = materials_dir(&app_handle)?;
+    let mut material_state = lock_state()?;
+    ensure_loaded(&mut material_state, &root)?;
+    if !material_state.items.contains_key(&material_id) {
+        return Err("素材不存在或已被删除".to_string());
+    }
+    let mut usages = Vec::new();
+    for entry in
+        fs::read_dir(usage_dir(&root)).map_err(|e| format!("Failed to read material usage: {e}"))?
+    {
+        let path = entry
+            .map_err(|e| format!("Failed to read material usage entry: {e}"))?
+            .path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let usage: MaterialUsage = read_json(&path)?;
+        if usage.material_id == material_id {
+            usages.push(usage);
+        }
+    }
+    usages.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    Ok(usages)
 }
 
 #[tauri::command]

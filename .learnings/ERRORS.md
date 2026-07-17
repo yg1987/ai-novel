@@ -4,6 +4,115 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260717-007] optional-path-batch-failure
+
+**Logged**: 2026-07-17T15:15:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+An assumed optional source path invalidated a batch of required code reads.
+
+### Error
+```
+Cannot find path 'src\\contextEngine\\sources\\index.ts' because it does not exist.
+```
+
+### Context
+- The context source index path had not been confirmed before being included with required reads.
+- The repository convention requires optional probes to be isolated.
+
+### Suggested Fix
+List or confirm optional paths separately before batching required reads.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/contextEngine
+- See Also: ERR-20260717-001
+- Pattern-Key: shell.nonzero-exit
+- Recurrence-Count: 11
+- First-Seen: 2026-07-17
+- Last-Seen: 2026-07-17
+
+### Resolution
+- **Resolved**: 2026-07-17T15:15:00+08:00
+- **Notes**: Kept the failed probe separate and resumed only after confirming the directory contents.
+
+---
+
+## [ERR-20260717-006] ripgrep-launch-failure
+
+**Logged**: 2026-07-17T14:48:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+The WinGet `rg.exe` link could not be launched in the Windows sandbox.
+
+### Error
+```
+Program 'rg.exe' failed to run: no application is associated with the specified file.
+```
+
+### Context
+- The resolved command path was `C:\Users\Administrator\AppData\Local\Microsoft\WinGet\Links\rg.exe`.
+- CodeGraph analysis had already completed successfully; this was only a supplemental text search.
+
+### Suggested Fix
+Use PowerShell `Select-String` for supplemental searches in this sandbox, or repair the WinGet executable link outside the task.
+
+### Metadata
+- Reproducible: yes
+- Related Files: none
+- Pattern-Key: shell.command-not-found
+- Recurrence-Count: 1
+- First-Seen: 2026-07-17
+- Last-Seen: 2026-07-17
+
+### Resolution
+- **Resolved**: 2026-07-17T14:48:00+08:00
+- **Notes**: Switched supplemental repository searches to PowerShell without changing the system installation.
+
+---
+
+## [ERR-20260717-005] git-dubious-ownership
+
+**Logged**: 2026-07-17T14:45:39+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+Git refused a read-only status check because the sandbox user does not own the repository.
+
+### Error
+```
+fatal: detected dubious ownership in repository at 'D:/opencode_work/ai_novel'
+```
+
+### Context
+- `git status --short` ran under `CodexSandboxOffline` while the repository is owned by `BUILTIN/Administrators`.
+- The failed optional Git probe shared a parallel batch with required reads, so the batch result was discarded.
+
+### Suggested Fix
+Run repository-scoped Git commands with `git -c safe.directory=D:/opencode_work/ai_novel ...` and keep optional probes isolated from required reads.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .git
+- Pattern-Key: vcs.fatal-error
+- Recurrence-Count: 1
+- First-Seen: 2026-07-17
+- Last-Seen: 2026-07-17
+
+### Resolution
+- **Resolved**: 2026-07-17T14:45:39+08:00
+- **Notes**: Adopted a per-command safe-directory override without changing global Git configuration.
+
+---
+
 ## [ERR-20260717-005] risk-lint-baseline-mismatch
 
 **Logged**: 2026-07-17T00:00:00+08:00

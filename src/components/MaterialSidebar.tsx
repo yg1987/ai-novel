@@ -7,7 +7,9 @@ import {
   listMaterials,
 } from '../api/tauri'
 import type {
+  CurrentChapterRef,
   MaterialCategory,
+  MaterialContextSelection,
   MaterialItem,
   MaterialKindDefinition,
   MaterialSummary,
@@ -17,10 +19,14 @@ import './MaterialSidebar.css'
 
 interface Props {
   projectId: string
-  onInsert: (text: string) => void
+  currentChapter: CurrentChapterRef | null
+  materialContextSelections: MaterialContextSelection[]
+  onMaterialContextChange: (selections: MaterialContextSelection[]) => void
+  onInsert: (materialId: string, text: string) => void
+  onOpenMaterial: (materialId: string) => void
 }
 
-export default function MaterialSidebar({ projectId, onInsert }: Props) {
+export default function MaterialSidebar({ projectId, currentChapter, materialContextSelections, onMaterialContextChange, onInsert, onOpenMaterial }: Props) {
   const [categories, setCategories] = useState<MaterialCategory[]>([])
   const [kinds, setKinds] = useState<MaterialKindDefinition[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
@@ -28,6 +34,8 @@ export default function MaterialSidebar({ projectId, onInsert }: Props) {
   const [selectedMaterial, setSelectedMaterial] = useState<MaterialItem | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [selectedExcerpt, setSelectedExcerpt] = useState('')
 
   const kindMap = useMemo(() => new Map(kinds.map((kind) => [kind.id, kind.name])), [kinds])
 
@@ -42,6 +50,7 @@ export default function MaterialSidebar({ projectId, onInsert }: Props) {
         listMaterials({
           projectId,
           categoryId: selectedCategory || undefined,
+          query: query.trim() || undefined,
         }, 1, 100),
       ])
       setCategories(nextCategories)
@@ -55,7 +64,7 @@ export default function MaterialSidebar({ projectId, onInsert }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [projectId, selectedCategory, selectedMaterial])
+  }, [projectId, query, selectedCategory, selectedMaterial])
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void refresh() }, 0)
@@ -66,10 +75,24 @@ export default function MaterialSidebar({ projectId, onInsert }: Props) {
     setError(null)
     try {
       setSelectedMaterial(await getMaterial(materialId))
+      setSelectedExcerpt('')
     } catch (cause) {
       setSelectedMaterial(null)
       setError(String(cause))
     }
+  }
+
+  const captureExcerpt = () => {
+    const excerpt = window.getSelection()?.toString().trim() ?? ''
+    if (excerpt) setSelectedExcerpt(excerpt)
+  }
+
+  const addToContext = () => {
+    if (!selectedMaterial || !currentChapter) return
+    const excerpt = selectedExcerpt || selectedMaterial.content
+    if (!excerpt) return
+    const next = materialContextSelections.filter((selection) => selection.materialId !== selectedMaterial.id)
+    onMaterialContextChange([...next, { materialId: selectedMaterial.id, title: selectedMaterial.title, excerpt }])
   }
 
   return (
@@ -78,6 +101,12 @@ export default function MaterialSidebar({ projectId, onInsert }: Props) {
         <h4>素材库</h4>
         <span>{materials.length} 条</span>
       </div>
+      {materialContextSelections.length > 0 && (
+        <div className="material-context-list">
+          <div><span>本章上下文 {materialContextSelections.length} 条</span><button onClick={() => { onMaterialContextChange([]) }}>清空</button></div>
+          {materialContextSelections.map((selection) => <button key={selection.materialId} onClick={() => { onMaterialContextChange(materialContextSelections.filter((item) => item.materialId !== selection.materialId)) }}>{selection.title} ×</button>)}
+        </div>
+      )}
 
       <select
         className="material-category-select"
@@ -89,6 +118,7 @@ export default function MaterialSidebar({ projectId, onInsert }: Props) {
           <option key={category.id} value={category.id}>{category.name}</option>
         ))}
       </select>
+      <input className="material-search-input" value={query} onChange={(event) => { setQuery(event.target.value) }} placeholder="搜索素材" />
 
       {error && <div className="material-sidebar-error">{error}</div>}
       <div className="material-file-list">
@@ -110,11 +140,16 @@ export default function MaterialSidebar({ projectId, onInsert }: Props) {
         <div className="material-preview">
           <div className="material-preview-header">
             <span className="material-filename">{selectedMaterial.title}</span>
-            <Button variant="primary" size="sm" onClick={() => { onInsert(selectedMaterial.content); }} disabled={!selectedMaterial.content}>
-              插入全文
+            <Button variant="primary" size="sm" onClick={() => { onInsert(selectedMaterial.id, selectedExcerpt || selectedMaterial.content); }} disabled={!(selectedExcerpt || selectedMaterial.content)}>
+              {selectedExcerpt ? '插入选文' : '插入全文'}
             </Button>
           </div>
-          <pre className="material-preview-content">{selectedMaterial.content || '（空）'}</pre>
+          <pre className="material-preview-content" onMouseUp={captureExcerpt} onKeyUp={captureExcerpt}>{selectedMaterial.content || '（空）'}</pre>
+          <div className="material-preview-actions">
+            <Button variant="secondary" size="sm" onClick={addToContext} disabled={!currentChapter || !selectedMaterial.content} title={currentChapter ? '加入本章 AI 上下文' : '请先选择章节'}>{selectedExcerpt ? '加入选文上下文' : '加入本章上下文'}</Button>
+            <Button variant="text" size="sm" onClick={() => { onOpenMaterial(selectedMaterial.id) }}>打开素材</Button>
+          </div>
+          {selectedExcerpt && <p className="material-sidebar-hint">已选择 {selectedExcerpt.length} 字，插入和上下文操作将使用选文。</p>}
         </div>
       ) : (
         <p className="material-empty material-sidebar-hint">选择素材后可预览并插入全文</p>

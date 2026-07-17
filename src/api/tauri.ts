@@ -11,8 +11,10 @@ import type {
   MaterialKindDefinition,
   MaterialPage,
   MaterialSearchResult,
+  MaterialUsage,
   MaterialUpdatePatch,
   MaterialWriteInput,
+  CreateMaterialUsageInput,
 } from '../types/material'
 
 export async function createProject(input: CreateProjectInput): Promise<ProjectMeta> {
@@ -308,4 +310,12 @@ export async function searchMaterials(
   limit = 20,
 ): Promise<MaterialSearchResult[]> {
   return invoke<MaterialSearchResult[]>('search_materials', { query, filter, limit })
+}
+
+export async function createMaterialUsage(input: CreateMaterialUsageInput): Promise<MaterialUsage> {
+  return invoke<MaterialUsage>('create_material_usage', { input })
+}
+
+export async function listMaterialUsages(materialId: string): Promise<MaterialUsage[]> {
+  return invoke<MaterialUsage[]>('list_material_usages', { materialId })
 }

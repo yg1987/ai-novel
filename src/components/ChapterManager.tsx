@@ -6,6 +6,11 @@ import {
   deleteProjectFile,
   readProjectFile,
   writeProjectFile,
+  createMaterial,
+  createMaterialUsage,
+  initializeMaterialLibrary,
+  listMaterialCategories,
+  listMaterialKinds,
 } from '../api/tauri'
 import { loadAllNotes, getNotesForChapter, buildChapterRef, parseChapterRef, type NoteEntry } from '../services/notesStorage'
 import { copyChapterForPlatform } from '../services/exportService'
@@ -15,6 +20,8 @@ import PopupMenu from './PopupMenu'
 import Editor, { type EditorHandle } from './Editor'
 import ConfirmDialog from './ConfirmDialog'
 import Button from './Button'
+import Modal from './Modal'
+import type { CurrentChapterRef, MaterialCategory, MaterialContextSelection, MaterialKindDefinition } from '../types/material'
 import './ChapterManager.css'
 
 const VersionHistoryPanel = lazy(() => import('./VersionHistoryPanel'))
@@ -26,10 +33,14 @@ interface Props {
   onNavigateToReview?: (chapterId: string) => void
   onNavigateToNotes?: (chapterRef: string, filter: string) => void
   initialChapterRef?: string | null
-  onChapterSelect?: (chapterId: string) => void
+  onChapterSelect?: (chapter: CurrentChapterRef) => void
+  currentChapter: CurrentChapterRef | null
+  materialContextSelections: MaterialContextSelection[]
+  onMaterialContextChange: (selections: MaterialContextSelection[]) => void
+  onOpenMaterial: (materialId: string) => void
 }
 
-export default function ChapterManager({ projectId, projectName, onNavigateToReview, onNavigateToNotes, initialChapterRef, onChapterSelect }: Props) {
+export default function ChapterManager({ projectId, projectName, onNavigateToReview, onNavigateToNotes, initialChapterRef, onChapterSelect, currentChapter, materialContextSelections, onMaterialContextChange, onOpenMaterial }: Props) {
   const [chapters, setChapters] = useState<ChapterMeta[]>([])
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null)
   const [contentVersion, setContentVersion] = useState(0)
@@ -49,6 +60,13 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
   const volumeNameInputRef = useRef<HTMLInputElement>(null)
   const chapterTitleInputRef = useRef<HTMLInputElement>(null)
   const editorRef = useRef<EditorHandle>(null)
+  const [captureText, setCaptureText] = useState<string | null>(null)
+  const [captureTitle, setCaptureTitle] = useState('')
+  const [captureKinds, setCaptureKinds] = useState<MaterialKindDefinition[]>([])
+  const [captureCategories, setCaptureCategories] = useState<MaterialCategory[]>([])
+  const [captureKindId, setCaptureKindId] = useState('')
+  const [captureTags, setCaptureTags] = useState('')
+  const [captureSaving, setCaptureSaving] = useState(false)
 
   // ─── Volumes ───────────────────────────────────
 
@@ -76,6 +94,15 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
   const activeChapterTitle = activeChapter
     ? (chapterTitles[activeChapter.id] || activeChapter.title)
     : ''
+
+  const reportChapter = useCallback((chapter: ChapterMeta) => {
+    onChapterSelect?.({
+      projectId,
+      volume: chapter.volume,
+      chapterId: chapter.id,
+      chapterTitle: chapterTitles[chapter.id] || chapter.title,
+    })
+  }, [chapterTitles, onChapterSelect, projectId])
 
   // ─── Data loading ─────────────────────────────
 
@@ -106,12 +133,12 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
       .then(([list]) => {
         if (list.length > 0 && !activeChapterId) {
           setActiveChapterId(list[0]!.id)
-          onChapterSelect?.(list[0]!.id)
+          reportChapter(list[0]!)
         }
         setLoading(false)
       })
       .catch(() => { setLoading(false) })
-  }, [activeChapterId, loadMeta, onChapterSelect, refresh])
+  }, [activeChapterId, loadMeta, refresh, reportChapter])
 
   // Auto-select chapter from initialChapterRef (e.g. navigating from NotesPanel)
   useEffect(() => {
@@ -121,11 +148,22 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
     const target = chapters.find((c) => c.volume === parsed.volume && c.id === parsed.chapterId)
     if (target) {
       setActiveChapterId(target.id)
-      onChapterSelect?.(target.id)
+      reportChapter(target)
       // Expand the volume so the chapter is visible
       setCollapsedVolumes((prev) => ({ ...prev, [target.volume]: false }))
     }
-  }, [initialChapterRef, chapters, onChapterSelect])
+  }, [initialChapterRef, chapters, reportChapter])
+
+  useEffect(() => {
+    void initializeMaterialLibrary()
+    Promise.all([listMaterialCategories(), listMaterialKinds()])
+      .then(([categories, kinds]) => {
+        setCaptureCategories(categories)
+        setCaptureKinds(kinds)
+        setCaptureKindId(kinds.find((kind) => kind.presetKey === 'inspiration' && !kind.archived)?.id ?? kinds.find((kind) => !kind.archived)?.id ?? '')
+      })
+      .catch((error: unknown) => { console.error('Failed to load material capture settings:', error) })
+  }, [])
 
   // ─── Notes data for badges & sidebar ────────────
 
@@ -192,7 +230,8 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
     saveChapterContent(projectId, volume, id, '').then(() => {
       const newMeta: ChapterMeta = { id, title: `第${String(nextNum)}章`, order: nextNum, volume }
       setChapters((prev) => [...prev, newMeta])
-      setActiveChapterId(id)
+    setActiveChapterId(id)
+      reportChapter(newMeta)
       setShowVersionHistory(false)
     }).catch((e: unknown) => {
       console.error('Failed to create chapter:', e)
@@ -202,7 +241,53 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
   const handleClickChapter = (ch: ChapterMeta) => {
     setActiveChapterId(ch.id)
     setShowVersionHistory(false)
-    onChapterSelect?.(ch.id)
+    reportChapter(ch)
+  }
+
+  const handleCaptureSelection = () => {
+    const text = editorRef.current?.getSelectedText().trim() ?? ''
+    if (!text) return
+    setCaptureText(text)
+    setCaptureTitle(text.slice(0, 30).replace(/\s+/g, ' '))
+    setCaptureTags('')
+  }
+
+  const handleSaveCapture = async () => {
+    const inbox = captureCategories.find((category) => category.systemKey === 'inbox')
+    if (!captureText || !inbox || !captureKindId || !currentChapter) return
+    setCaptureSaving(true)
+    try {
+      await createMaterial({
+        title: captureTitle.trim() || '章节摘录',
+        kindId: captureKindId,
+        content: captureText,
+        categoryId: inbox.id,
+        scope: 'projects',
+        projectIds: [currentChapter.projectId],
+        tags: captureTags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean),
+      })
+      setCaptureText(null)
+      editorRef.current?.focus()
+    } catch (error) {
+      console.error('Failed to save material capture:', error)
+    } finally {
+      setCaptureSaving(false)
+    }
+  }
+
+  const handleMaterialInsert = (materialId: string, text: string) => {
+    editorRef.current?.insertAtCursor(text)
+    if (!currentChapter) return
+    void createMaterialUsage({ materialId, action: 'insert', ...currentChapter, excerpt: text })
+      .catch((error: unknown) => { console.error('Failed to record material insertion:', error) })
+  }
+
+  const handleMaterialContextUsed = (selections: MaterialContextSelection[]) => {
+    if (!currentChapter) return
+    for (const selection of selections) {
+      void createMaterialUsage({ materialId: selection.materialId, action: 'ai_context', ...currentChapter, excerpt: selection.excerpt })
+        .catch((error: unknown) => { console.error('Failed to record material AI context:', error) })
+    }
   }
 
   const handleViewVersionHistory = (ch: ChapterMeta) => {
@@ -515,11 +600,14 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
                   chapterId={activeChapterId}
                   chapterNumber={activeChapter?.order ?? 1}
                   onNavigateToReview={onNavigateToReview}
+                  materialContextSelections={materialContextSelections}
+                  onMaterialContextUsed={handleMaterialContextUsed}
+                  onSaveSelection={handleCaptureSelection}
                 />
               </div>
               {showMaterial && (
                 <Suspense fallback={<div className="material-sidebar"><div className="editor-loading">加载素材…</div></div>}>
-                  <MaterialSidebar projectId={projectId} onInsert={(text) => editorRef.current?.insertAtCursor(text)} />
+                  <MaterialSidebar projectId={projectId} currentChapter={currentChapter} materialContextSelections={materialContextSelections} onMaterialContextChange={onMaterialContextChange} onInsert={handleMaterialInsert} onOpenMaterial={onOpenMaterial} />
                 </Suspense>
               )}
             </div>
@@ -546,6 +634,16 @@ export default function ChapterManager({ projectId, projectName, onNavigateToRev
           onConfirm={() => { void handleDelete() }}
           onCancel={() => { setDeleteConfirm(null) }}
         />
+      )}
+      {captureText && (
+        <Modal className="material-editor-modal">
+          <h2>存为素材</h2>
+          <label>标题<input value={captureTitle} onChange={(event) => { setCaptureTitle(event.target.value) }} /></label>
+          <label>类型<select value={captureKindId} onChange={(event) => { setCaptureKindId(event.target.value) }}>{captureKinds.filter((kind) => !kind.archived).map((kind) => <option key={kind.id} value={kind.id}>{kind.name}</option>)}</select></label>
+          <label>标签<input value={captureTags} onChange={(event) => { setCaptureTags(event.target.value) }} placeholder="用逗号分隔" /></label>
+          <pre>{captureText}</pre>
+          <div className="material-modal-footer"><Button variant="secondary" size="md" onClick={() => { setCaptureText(null); editorRef.current?.focus() }}>取消</Button><Button variant="primary" size="md" disabled={captureSaving || !captureKindId} onClick={() => { void handleSaveCapture() }}>{captureSaving ? '保存中…' : '保存到收件箱'}</Button></div>
+        </Modal>
       )}
     </div>
   )
