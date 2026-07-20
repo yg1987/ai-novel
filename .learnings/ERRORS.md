@@ -356,6 +356,10 @@ rg: src/components/*.css: 文件名、目录名或卷标语法不正确。 (os e
 - During Rust format governance, an optional `rg --files` search for line-ending config returned 1 on no matches and again aborted a required parallel result batch; optional probes must be caught independently even when prior learnings were reviewed.
 - During the ESLint risk-remediation pass, an optional declaration search and then an assumed third-party declaration path were included in required parallel read batches. Both returned exit code 1 and invalidated otherwise successful reads.
 - While adding the ESLint quality gate, probing optional `.github` and `scripts` directories with `rg --files` was again included in a required read batch and invalidated that batch.
+- While reviewing the brainstorm planning document, optional `rg` consistency probes were batched with the required `git diff --check` gate; the expected whitespace failure made the composed batch hide the probe results. Run content probes and pass/fail gates separately.
+- While tightening the same planning document, one `apply_patch` spanned several distant sections and failed context verification. Split unrelated document edits into small patches anchored to exact local text.
+- While recording confirmed brainstorm-plan decisions, a newly edited metadata line retained Markdown hard-break spaces and failed `git diff --check`. Do not add trailing spaces to newly inserted blockquote metadata lines.
+- A later batch combined the required working-tree whitespace check with `git diff --cached --check`; the staged new-file snapshot intentionally lagged behind the revised working tree and failed on old metadata spaces. Inspect staged and unstaged states separately, and never restage user state just to satisfy a review check.
 
 ### Suggested Fix
 Use `rg --glob "*.css" <pattern> src` on Windows, and run optional no-match searches separately from required reads.
@@ -364,9 +368,9 @@ Use `rg --glob "*.css" <pattern> src` on Windows, and run optional no-match sear
 - Reproducible: yes
 - Related Files: none
 - Pattern-Key: shell.nonzero-exit
-- Recurrence-Count: 10
+- Recurrence-Count: 14
 - First-Seen: 2026-07-17
-- Last-Seen: 2026-07-17
+- Last-Seen: 2026-07-20
 - Promoted: AGENTS.md
 
 ### Resolution
