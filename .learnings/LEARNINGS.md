@@ -6,6 +6,114 @@ Corrections, insights, and knowledge gaps captured during development.
 
 ---
 
+## [LRN-20260717-005] correction
+
+**Logged**: 2026-07-17T17:20:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: docs
+
+### Summary
+Do not describe a partially implemented phase as complete or imply that its planned scope has been delivered.
+
+### Details
+After implementing and validating the initial TXT/EPUB document-import slice, the completion summary called it "Phase 3 core" without explicitly stating that major planned work remained. The user challenged whether the full phase was done. The correct report must separate implemented items from the phase plan's remaining requirements.
+
+### Suggested Action
+For phased work, state the exact delivered subset, name unfinished acceptance criteria, and label the phase as in progress until every confirmed item is implemented and verified.
+
+### Metadata
+- Source: user_feedback
+- Related Files: doc/素材库分阶段改造计划.md
+- Tags: scope, reporting, phase-3
+- Pattern-Key: docs.phase-status-ambiguity
+- Recurrence-Count: 1
+- First-Seen: 2026-07-17
+- Last-Seen: 2026-07-17
+
+---
+
+## [LRN-20260720-001] correction
+
+**Logged**: 2026-07-20T00:00:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: tests
+
+### Summary
+Do not make a complete release build a functional-phase completion gate unless the user or plan explicitly requires packaging verification.
+
+### Details
+After the phase 3 implementation, development compilation, tests, lint checks and UI audits had passed, an additional `cargo build --release` was started. The user clarified that the current priority is feature implementation and complete packaging should be deferred.
+
+### Suggested Action
+Match verification depth to the requested milestone: use functional tests and development builds for feature phases, and reserve release compilation, installer generation and signing for an explicit packaging milestone.
+
+### Metadata
+- Source: user_feedback
+- Related Files: doc/素材库分阶段改造计划.md
+- Tags: scope, verification, release-build
+- Pattern-Key: tests.scope-overreach
+- Recurrence-Count: 1
+- First-Seen: 2026-07-20
+- Last-Seen: 2026-07-20
+
+---
+
+## [LRN-20260717-004] best_practice
+
+**Logged**: 2026-07-17T16:25:00+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: backend
+
+### Summary
+Do not turn a non-core file-format integration into a custom compatibility project when maintained dependencies fail representative samples.
+
+### Details
+The MOBI probe compared `mobi 0.8.0` and `iepub 1.3.6` on public Unicode, CP1252, PalmDOC, Huff/CDIC, NCX, and DRM samples. Both libraries handled some files, but each had production-blocking gaps including record-boundary decoding loss, missing structure APIs, strict malformed-HTML failures, unsupported compression, or panics. The FFI alternative required a separately maintained C library and Windows distribution chain. The user clarified that the product's main job is novel writing, not MOBI parser compatibility.
+
+### Suggested Action
+For optional import formats, define a representative-sample acceptance gate first. Use a mature dependency when it passes; otherwise document the evidence, reject the format clearly, and revisit only when a substantially better maintained solution exists.
+
+### Metadata
+- Source: user_feedback
+- Related Files: doc/素材库分阶段改造计划.md
+- Tags: dependencies, mobi, product-scope, technical-spike
+- Pattern-Key: deps.compatibility-gap
+- Recurrence-Count: 1
+- First-Seen: 2026-07-17
+- Last-Seen: 2026-07-17
+
+---
+
+## [LRN-20260717-003] correction
+
+**Logged**: 2026-07-17T16:10:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: config
+
+### Summary
+An explicit request to update the changelog and submit to GitHub authorizes the routine edit, stage, commit, and push workflow.
+
+### Details
+The user clarified that repeatedly requesting confirmation for these normal, explicitly requested repository actions creates unnecessary friction. Platform permission prompts may still appear when required by the sandbox, but the agent should not add separate conversational authorization requests or treat each Git step as a new decision.
+
+### Suggested Action
+For a direct request to record changes and submit to GitHub, update the requested document, stage only relevant files, commit, and push to the configured branch. Report only genuine blockers, such as missing credentials, a rejected push, or ambiguous target branch.
+
+### Metadata
+- Source: user_feedback
+- Related Files: doc/变更记录.md, .learnings/LEARNINGS.md
+- Tags: git, changelog, permissions, workflow
+- Pattern-Key: config.confirmation-friction
+- Recurrence-Count: 2
+- First-Seen: 2026-07-16
+- Last-Seen: 2026-07-17
+
+---
+
 ## [LRN-20260716-002] correction
 
 **Logged**: 2026-07-16T14:20:00+08:00
@@ -19,6 +127,8 @@ For this user, routine diagnostic/build commands should not repeatedly interrupt
 ### Details
 The user clarified that the issue is not executing commands such as npm or codegraph, but repeatedly asking for confirmation for routine low-risk checks. In a read-only sandbox, tool escalation prompts may still be required by the platform for write-producing commands, but the agent should minimize new command variants and use already-approved prefixes where possible.
 
+On 2026-07-20, an approved PowerShell `Get-Content` command still prompted again when the path, flags, quoting, line range, or surrounding pipeline changed. Managed approvals match the beginning of each parsed command segment literally; approval of one complete `$l=Get-Content ...; $l[...]` form does not authorize arbitrary `Get-Content` variants.
+
 ### Suggested Action
 Run routine checks directly when possible. Avoid changing to new npm subcommands unless necessary; prefer already-approved commands such as `npm exec tsc -- --noEmit`, `npm run build`, and established codegraph commands.
 
@@ -27,9 +137,9 @@ Run routine checks directly when possible. Avoid changing to new npm subcommands
 - Related Files: package.json, package-lock.json
 - Tags: permissions, npm, codegraph, workflow
 - Pattern-Key: config.confirmation-friction
-- Recurrence-Count: 1
+- Recurrence-Count: 2
 - First-Seen: 2026-07-16
-- Last-Seen: 2026-07-16
+- Last-Seen: 2026-07-20
 
 ---
 
