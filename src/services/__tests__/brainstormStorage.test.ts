@@ -10,7 +10,7 @@ const tauri = vi.hoisted(() => ({
 
 vi.mock('../../api/tauri', () => tauri)
 
-import { deleteBrainstormSession, listBrainstormSessions } from '../brainstormStorage'
+import { deleteBrainstormSession, getBrainstormSessionImpact, listBrainstormSessions } from '../brainstormStorage'
 
 function session(id: string, createdAt: string): BrainstormSession {
   return {
@@ -69,5 +69,19 @@ describe('brainstorm session history storage', () => {
     await deleteBrainstormSession('project-1', 'session-1')
 
     expect(tauri.deleteProjectFile).toHaveBeenCalledWith('project-1', 'brainstorm/sessions', 'session-1.json')
+  })
+
+  it('counts child sessions and notes before deletion', async () => {
+    const child = session('child', '2026-07-20T10:00:00.000Z')
+    child.request.derivation = { operation: 'deepen', parentSessionId: 'parent', parentIdeaIds: ['idea-1'], feedback: '' }
+    tauri.listProjectFiles.mockImplementation((_projectId: string, directory: string) => Promise.resolve(
+      directory === 'brainstorm/sessions' ? [{ name: 'child.json' }] : [{ name: 'note-1.json' }, { name: 'note-2.json' }],
+    ))
+    tauri.readProjectFile.mockImplementation((_projectId: string, directory: string, filename: string) => {
+      if (directory === 'brainstorm/sessions') return Promise.resolve(JSON.stringify(child))
+      return Promise.resolve(JSON.stringify({ source: { type: 'brainstorm', sessionId: filename === 'note-1.json' ? 'parent' : 'other' } }))
+    })
+
+    await expect(getBrainstormSessionImpact('project-1', 'parent')).resolves.toEqual({ childSessionCount: 1, noteCount: 1 })
   })
 })

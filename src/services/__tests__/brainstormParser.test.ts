@@ -18,7 +18,7 @@ const request: BrainstormRequest = {
 
 const allowed = [
   { type: 'character' as const, entityId: 'lin-ye', label: '林烬' },
-  { type: 'chapter' as const, entityId: 'ch001', label: '第1章《初醒》' },
+  { type: 'chapter' as const, entityId: 'vol1:ch001', volume: 'vol1', chapterId: 'ch001', label: '第一卷 · 第 1 章《初醒》' },
 ]
 
 describe('parseBrainstormResponse', () => {
@@ -29,7 +29,7 @@ describe('parseBrainstormResponse', () => {
         title: '宴会试探',
         summary: '通过称谓错误推进身份伏笔。',
         developmentSteps: ['进入宴会', '旧臣失言'],
-        suggestedLocation: { chapterLabel: '第1章《初醒》', positionNote: '大战后的休整段落' },
+        suggestedLocation: { chapterLabel: '第一卷 · 第 1 章《初醒》', positionNote: '大战后的休整段落' },
         whyItFits: '可以让节奏回落而不丢失悬念。',
         connections: [
           { type: 'character', label: '林烬', reason: '承担反应视角' },
@@ -41,7 +41,7 @@ describe('parseBrainstormResponse', () => {
     }), request, allowed)
 
     expect(response.ideas[0]?.id).toBeTruthy()
-    expect(response.ideas[0]?.suggestedLocation).toMatchObject({ chapterId: 'ch001', verified: true })
+    expect(response.ideas[0]?.suggestedLocation).toMatchObject({ volume: 'vol1', chapterId: 'ch001', verified: true })
     expect(response.ideas[0]?.connections).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: '林烬', entityId: 'lin-ye', verified: true }),
       expect.objectContaining({ label: '不存在的人', verified: false }),
@@ -57,6 +57,23 @@ describe('parseBrainstormResponse', () => {
   it('extracts JSON when a compatible provider adds surrounding text', () => {
     const raw = '以下是建议：\n{"summary":"","ideas":[{"title":"x","summary":"y","developmentSteps":[],"suggestedLocation":{"chapterLabel":"","positionNote":""},"whyItFits":"z","connections":[],"risks":[],"hooks":[]}]}\n请查收。'
     expect(parseBrainstormResponse(raw, request, allowed).ideas).toHaveLength(1)
+  })
+
+  it('repairs common provider JSON defects without inventing missing ideas', () => {
+    const idea = '{title:"x",summary:"y",developmentSteps:[],suggestedLocation:{chapterLabel:"",positionNote:""},whyItFits:"z",connections:[],risks:[],hooks:[],}'
+    expect(parseBrainstormResponse(`{summary:"",ideas:[${idea}],}`, request, allowed).ideas).toHaveLength(1)
+    expect(parseBrainstormResponse(`{"summary":"","ideas":[${idea}]`, request, allowed).ideas).toHaveLength(1)
+  })
+
+  it('accepts double-encoded JSON and a top-level ideas array', () => {
+    const idea = {
+      title: 'x', summary: 'y', developmentSteps: [],
+      suggestedLocation: { chapterLabel: '', positionNote: '' },
+      whyItFits: 'z', connections: [], risks: [], hooks: [],
+    }
+    const objectJson = JSON.stringify({ summary: '', ideas: [idea] })
+    expect(parseBrainstormResponse(JSON.stringify(objectJson), request, allowed).ideas).toHaveLength(1)
+    expect(parseBrainstormResponse(JSON.stringify([idea]), request, allowed).ideas).toHaveLength(1)
   })
 
   it('records source idea ids on a derived result', () => {

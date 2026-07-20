@@ -130,6 +130,33 @@ export async function deleteBrainstormSession(projectId: string, sessionId: stri
   await deleteProjectFile(projectId, SESSION_DIR, `${sessionId}.json`)
 }
 
+export interface BrainstormSessionImpact {
+  childSessionCount: number
+  noteCount: number
+}
+
+export async function getBrainstormSessionImpact(projectId: string, sessionId: string): Promise<BrainstormSessionImpact> {
+  const [sessionsResult, notesResult] = await Promise.allSettled([
+    listBrainstormSessions(projectId),
+    listProjectFiles(projectId, 'notes'),
+  ])
+  const childSessionCount = sessionsResult.status === 'fulfilled'
+    ? sessionsResult.value.filter((entry) => entry.kind === 'valid' && entry.session.request.derivation?.parentSessionId === sessionId).length
+    : 0
+  if (notesResult.status !== 'fulfilled') return { childSessionCount, noteCount: 0 }
+  const noteSources = await Promise.all(notesResult.value
+    .filter((file) => file.name.endsWith('.json') && file.name !== 'notes.json')
+    .map(async (file) => {
+      try {
+        const parsed: unknown = JSON.parse(await readProjectFile(projectId, 'notes', file.name))
+        return isRecord(parsed) && isRecord(parsed.source) ? asString(parsed.source.sessionId) : ''
+      } catch {
+        return ''
+      }
+    }))
+  return { childSessionCount, noteCount: noteSources.filter((sourceSessionId) => sourceSessionId === sessionId).length }
+}
+
 export function sessionProblemSummary(session: BrainstormSession): string {
   return asString(session.request.problem).slice(0, 120)
 }

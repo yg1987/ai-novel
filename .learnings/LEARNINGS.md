@@ -10,7 +10,7 @@ Corrections, insights, and knowledge gaps captured during development.
 
 **Logged**: 2026-07-17T17:20:00+08:00
 **Priority**: high
-**Status**: pending
+**Status**: resolved
 **Area**: docs
 
 ### Summary
@@ -108,7 +108,7 @@ For a direct request to record changes and submit to GitHub, update the requeste
 - Related Files: doc/变更记录.md, .learnings/LEARNINGS.md
 - Tags: git, changelog, permissions, workflow
 - Pattern-Key: config.confirmation-friction
-- Recurrence-Count: 2
+- Recurrence-Count: 3
 - First-Seen: 2026-07-16
 - Last-Seen: 2026-07-17
 
@@ -193,9 +193,18 @@ Keep a compact range summary in the main panel. Put range, characters and constr
 - Related Files: src/components/BrainstormPanel.tsx, src/components/BrainstormPanel.css
 - Tags: brainstorm, selector, pagination, usability
 - Pattern-Key: frontend.large-selector-usability
-- Recurrence-Count: 1
+- Recurrence-Count: 3
 - First-Seen: 2026-07-20
 - Last-Seen: 2026-07-20
+
+### Recurrence
+The first correction added shared components, but the character selector still displayed a single-page pagination bar and the settings layout remained disordered. Component reuse must be verified by final placement and workflow behavior, not imports alone.
+
+The second correction added previous/next pagination, but did not validate the selector against a 3,000-chapter project. Large selectors need volume filters, configurable page size, direct page jumps, and a selected-only review mode; merely rendering Pagination is not sufficient.
+
+### Resolution
+- **Resolved**: 2026-07-20T15:55:00+08:00
+- **Notes**: Added volume filtering, 20/50/100 page sizes, direct page jumps and selected-only review to the shared-pagination chapter selector. Verified 3,000 chapters, 150 pages, page 25 navigation, cross-page selection and narrow layout with Playwright.
 
 ---
 

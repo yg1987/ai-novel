@@ -4,6 +4,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 10px 0;
   flex-shrink: 0;
@@ -60,6 +61,29 @@
 }
 
 .pagination-size-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.pagination-jump,
+.pagination-jump label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pagination-jump input {
+  width: 58px;
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+}
+
+.pagination-jump input:focus {
   outline: none;
   border-color: var(--accent);
 }

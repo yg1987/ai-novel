@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateBrainstormRequest } from '../brainstormContext'
+import { buildBrainstormUserInstructions, estimateBrainstormTokens, validateBrainstormRequest } from '../brainstormContext'
 import type { BrainstormRequest } from '../../types/brainstorm'
 
 function request(): BrainstormRequest {
@@ -61,5 +61,39 @@ describe('validateBrainstormRequest', () => {
       feedback: '   ',
     }
     expect(validateBrainstormRequest(value)).toBe('请填写不满意的原因')
+  })
+
+  it('requires an explicit character for character development', () => {
+    const value = request()
+    value.mode = 'character_dev'
+    expect(validateBrainstormRequest(value)).toBe('角色发展模式请至少选择一名相关角色')
+  })
+
+  it('accepts a history continuation without copying parent ideas', () => {
+    const value = request()
+    value.derivation = {
+      operation: 'continue',
+      parentSessionId: 'session-1',
+      parentIdeaIds: [],
+      feedback: '',
+    }
+    expect(validateBrainstormRequest(value)).toBeNull()
+  })
+
+  it('includes derivation intent and feedback in provider instructions', () => {
+    const value = request()
+    value.derivation = {
+      operation: 'redo_with_feedback',
+      parentSessionId: 'session-1',
+      parentIdeaIds: ['idea-1'],
+      feedback: '降低冲突强度',
+    }
+    expect(buildBrainstormUserInstructions(value)).toContain('推演操作：按反馈重做')
+    expect(buildBrainstormUserInstructions(value)).toContain('调整反馈：降低冲突强度')
+  })
+
+  it('estimates Chinese input conservatively instead of treating four characters as one token', () => {
+    expect(estimateBrainstormTokens('中文测试')).toBe(4)
+    expect(estimateBrainstormTokens('test')).toBe(1)
   })
 })

@@ -50,8 +50,10 @@ export interface BrainstormRequest {
 
 export type BrainstormOperation =
   | 'generate'
+  | 'continue'
   | 'deepen'
   | 'variant'
+  | 'adjust_scale'
   | 'combine'
   | 'redo_with_feedback'
 
@@ -71,6 +73,7 @@ export interface BrainstormForeshadowDraft {
 }
 
 export interface BrainstormLocation {
+  volume?: string
   chapterId?: string
   chapterLabel: string
   positionNote: string
@@ -148,18 +151,17 @@ export interface BrainstormGenerationResult {
   generation: BrainstormGenerationInfo
 }
 
+export const BRAINSTORM_MODE_CONTEXT_PRESETS: Record<BrainstormMode, BrainstormContextSource[]> = {
+  plot_twist: ['project_meta', 'chapter_content', 'chapter_snapshot', 'outline', 'characters', 'foreshadows'],
+  scene_idea: ['project_meta', 'chapter_content', 'outline', 'characters', 'relationships', 'worldview'],
+  character_dev: ['project_meta', 'chapter_content', 'chapter_snapshot', 'outline', 'characters', 'relationships', 'foreshadows'],
+  world_expand: ['project_meta', 'outline', 'characters', 'worldview', 'foreshadows'],
+}
+
 export const DEFAULT_BRAINSTORM_PREFERENCES: BrainstormProjectPreferences = {
   schemaVersion: 1,
   mode: 'plot_twist',
   creativityLevel: 'balanced',
   resultCount: 4,
-  enabledContextSources: [
-    'project_meta',
-    'chapter_content',
-    'chapter_snapshot',
-    'outline',
-    'characters',
-    'worldview',
-    'foreshadows',
-  ],
+  enabledContextSources: BRAINSTORM_MODE_CONTEXT_PRESETS.plot_twist,
 }

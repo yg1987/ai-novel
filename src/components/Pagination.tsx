@@ -1,4 +1,5 @@
 // src/components/Pagination.tsx
+import type { FormEvent } from 'react'
 import './Pagination.css'
 
 interface PaginationProps {
@@ -16,6 +17,8 @@ interface PaginationProps {
   onPageChange: (page: number) => void
   /** 每页条数变化回调（用户切换下拉框时触发） */
   onPageSizeChange?: (pageSize: number) => void
+  /** 是否显示页码跳转输入框 */
+  showPageJump?: boolean
 }
 
 export default function Pagination({
@@ -26,12 +29,21 @@ export default function Pagination({
   pageSizeOptions,
   onPageChange,
   onPageSizeChange,
+  showPageJump = false,
 }: PaginationProps) {
   if (totalItems === 0) return null
+
+  const handlePageJump = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const requested = Number(new FormData(event.currentTarget).get('page'))
+    if (!Number.isFinite(requested)) return
+    onPageChange(Math.min(totalPages, Math.max(1, Math.trunc(requested))))
+  }
 
   return (
     <div className="pagination">
       <button
+        type="button"
         className="pagination-btn"
         disabled={currentPage <= 1}
         onClick={() => onPageChange(currentPage - 1)}
@@ -56,7 +68,26 @@ export default function Pagination({
           条
         </span>
       )}
+      {showPageJump && totalPages > 1 && (
+        <form className="pagination-jump" onSubmit={handlePageJump}>
+          <label>
+            跳到
+            <input
+              key={`${currentPage}:${totalPages}`}
+              name="page"
+              type="number"
+              min={1}
+              max={totalPages}
+              defaultValue={currentPage}
+              aria-label="跳转页码"
+            />
+            页
+          </label>
+          <button type="submit" className="pagination-btn">跳转</button>
+        </form>
+      )}
       <button
+        type="button"
         className="pagination-btn"
         disabled={currentPage >= totalPages}
         onClick={() => onPageChange(currentPage + 1)}

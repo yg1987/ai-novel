@@ -1,3 +1,4 @@
+import { jsonrepair } from 'jsonrepair'
 import type { BrainstormAllowedEntity } from './brainstormContext'
 import type {
   BrainstormEntityRef,
@@ -13,18 +14,43 @@ function normalize(value: string): string {
   return value.trim().replace(/\s+/g, '').toLocaleLowerCase()
 }
 
-function parseJsonResponse(raw: string): unknown {
-  const trimmed = raw.trim()
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
-  const fencedOrRaw = fenced?.[1] ?? trimmed
-  const firstBrace = fencedOrRaw.indexOf('{')
-  const lastBrace = fencedOrRaw.lastIndexOf('}')
-  const json = firstBrace !== -1 && lastBrace > firstBrace ? fencedOrRaw.slice(firstBrace, lastBrace + 1) : fencedOrRaw
+function parseCandidate(candidate: string): unknown {
   try {
-    return JSON.parse(json)
+    return JSON.parse(candidate)
   } catch {
-    throw new Error('AI 返回的内容不是有效 JSON，请重试')
+    return JSON.parse(jsonrepair(candidate))
   }
+}
+
+function jsonCandidates(raw: string): string[] {
+  const trimmed = raw.trim().replace(/^\uFEFF/u, '')
+  const candidates: string[] = []
+  for (const match of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    if (match[1]?.trim()) candidates.push(match[1].trim())
+  }
+  const structures = [
+    { start: trimmed.indexOf('{'), end: trimmed.lastIndexOf('}') },
+    { start: trimmed.indexOf('['), end: trimmed.lastIndexOf(']') },
+  ].filter((item) => item.start !== -1).sort((left, right) => left.start - right.start)
+  for (const structure of structures) {
+    candidates.push(trimmed.slice(structure.start, structure.end > structure.start ? structure.end + 1 : undefined))
+  }
+  candidates.push(trimmed)
+  return [...new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean))]
+}
+
+function parseJsonResponse(raw: string): unknown {
+  for (const candidate of jsonCandidates(raw)) {
+    try {
+      let parsed = parseCandidate(candidate)
+      if (typeof parsed === 'string' && parsed.trim() !== candidate) parsed = parseCandidate(parsed.trim())
+      if (Array.isArray(parsed)) return { summary: '', ideas: parsed }
+      return parsed
+    } catch {
+      // Try the next extracted candidate before rejecting the response.
+    }
+  }
+  throw new Error('AI 返回的内容不是有效 JSON，请重试')
 }
 
 function entityType(value: unknown): EntityType | null {
@@ -72,7 +98,8 @@ function parseIdea(value: unknown, request: BrainstormRequest, allowed: Brainsto
     summary,
     developmentSteps: asStringArray(value.developmentSteps).map((item) => item.trim()).filter(Boolean),
     suggestedLocation: {
-      chapterId: chapter?.entityId,
+      volume: chapter?.volume,
+      chapterId: chapter?.chapterId,
       chapterLabel,
       positionNote: asString(location.positionNote).trim(),
       verified: Boolean(chapter),

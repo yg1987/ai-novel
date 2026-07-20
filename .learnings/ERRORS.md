@@ -4,6 +4,44 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260720-008] brainstorm-provider-invalid-json
+
+**Logged**: 2026-07-20T15:40:09+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+Brainstorm generation completed at the Provider but the returned content could not be parsed as strict JSON.
+
+### Error
+```
+AI 返回的内容不是有效 JSON，请重试
+```
+
+### Context
+- The parser already handles JSON code fences and simple surrounding prose.
+- The request capped output at 2048 tokens despite requiring 3-6 detailed ideas, so truncation is a likely cause.
+- Compatible Providers may also return repairable JSON such as trailing commas or incomplete closing delimiters.
+- The first repair test exposed a candidate-order bug for top-level arrays; sorting extracted structures by their source position fixed it, and the targeted parser suite then passed 10/10 tests.
+
+### Suggested Fix
+Scale the output budget with result count, parse exact JSON first, then use a maintained JSON repair library before rejecting the response. Add fixtures for fenced, truncated, trailing-comma, and double-encoded responses.
+
+### Metadata
+- Reproducible: unknown
+- Related Files: src/services/brainstormParser.ts, src/services/brainstormService.ts
+- Pattern-Key: api.schema-mismatch
+- Recurrence-Count: 1
+- First-Seen: 2026-07-20
+- Last-Seen: 2026-07-20
+
+### Resolution
+- **Resolved**: 2026-07-20T15:55:00+08:00
+- **Notes**: Increased the output budget from a fixed 2048 to 4096-6144 tokens, added maintained `jsonrepair` parsing, and covered truncated, trailing-comma, double-encoded, top-level-array, structured-content and tool-call responses. Full suite passes 24/24 tests.
+
+---
+
 ## [ERR-20260717-005] plugin-hook-path-mismatch
 
 **Logged**: 2026-07-17T17:04:24+08:00
@@ -368,7 +406,7 @@ Use `rg --glob "*.css" <pattern> src` on Windows, and run optional no-match sear
 - Reproducible: yes
 - Related Files: none
 - Pattern-Key: shell.nonzero-exit
-- Recurrence-Count: 14
+- Recurrence-Count: 15
 - First-Seen: 2026-07-17
 - Last-Seen: 2026-07-20
 - Promoted: AGENTS.md

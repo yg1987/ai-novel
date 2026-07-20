@@ -1,5 +1,5 @@
 import { loadProviderConfig } from '../api/tauri'
-import { buildBrainstormContext, buildBrainstormUserInstructions } from './brainstormContext'
+import { buildBrainstormContext, buildBrainstormUserInstructions, estimateBrainstormTokens } from './brainstormContext'
 import { parseBrainstormResponse } from './brainstormParser'
 import type { BrainstormGenerationResult, BrainstormIdea, BrainstormMode, BrainstormRequest } from '../types/brainstorm'
 import { asNumber, asString, isRecord } from '../utils/unknown'
@@ -7,6 +7,8 @@ import { asNumber, asString, isRecord } from '../utils/unknown'
 export type { BrainstormMode, BrainstormRequest } from '../types/brainstorm'
 
 const REQUEST_TIMEOUT_MS = 60_000
+const MIN_OUTPUT_TOKENS = 4_096
+const MAX_OUTPUT_TOKENS = 6_144
 
 const MODE_PROMPTS: Record<BrainstormMode, string> = {
   plot_twist: '围绕因果、悬念与节奏，给出接下来可发展的情节方向。',
@@ -65,6 +67,7 @@ function contentText(value: unknown): string {
   if (direct) return direct
   if (Array.isArray(value)) return value.map(contentText).filter(Boolean).join('\n')
   if (!isRecord(value)) return ''
+  if (Array.isArray(value.ideas)) return JSON.stringify(value)
   const text = asString(value.text).trim()
   if (text) return text
   if (isRecord(value.text)) {
@@ -74,14 +77,26 @@ function contentText(value: unknown): string {
   return asString(value.content).trim()
 }
 
+export function brainstormOutputTokenBudget(resultCount: number): number {
+  return Math.min(MAX_OUTPUT_TOKENS, Math.max(MIN_OUTPUT_TOKENS, Math.trunc(resultCount) * 1_024))
+}
+
 export function extractBrainstormResponseContent(data: unknown): string {
   if (!isRecord(data)) return ''
   if (Array.isArray(data.choices)) {
     const firstChoice: unknown = data.choices[0]
     if (isRecord(firstChoice)) {
       if (isRecord(firstChoice.message)) {
-        const messageContent = contentText(firstChoice.message.content)
+        const message = firstChoice.message
+        const messageContent = contentText(message.content) || contentText(message.parsed)
         if (messageContent) return messageContent
+        if (Array.isArray(message.tool_calls)) {
+          for (const toolCall of message.tool_calls) {
+            if (!isRecord(toolCall) || !isRecord(toolCall.function)) continue
+            const argumentsContent = contentText(toolCall.function.arguments)
+            if (argumentsContent) return argumentsContent
+          }
+        }
       }
       const legacyContent = contentText(firstChoice.text)
       if (legacyContent) return legacyContent
@@ -119,11 +134,14 @@ export async function runBrainstorm(
   if (!provider.api_key.trim()) throw new Error('未配置 AI Provider API Key，请在 AI 配置中设置')
   if (!provider.models.analysis.trim()) throw new Error('未配置分析模型，请在 AI 配置中设置')
 
-  const context = await buildBrainstormContext(request)
+  const parentText = formatParentIdeas(parentIdeas)
+  const instructions = buildBrainstormUserInstructions(request)
+  const fixedPrompt = `${buildSystemPrompt(request.mode, request.resultCount)}\n${instructions}\n${parentText}`
+  const context = await buildBrainstormContext(request, estimateBrainstormTokens(fixedPrompt) + 500)
   const allowedLabels = context.allowedEntities.map((entity) => `- ${entity.type}: ${entity.label}`).join('\n') || '（没有可验证实体）'
   const userMessage = [
     '# 作者目标',
-    buildBrainstormUserInstructions(request),
+    instructions,
     '',
     '# 项目上下文',
     context.text || '（暂无可用项目上下文）',
@@ -131,7 +149,7 @@ export async function runBrainstorm(
     '# 可引用实体',
     allowedLabels,
     parentIdeas.length > 0 ? '# 来源建议（请在此基础上推演，不要覆盖原建议）' : '',
-    formatParentIdeas(parentIdeas),
+    parentText,
   ].join('\n')
 
   const { controller, dispose } = joinAbortSignals(request.signal)
@@ -158,7 +176,7 @@ export async function runBrainstorm(
           { role: 'user', content: userMessage },
         ],
         temperature: request.creativityLevel === 'safe' ? 0.45 : request.creativityLevel === 'bold' ? 1 : 0.75,
-        max_tokens: 2048,
+        max_tokens: brainstormOutputTokenBudget(request.resultCount),
       }),
       signal: controller.signal,
     })
