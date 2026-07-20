@@ -13,6 +13,7 @@ const INBOX_SYSTEM_KEY: &str = "inbox";
 const LEGACY_RESOURCE_PREFIX: &str = "resources/";
 const MAX_PAGE_SIZE: usize = 100;
 const MAX_IMAGE_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_MARKDOWN_IMPORT_BYTES: u64 = 5 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -202,6 +203,27 @@ pub struct MaterialImageAttachment {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterialImageAttachmentContent {
+    pub attachment: MaterialImageAttachment,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkdownMaterialImportPreview {
+    pub title: String,
+    pub source_name: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileCleanupResult {
+    pub cleanup_pending: bool,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateMaterialUsageInput {
@@ -218,7 +240,20 @@ pub struct CreateMaterialUsageInput {
 #[serde(rename_all = "camelCase")]
 struct CleanupState {
     schema_version: u32,
+    #[serde(default)]
     cleaned_project_ids: Vec<String>,
+    #[serde(default)]
+    pending_file_cleanups: Vec<PendingFileCleanup>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingFileCleanup {
+    id: String,
+    reason: String,
+    relative_paths: Vec<String>,
+    created_at: String,
+    last_error: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -241,6 +276,7 @@ struct MaterialState {
 }
 
 static MATERIAL_STATE: OnceLock<Mutex<MaterialState>> = OnceLock::new();
+static CLEANUP_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn state() -> &'static Mutex<MaterialState> {
     MATERIAL_STATE.get_or_init(|| Mutex::new(MaterialState::default()))
@@ -250,6 +286,13 @@ fn lock_state() -> Result<std::sync::MutexGuard<'static, MaterialState>, String>
     state()
         .lock()
         .map_err(|_| "Material library state lock is poisoned".to_string())
+}
+
+fn lock_cleanup() -> Result<std::sync::MutexGuard<'static, ()>, String> {
+    CLEANUP_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|_| "Material cleanup state lock is poisoned".to_string())
 }
 
 pub(crate) fn materials_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -305,6 +348,10 @@ fn image_attachment_metadata_path(root: &Path, material_id: &str, attachment_id:
         .join("materials")
         .join(material_id)
         .join(format!("{attachment_id}.json"))
+}
+
+fn image_attachment_dir(root: &Path, material_id: &str) -> PathBuf {
+    root.join("attachments").join("materials").join(material_id)
 }
 
 pub(crate) fn now_iso() -> String {
@@ -411,6 +458,109 @@ pub(crate) fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<
     Ok(())
 }
 
+fn cleanup_relative_path(root: &Path, path: &Path) -> Result<String, String> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| format!("Cleanup path escapes material storage: {}", path.display()))?;
+    if relative.as_os_str().is_empty()
+        || relative
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(format!("Invalid material cleanup path: {}", path.display()));
+    }
+    Ok(relative.to_string_lossy().replace('\\', "/"))
+}
+
+fn remove_cleanup_path(root: &Path, relative_path: &str) -> Result<(), String> {
+    let relative = Path::new(relative_path);
+    if relative.as_os_str().is_empty()
+        || relative
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(format!("Invalid pending cleanup path: {relative_path}"));
+    }
+    let path = root.join(relative);
+    if !path.exists() {
+        return Ok(());
+    }
+    let metadata = fs::symlink_metadata(&path).map_err(|error| {
+        format!(
+            "Failed to inspect cleanup target {}: {error}",
+            path.display()
+        )
+    })?;
+    if metadata.is_dir() && !metadata.file_type().is_symlink() {
+        fs::remove_dir_all(&path)
+            .map_err(|error| format!("Failed to remove directory {}: {error}", path.display()))
+    } else {
+        fs::remove_file(&path)
+            .map_err(|error| format!("Failed to remove file {}: {error}", path.display()))
+    }
+}
+
+fn retry_pending_file_cleanups_locked(root: &Path) -> Result<usize, String> {
+    let path = cleanup_path(root);
+    let mut cleanup: CleanupState = read_json(&path)?;
+    let mut remaining = Vec::new();
+    for mut pending in cleanup.pending_file_cleanups.drain(..) {
+        let errors = pending
+            .relative_paths
+            .iter()
+            .filter_map(|relative_path| remove_cleanup_path(root, relative_path).err())
+            .collect::<Vec<_>>();
+        if !errors.is_empty() {
+            pending.last_error = errors.join("; ");
+            remaining.push(pending);
+        }
+    }
+    cleanup.pending_file_cleanups = remaining;
+    let remaining_count = cleanup.pending_file_cleanups.len();
+    atomic_write_json(&path, &cleanup)?;
+    Ok(remaining_count)
+}
+
+pub(crate) fn retry_pending_file_cleanups(root: &Path) -> Result<usize, String> {
+    ensure_structure(root)?;
+    let _cleanup_guard = lock_cleanup()?;
+    retry_pending_file_cleanups_locked(root)
+}
+
+pub(crate) fn queue_file_cleanup(
+    root: &Path,
+    reason: &str,
+    paths: Vec<PathBuf>,
+) -> Result<FileCleanupResult, String> {
+    ensure_structure(root)?;
+    let _cleanup_guard = lock_cleanup()?;
+    let mut cleanup: CleanupState = read_json(&cleanup_path(root))?;
+    let cleanup_id = Uuid::new_v4().to_string();
+    let mut relative_paths = Vec::new();
+    for path in paths {
+        let relative = cleanup_relative_path(root, &path)?;
+        if !relative_paths.contains(&relative) {
+            relative_paths.push(relative);
+        }
+    }
+    cleanup.pending_file_cleanups.push(PendingFileCleanup {
+        id: cleanup_id.clone(),
+        reason: reason.to_string(),
+        relative_paths,
+        created_at: now_iso(),
+        last_error: String::new(),
+    });
+    atomic_write_json(&cleanup_path(root), &cleanup)?;
+    retry_pending_file_cleanups_locked(root)?;
+    let cleanup: CleanupState = read_json(&cleanup_path(root))?;
+    Ok(FileCleanupResult {
+        cleanup_pending: cleanup
+            .pending_file_cleanups
+            .iter()
+            .any(|pending| pending.id == cleanup_id),
+    })
+}
+
 fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T, String> {
     recover_atomic_file(path)?;
     let content =
@@ -475,17 +625,103 @@ fn ensure_structure(root: &Path) -> Result<(), String> {
             &CleanupState {
                 schema_version: SCHEMA_VERSION,
                 cleaned_project_ids: Vec::new(),
+                pending_file_cleanups: Vec::new(),
             },
         )?;
     }
     Ok(())
 }
 
+fn markdown_inline_to_text(value: &str) -> String {
+    let characters = value.chars().collect::<Vec<_>>();
+    let mut output = String::new();
+    let mut index = 0;
+    while index < characters.len() {
+        if characters[index] == '\\' && index + 1 < characters.len() {
+            output.push(characters[index + 1]);
+            index += 2;
+            continue;
+        }
+        let image = characters[index] == '!' && characters.get(index + 1) == Some(&'[');
+        if characters[index] == '[' || image {
+            let label_start = index + usize::from(image) + 1;
+            if let Some(label_end_offset) = characters[label_start..]
+                .iter()
+                .position(|character| *character == ']')
+            {
+                let label_end = label_start + label_end_offset;
+                if characters.get(label_end + 1) == Some(&'(') {
+                    if let Some(target_end_offset) = characters[label_end + 2..]
+                        .iter()
+                        .position(|character| *character == ')')
+                    {
+                        output.extend(characters[label_start..label_end].iter());
+                        index = label_end + 2 + target_end_offset + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        if matches!(characters[index], '*' | '_' | '~' | '`') {
+            index += 1;
+            continue;
+        }
+        output.push(characters[index]);
+        index += 1;
+    }
+    output
+}
+
+fn markdown_to_plain_text(markdown: &str) -> String {
+    let mut in_fence = false;
+    markdown
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+                in_fence = !in_fence;
+                return None;
+            }
+            let mut content = trimmed;
+            if !in_fence {
+                content = content.trim_start_matches('#').trim_start();
+                content = content.trim_start_matches('>').trim_start();
+                if content.starts_with("- ")
+                    || content.starts_with("* ")
+                    || content.starts_with("+ ")
+                {
+                    content = &content[2..];
+                } else if let Some(marker_end) = content.find(". ") {
+                    if marker_end > 0
+                        && content[..marker_end]
+                            .chars()
+                            .all(|character| character.is_ascii_digit())
+                    {
+                        content = &content[marker_end + 2..];
+                    }
+                }
+            }
+            Some(markdown_inline_to_text(content).trim_end().to_string())
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+fn material_plain_text_content(item: &MaterialItem) -> String {
+    match item.content_format {
+        MaterialContentFormat::PlainText => item.content.clone(),
+        MaterialContentFormat::Markdown => markdown_to_plain_text(&item.content),
+    }
+}
+
 fn normalize_search_text(item: &MaterialItem) -> String {
+    let content = material_plain_text_content(item);
     format!(
         "{}\n{}\n{}\n{}\n{}",
         item.title,
-        item.content,
+        content,
         item.summary,
         item.source_name,
         item.tags.join(" ")
@@ -498,6 +734,7 @@ fn ensure_loaded<'a>(state: &'a mut MaterialState, root: &Path) -> Result<(), St
         return Ok(());
     }
     ensure_structure(root)?;
+    retry_pending_file_cleanups(root)?;
     recover_atomic_directory(&items_dir(root))?;
     let mut items = HashMap::new();
     for entry in
@@ -518,8 +755,84 @@ fn ensure_loaded<'a>(state: &'a mut MaterialState, root: &Path) -> Result<(), St
             },
         );
     }
+    reconcile_image_attachments(root, &items)?;
     state.root = Some(root.to_path_buf());
     state.items = items;
+    Ok(())
+}
+
+fn reconcile_image_attachments(
+    root: &Path,
+    items: &HashMap<String, IndexedMaterial>,
+) -> Result<(), String> {
+    let attachments_root = root.join("attachments").join("materials");
+    fs::create_dir_all(&attachments_root)
+        .map_err(|error| format!("Failed to create image attachment root: {error}"))?;
+    let mut orphan_paths = Vec::new();
+    for entry in fs::read_dir(&attachments_root)
+        .map_err(|error| format!("Failed to scan image attachments: {error}"))?
+    {
+        let entry =
+            entry.map_err(|error| format!("Failed to read image attachment entry: {error}"))?;
+        let path = entry.path();
+        let material_id = entry.file_name().to_string_lossy().to_string();
+        let Some(indexed) = items.get(&material_id) else {
+            orphan_paths.push(path);
+            continue;
+        };
+        if !path.is_dir() {
+            orphan_paths.push(path);
+            continue;
+        }
+        let referenced = indexed
+            .item
+            .attachment_ids
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>();
+        for attachment_entry in fs::read_dir(&path)
+            .map_err(|error| format!("Failed to scan material image directory: {error}"))?
+        {
+            let attachment_entry = attachment_entry
+                .map_err(|error| format!("Failed to read material image entry: {error}"))?;
+            let attachment_path = attachment_entry.path();
+            let file_name = attachment_entry.file_name().to_string_lossy().to_string();
+            let stem = attachment_path
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .unwrap_or_default();
+            if file_name.starts_with('.') || !referenced.contains(stem) {
+                orphan_paths.push(attachment_path);
+            }
+        }
+        for attachment_id in referenced {
+            validate_uuid(&attachment_id, "attachment id")?;
+            let metadata_path = image_attachment_metadata_path(root, &material_id, &attachment_id);
+            if !metadata_path.is_file() {
+                return Err(format!(
+                    "素材“{}”的图片附件元数据缺失，请检查存储或恢复备份",
+                    indexed.item.title
+                ));
+            }
+            let attachment: MaterialImageAttachment = read_json(&metadata_path)?;
+            if attachment.id != attachment_id || attachment.material_id != material_id {
+                return Err(format!(
+                    "素材“{}”的图片附件元数据不一致",
+                    indexed.item.title
+                ));
+            }
+            let image_path = resolve_image_attachment_path(root, &attachment)?;
+            if !image_path.is_file() {
+                return Err(format!(
+                    "素材“{}”的图片附件文件缺失: {}",
+                    indexed.item.title, attachment.original_name
+                ));
+            }
+        }
+    }
+    if !orphan_paths.is_empty() {
+        queue_file_cleanup(root, "orphan_material_image", orphan_paths)?;
+    }
     Ok(())
 }
 
@@ -680,7 +993,10 @@ fn summary(item: &MaterialItem) -> MaterialSummary {
         kind_id: item.kind_id.clone(),
         category_id: item.category_id.clone(),
         summary: item.summary.clone(),
-        content_preview: item.content.chars().take(180).collect(),
+        content_preview: material_plain_text_content(item)
+            .chars()
+            .take(180)
+            .collect(),
         source_name: item.source_name.clone(),
         tags: item.tags.clone(),
         scope: item.scope.clone(),
@@ -793,7 +1109,8 @@ fn match_score(item: &MaterialItem, query: &str) -> f64 {
 }
 
 fn material_snippet(item: &MaterialItem, query: &str) -> String {
-    for text in [&item.summary, &item.content, &item.source_name] {
+    let plain_content = material_plain_text_content(item);
+    for text in [&item.summary, &plain_content, &item.source_name] {
         let lower = text.to_lowercase();
         if let Some(byte_pos) = lower.find(query) {
             let char_pos = lower[..byte_pos].chars().count();
@@ -801,7 +1118,7 @@ fn material_snippet(item: &MaterialItem, query: &str) -> String {
             return text.chars().skip(start).take(140).collect();
         }
     }
-    item.content.chars().take(140).collect()
+    plain_content.chars().take(140).collect()
 }
 
 fn save_item(root: &Path, item: &MaterialItem) -> Result<(), String> {
@@ -817,6 +1134,8 @@ pub async fn initialize_material_library(
     app_handle: tauri::AppHandle,
 ) -> Result<LegacyCleanupSummary, String> {
     let root = materials_dir(&app_handle)?;
+    ensure_structure(&root)?;
+    retry_pending_file_cleanups(&root)?;
     {
         let mut material_state = lock_state()?;
         ensure_loaded(&mut material_state, &root)?;
@@ -887,6 +1206,15 @@ pub fn get_material(
         .get(&material_id)
         .map(|indexed| indexed.item.clone())
         .ok_or_else(|| "素材不存在或已被删除".to_string())
+}
+
+#[tauri::command]
+pub fn get_material_plain_text(
+    app_handle: tauri::AppHandle,
+    material_id: String,
+) -> Result<String, String> {
+    let item = get_material(app_handle, material_id)?;
+    Ok(material_plain_text_content(&item))
 }
 
 #[tauri::command]
@@ -1017,7 +1345,8 @@ pub fn update_material(
     Ok(item)
 }
 
-fn delete_material_usage(root: &Path, material_id: &str) -> Result<(), String> {
+fn material_usage_paths(root: &Path, material_id: &str) -> Result<Vec<PathBuf>, String> {
+    let mut paths = Vec::new();
     for entry in
         fs::read_dir(usage_dir(root)).map_err(|e| format!("Failed to read material usage: {e}"))?
     {
@@ -1029,15 +1358,17 @@ fn delete_material_usage(root: &Path, material_id: &str) -> Result<(), String> {
         }
         let value: serde_json::Value = read_json(&path)?;
         if value.get("materialId").and_then(|id| id.as_str()) == Some(material_id) {
-            fs::remove_file(&path)
-                .map_err(|e| format!("Failed to delete material usage {}: {e}", path.display()))?;
+            paths.push(path);
         }
     }
-    Ok(())
+    Ok(paths)
 }
 
 #[tauri::command]
-pub fn delete_material(app_handle: tauri::AppHandle, material_id: String) -> Result<(), String> {
+pub fn delete_material(
+    app_handle: tauri::AppHandle,
+    material_id: String,
+) -> Result<FileCleanupResult, String> {
     validate_uuid(&material_id, "material id")?;
     let root = materials_dir(&app_handle)?;
     let mut material_state = lock_state()?;
@@ -1045,17 +1376,225 @@ pub fn delete_material(app_handle: tauri::AppHandle, material_id: String) -> Res
     if !material_state.items.contains_key(&material_id) {
         return Err("素材不存在或已被删除".to_string());
     }
-    delete_material_usage(&root, &material_id)?;
-    let attachment_dir = root
-        .join("attachments")
-        .join("materials")
-        .join(&material_id);
-    if attachment_dir.exists() {
-        fs::remove_dir_all(&attachment_dir).map_err(|e| format!("删除素材附件失败: {e}"))?;
-    }
-    fs::remove_file(item_path(&root, &material_id)).map_err(|e| format!("删除素材失败: {e}"))?;
+    let mut cleanup_paths = material_usage_paths(&root, &material_id)?;
+    cleanup_paths.push(image_attachment_dir(&root, &material_id));
+    cleanup_paths.push(item_path(&root, &material_id));
+    let result = queue_file_cleanup(&root, "delete_material", cleanup_paths)?;
     material_state.items.remove(&material_id);
-    Ok(())
+    Ok(result)
+}
+
+fn markdown_import_preview(source_path: &str) -> Result<MarkdownMaterialImportPreview, String> {
+    let path = Path::new(source_path);
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if !matches!(extension.as_str(), "md" | "markdown") {
+        return Err("仅支持 .md 和 .markdown 文件".to_string());
+    }
+    let metadata = fs::metadata(path).map_err(|error| format!("读取 Markdown 失败: {error}"))?;
+    if !metadata.is_file() {
+        return Err("选择的 Markdown 路径不是文件".to_string());
+    }
+    if metadata.len() > MAX_MARKDOWN_IMPORT_BYTES {
+        return Err("Markdown 文件超过 5MB 限制".to_string());
+    }
+    let bytes = fs::read(path).map_err(|error| format!("读取 Markdown 失败: {error}"))?;
+    let content =
+        String::from_utf8(bytes).map_err(|_| "Markdown 文件必须使用 UTF-8 编码".to_string())?;
+    if content.trim().is_empty() {
+        return Err("Markdown 文件为空，未创建素材".to_string());
+    }
+    let source_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Markdown 文件名无效".to_string())?
+        .to_string();
+    let title = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("未命名 Markdown")
+        .to_string();
+    Ok(MarkdownMaterialImportPreview {
+        title,
+        source_name,
+        content,
+    })
+}
+
+#[tauri::command]
+pub fn preview_markdown_material_import(
+    source_path: String,
+) -> Result<MarkdownMaterialImportPreview, String> {
+    markdown_import_preview(&source_path)
+}
+
+fn is_structurally_valid_png(bytes: &[u8]) -> bool {
+    if bytes.len() < 33 || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return false;
+    }
+    let mut offset = 8;
+    let mut saw_header = false;
+    while offset + 12 <= bytes.len() {
+        let length = u32::from_be_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ]) as usize;
+        let chunk_end = offset.saturating_add(12).saturating_add(length);
+        if chunk_end > bytes.len() {
+            return false;
+        }
+        let chunk_type = &bytes[offset + 4..offset + 8];
+        if !saw_header {
+            if chunk_type != b"IHDR" || length != 13 {
+                return false;
+            }
+            let width = u32::from_be_bytes([
+                bytes[offset + 8],
+                bytes[offset + 9],
+                bytes[offset + 10],
+                bytes[offset + 11],
+            ]);
+            let height = u32::from_be_bytes([
+                bytes[offset + 12],
+                bytes[offset + 13],
+                bytes[offset + 14],
+                bytes[offset + 15],
+            ]);
+            if width == 0 || height == 0 {
+                return false;
+            }
+            saw_header = true;
+        }
+        if chunk_type == b"IEND" {
+            return saw_header && length == 0 && chunk_end == bytes.len();
+        }
+        offset = chunk_end;
+    }
+    false
+}
+
+fn is_structurally_valid_jpeg(bytes: &[u8]) -> bool {
+    if bytes.len() < 12 || !bytes.starts_with(&[0xff, 0xd8]) || !bytes.ends_with(&[0xff, 0xd9]) {
+        return false;
+    }
+    let mut offset = 2;
+    let mut saw_dimensions = false;
+    while offset + 1 < bytes.len() - 2 {
+        if bytes[offset] != 0xff {
+            offset += 1;
+            continue;
+        }
+        while offset < bytes.len() && bytes[offset] == 0xff {
+            offset += 1;
+        }
+        if offset >= bytes.len() {
+            return false;
+        }
+        let marker = bytes[offset];
+        offset += 1;
+        if marker == 0xda {
+            return saw_dimensions;
+        }
+        if matches!(marker, 0x01 | 0xd0..=0xd9) {
+            continue;
+        }
+        if offset + 2 > bytes.len() {
+            return false;
+        }
+        let length = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]) as usize;
+        if length < 2 || offset + length > bytes.len() {
+            return false;
+        }
+        if matches!(marker, 0xc0..=0xc3 | 0xc5..=0xc7 | 0xc9..=0xcb | 0xcd..=0xcf) {
+            if length < 7 {
+                return false;
+            }
+            let height = u16::from_be_bytes([bytes[offset + 3], bytes[offset + 4]]);
+            let width = u16::from_be_bytes([bytes[offset + 5], bytes[offset + 6]]);
+            if width == 0 || height == 0 {
+                return false;
+            }
+            saw_dimensions = true;
+        }
+        offset += length;
+    }
+    false
+}
+
+fn is_structurally_valid_webp(bytes: &[u8]) -> bool {
+    if bytes.len() < 30
+        || !bytes.starts_with(b"RIFF")
+        || &bytes[8..12] != b"WEBP"
+        || u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize + 8 != bytes.len()
+    {
+        return false;
+    }
+    let chunk_size = u32::from_le_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]) as usize;
+    if 20 + chunk_size > bytes.len() {
+        return false;
+    }
+    match &bytes[12..16] {
+        b"VP8X" => chunk_size >= 10,
+        b"VP8L" => chunk_size >= 5 && bytes[20] == 0x2f,
+        b"VP8 " => {
+            chunk_size >= 10
+                && &bytes[23..26] == b"\x9d\x01\x2a"
+                && u16::from_le_bytes([bytes[26], bytes[27]]) & 0x3fff != 0
+                && u16::from_le_bytes([bytes[28], bytes[29]]) & 0x3fff != 0
+        }
+        _ => false,
+    }
+}
+
+fn validated_image_mime(bytes: &[u8], extension: &str) -> Result<&'static str, String> {
+    let detected = if is_structurally_valid_jpeg(bytes) {
+        ("jpeg", "image/jpeg")
+    } else if is_structurally_valid_png(bytes) {
+        ("png", "image/png")
+    } else if is_structurally_valid_webp(bytes) {
+        ("webp", "image/webp")
+    } else {
+        return Err("图片内容损坏或不是有效的 JPG、PNG、WebP 文件".to_string());
+    };
+    let extension_matches = match detected.0 {
+        "jpeg" => matches!(extension, "jpg" | "jpeg"),
+        value => extension == value,
+    };
+    if !extension_matches {
+        return Err("图片扩展名与实际格式不一致".to_string());
+    }
+    Ok(detected.1)
+}
+
+fn resolve_image_attachment_path(
+    root: &Path,
+    attachment: &MaterialImageAttachment,
+) -> Result<PathBuf, String> {
+    validate_uuid(&attachment.id, "attachment id")?;
+    validate_uuid(&attachment.material_id, "material id")?;
+    let relative = Path::new(&attachment.relative_path);
+    if relative
+        .components()
+        .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err("图片附件路径无效".to_string());
+    }
+    let extension = relative
+        .extension()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "图片附件扩展名无效".to_string())?;
+    let expected = image_attachment_path(root, &attachment.material_id, &attachment.id, extension);
+    let actual = root.join(relative);
+    if actual != expected {
+        return Err("图片附件路径与元数据不一致".to_string());
+    }
+    Ok(actual)
 }
 
 #[tauri::command]
@@ -1070,17 +1609,20 @@ pub fn attach_material_image(
     if !metadata.is_file() || metadata.len() > MAX_IMAGE_ATTACHMENT_BYTES {
         return Err("图片无效或超过 10MB 限制".to_string());
     }
+    let bytes = fs::read(source).map_err(|e| format!("读取图片失败: {e}"))?;
+    if bytes.is_empty() || bytes.len() as u64 > MAX_IMAGE_ATTACHMENT_BYTES {
+        return Err("图片无效或超过 10MB 限制".to_string());
+    }
     let extension = source
         .extension()
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    let mime_type = match extension.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "png" => "image/png",
-        "webp" => "image/webp",
+    match extension.as_str() {
+        "jpg" | "jpeg" | "png" | "webp" => {}
         _ => return Err("仅支持 JPG、PNG 和 WebP 图片".to_string()),
-    };
+    }
+    let mime_type = validated_image_mime(&bytes, &extension)?;
     let original_name = source
         .file_name()
         .and_then(|value| value.to_str())
@@ -1096,25 +1638,22 @@ pub fn attach_material_image(
         .ok_or_else(|| "素材不存在或已被删除".to_string())?;
     let attachment_id = Uuid::new_v4().to_string();
     let destination = image_attachment_path(&root, &material_id, &attachment_id, &extension);
-    fs::create_dir_all(destination.parent().unwrap())
-        .map_err(|e| format!("创建图片目录失败: {e}"))?;
-    fs::copy(source, &destination).map_err(|e| format!("复制图片失败: {e}"))?;
-    item.attachment_ids.push(attachment_id.clone());
-    item.updated_at = now_iso();
-    save_item(&root, &item)?;
-    state.items.insert(
-        material_id.clone(),
-        IndexedMaterial {
-            search_text: normalize_search_text(&item),
-            item,
-        },
-    );
+    let parent = destination
+        .parent()
+        .ok_or_else(|| "图片附件路径无效".to_string())?;
+    fs::create_dir_all(parent).map_err(|e| format!("创建图片目录失败: {e}"))?;
+    let temporary = parent.join(format!(".{attachment_id}.image.tmp"));
+    let mut file = File::create(&temporary).map_err(|e| format!("创建图片临时文件失败: {e}"))?;
+    file.write_all(&bytes)
+        .and_then(|_| file.sync_all())
+        .map_err(|e| format!("写入图片临时文件失败: {e}"))?;
+    drop(file);
     let attachment = MaterialImageAttachment {
         id: attachment_id.clone(),
         material_id: material_id.clone(),
         original_name,
         mime_type: mime_type.to_string(),
-        size: metadata.len(),
+        size: bytes.len() as u64,
         relative_path: destination
             .strip_prefix(&root)
             .unwrap()
@@ -1122,14 +1661,131 @@ pub fn attach_material_image(
             .replace('\\', "/"),
         created_at: now_iso(),
     };
-    if let Err(error) = atomic_write_json(
-        &image_attachment_metadata_path(&root, &material_id, &attachment_id),
-        &attachment,
-    ) {
-        let _ = fs::remove_file(&destination);
+    let metadata_path = image_attachment_metadata_path(&root, &material_id, &attachment_id);
+    if let Err(error) = atomic_write_json(&metadata_path, &attachment) {
+        let _ = queue_file_cleanup(&root, "rollback_material_image", vec![temporary]);
         return Err(error);
     }
+    if let Err(error) = fs::rename(&temporary, &destination) {
+        let _ = queue_file_cleanup(
+            &root,
+            "rollback_material_image",
+            vec![temporary, metadata_path],
+        );
+        return Err(format!("提交图片附件失败: {error}"));
+    }
+    item.attachment_ids.push(attachment_id.clone());
+    item.updated_at = now_iso();
+    if let Err(error) = save_item(&root, &item) {
+        let cleanup = queue_file_cleanup(
+            &root,
+            "rollback_material_image",
+            vec![destination, metadata_path],
+        );
+        return Err(match cleanup {
+            Ok(result) if result.cleanup_pending => {
+                format!("保存素材附件引用失败，残留文件已加入重试清理: {error}")
+            }
+            Ok(_) => format!("保存素材附件引用失败，附件已回滚: {error}"),
+            Err(cleanup_error) => {
+                format!("保存素材附件引用失败，且无法登记残留清理: {error}; {cleanup_error}")
+            }
+        });
+    }
+    state.items.insert(
+        material_id.clone(),
+        IndexedMaterial {
+            search_text: normalize_search_text(&item),
+            item,
+        },
+    );
     Ok(attachment)
+}
+
+#[tauri::command]
+pub fn list_material_image_attachments(
+    app_handle: tauri::AppHandle,
+    material_id: String,
+) -> Result<Vec<MaterialImageAttachment>, String> {
+    validate_uuid(&material_id, "material id")?;
+    let root = materials_dir(&app_handle)?;
+    let mut state = lock_state()?;
+    ensure_loaded(&mut state, &root)?;
+    let item = state
+        .items
+        .get(&material_id)
+        .map(|indexed| &indexed.item)
+        .ok_or_else(|| "素材不存在或已被删除".to_string())?;
+    item.attachment_ids
+        .iter()
+        .map(|attachment_id| {
+            validate_uuid(attachment_id, "attachment id")?;
+            let attachment: MaterialImageAttachment = read_json(&image_attachment_metadata_path(
+                &root,
+                &material_id,
+                attachment_id,
+            ))?;
+            if attachment.id != *attachment_id || attachment.material_id != material_id {
+                return Err("图片附件元数据与素材引用不一致".to_string());
+            }
+            let path = resolve_image_attachment_path(&root, &attachment)?;
+            if !path.is_file() {
+                return Err(format!("图片附件文件缺失: {}", attachment.original_name));
+            }
+            Ok(attachment)
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn read_material_image_attachment(
+    app_handle: tauri::AppHandle,
+    material_id: String,
+    attachment_id: String,
+) -> Result<MaterialImageAttachmentContent, String> {
+    validate_uuid(&material_id, "material id")?;
+    validate_uuid(&attachment_id, "attachment id")?;
+    let attachments = list_material_image_attachments(app_handle.clone(), material_id)?;
+    let attachment = attachments
+        .into_iter()
+        .find(|attachment| attachment.id == attachment_id)
+        .ok_or_else(|| "图片附件不存在或不属于该素材".to_string())?;
+    let root = materials_dir(&app_handle)?;
+    let path = resolve_image_attachment_path(&root, &attachment)?;
+    let bytes = fs::read(&path).map_err(|error| format!("读取图片附件失败: {error}"))?;
+    if bytes.len() as u64 != attachment.size {
+        return Err("图片附件大小与元数据不一致".to_string());
+    }
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    let mime_type = validated_image_mime(&bytes, extension)?;
+    if mime_type != attachment.mime_type {
+        return Err("图片附件格式与元数据不一致".to_string());
+    }
+    Ok(MaterialImageAttachmentContent { attachment, bytes })
+}
+
+#[tauri::command]
+pub fn create_material_with_image(
+    app_handle: tauri::AppHandle,
+    input: CreateMaterialInput,
+    source_path: String,
+) -> Result<MaterialItem, String> {
+    let material = create_material(app_handle.clone(), input)?;
+    match attach_material_image(app_handle.clone(), material.id.clone(), source_path) {
+        Ok(_) => get_material(app_handle, material.id),
+        Err(error) => match delete_material(app_handle, material.id) {
+            Ok(result) if result.cleanup_pending => Err(format!(
+                "图片导入失败，素材记录已撤销，残留文件已加入重试清理: {error}"
+            )),
+            Ok(_) => Err(format!("图片导入失败，未创建素材: {error}")),
+            Err(rollback_error) => Err(format!(
+                "图片导入失败，且撤销素材记录失败: {error}; {rollback_error}"
+            )),
+        },
+    }
 }
 
 #[tauri::command]
@@ -1556,6 +2212,116 @@ mod tests {
         eprintln!("1000 materials cold index load: {elapsed:?}");
         assert_eq!(material_state.items.len(), 1000);
         assert!(elapsed < Duration::from_secs(2));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn markdown_content_uses_one_plain_text_projection() {
+        let category = default_categories().remove(0);
+        let kind = preset_kinds().remove(0);
+        let mut item = sample_item(1, &category.id, &kind.id);
+        item.content_format = MaterialContentFormat::Markdown;
+        item.content =
+            "# 标题\n\n- **重点** [资料](https://example.com)\n\n```txt\n代码内容\n```".to_string();
+        let plain = material_plain_text_content(&item);
+        assert_eq!(plain, "标题\n\n重点 资料\n\n代码内容");
+        assert!(normalize_search_text(&item).contains("代码内容"));
+        assert!(!summary(&item).content_preview.contains("**"));
+    }
+
+    fn minimal_png() -> Vec<u8> {
+        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        bytes.extend_from_slice(&13_u32.to_be_bytes());
+        bytes.extend_from_slice(b"IHDR");
+        bytes.extend_from_slice(&1_u32.to_be_bytes());
+        bytes.extend_from_slice(&1_u32.to_be_bytes());
+        bytes.extend_from_slice(&[8, 2, 0, 0, 0]);
+        bytes.extend_from_slice(&[0; 4]);
+        bytes.extend_from_slice(&0_u32.to_be_bytes());
+        bytes.extend_from_slice(b"IEND");
+        bytes.extend_from_slice(&[0; 4]);
+        bytes
+    }
+
+    fn minimal_jpeg() -> Vec<u8> {
+        vec![
+            0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11,
+            0x00, 0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00, 0x00, 0xff, 0xd9,
+        ]
+    }
+
+    #[test]
+    fn image_validation_rejects_spoofed_and_truncated_files() {
+        assert_eq!(
+            validated_image_mime(&minimal_png(), "png").unwrap(),
+            "image/png"
+        );
+        assert_eq!(
+            validated_image_mime(&minimal_jpeg(), "jpg").unwrap(),
+            "image/jpeg"
+        );
+        assert!(validated_image_mime(&minimal_png(), "jpg").is_err());
+        let mut truncated = minimal_png();
+        truncated.truncate(20);
+        assert!(validated_image_mime(&truncated, "png").is_err());
+        assert!(validated_image_mime(b"not an image", "webp").is_err());
+    }
+
+    #[test]
+    fn cleanup_queue_is_idempotent_and_persisted() {
+        let root = test_root();
+        ensure_structure(&root).unwrap();
+        let target = root.join("attachments").join("stale.bin");
+        fs::write(&target, b"stale").unwrap();
+        let result = queue_file_cleanup(&root, "test_cleanup", vec![target.clone()]).unwrap();
+        assert!(!result.cleanup_pending);
+        assert!(!target.exists());
+        assert_eq!(retry_pending_file_cleanups(&root).unwrap(), 0);
+        let state: CleanupState = read_json(&cleanup_path(&root)).unwrap();
+        assert!(state.pending_file_cleanups.is_empty());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn startup_reconciliation_removes_unreferenced_image_directories() {
+        let root = test_root();
+        ensure_structure(&root).unwrap();
+        let orphan = image_attachment_dir(&root, &Uuid::new_v4().to_string());
+        fs::create_dir_all(&orphan).unwrap();
+        fs::write(orphan.join("orphan.png"), minimal_png()).unwrap();
+        reconcile_image_attachments(&root, &HashMap::new()).unwrap();
+        assert!(!orphan.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn markdown_import_enforces_extension_encoding_content_and_size() {
+        let root = test_root();
+        fs::create_dir_all(&root).unwrap();
+        let valid = root.join("notes.md");
+        fs::write(&valid, "# 标题\n正文").unwrap();
+        let preview = markdown_import_preview(valid.to_str().unwrap()).unwrap();
+        assert_eq!(preview.title, "notes");
+        assert_eq!(preview.source_name, "notes.md");
+        assert!(preview.content.contains("正文"));
+
+        let empty = root.join("empty.markdown");
+        fs::write(&empty, "   ").unwrap();
+        assert!(markdown_import_preview(empty.to_str().unwrap()).is_err());
+        let invalid_utf8 = root.join("invalid.md");
+        fs::write(&invalid_utf8, [0xff, 0xfe, 0xfd]).unwrap();
+        assert!(markdown_import_preview(invalid_utf8.to_str().unwrap()).is_err());
+        let wrong_extension = root.join("notes.txt");
+        fs::write(&wrong_extension, "text").unwrap();
+        assert!(markdown_import_preview(wrong_extension.to_str().unwrap()).is_err());
+        let oversized = root.join("oversized.md");
+        File::create(&oversized)
+            .unwrap()
+            .set_len(MAX_MARKDOWN_IMPORT_BYTES + 1)
+            .unwrap();
+        assert!(markdown_import_preview(oversized.to_str().unwrap()).is_err());
+        let missing = root.join("missing.md");
+        assert!(markdown_import_preview(missing.to_str().unwrap()).is_err());
         let _ = fs::remove_dir_all(root);
     }
 }

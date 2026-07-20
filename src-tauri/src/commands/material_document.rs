@@ -1,4 +1,7 @@
-use super::material::{atomic_write_json, materials_dir, now_iso, validate_uuid, MaterialScope};
+use super::material::{
+    atomic_write_json, materials_dir, now_iso, queue_file_cleanup, retry_pending_file_cleanups,
+    validate_uuid, FileCleanupResult, MaterialScope,
+};
 use encoding_rs::{GBK, UTF_16BE, UTF_16LE};
 use html5ever::{parse_document, tendril::TendrilSink};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
@@ -80,6 +83,7 @@ pub struct MaterialDocumentSectionPreview {
     pub order: usize,
     pub title: String,
     pub character_count: usize,
+    pub content_preview: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,7 +93,33 @@ pub struct MaterialDocumentImportPreview {
     pub format: MaterialDocumentFormat,
     pub title: String,
     pub author: String,
+    pub detected_encoding: Option<String>,
     pub sections: Vec<MaterialDocumentSectionPreview>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TxtImportMode {
+    DetectedSections,
+    Single,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TxtSectionEdit {
+    pub order: usize,
+    pub title: String,
+    pub merge_with_previous: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterialDocumentImportOptions {
+    pub title: Option<String>,
+    pub author: Option<String>,
+    pub txt_mode: Option<TxtImportMode>,
+    #[serde(default)]
+    pub txt_section_edits: Vec<TxtSectionEdit>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,6 +171,13 @@ pub struct MaterialDocumentSearchResult {
     pub score: f64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterialDocumentSourceStatus {
+    pub document_exists: bool,
+    pub section_exists: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebMaterialPreview {
@@ -190,6 +227,14 @@ struct ParsedDocument {
     title: String,
     author: String,
     sections: Vec<ParsedSection>,
+    detected_encoding: Option<String>,
+    raw_text: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct DecodedTxt {
+    content: String,
+    encoding: String,
 }
 
 #[derive(Debug, Clone)]
@@ -205,6 +250,7 @@ struct OpfPackage {
     manifest: HashMap<String, ManifestItem>,
     spine: Vec<String>,
     nav_href: Option<String>,
+    ncx_href: Option<String>,
 }
 
 fn document_state() -> &'static Mutex<MaterialDocumentState> {
@@ -299,6 +345,7 @@ fn ensure_document_state<'a>(
         return Ok(());
     }
     initialize_document_structure(root)?;
+    retry_pending_file_cleanups(root)?;
     let mut documents = HashMap::new();
     for entry in fs::read_dir(document_items_dir(root))
         .map_err(|error| format!("Failed to read document records: {error}"))?
@@ -400,29 +447,45 @@ fn source_file(source_path: &str) -> Result<SourceFile, String> {
     })
 }
 
-fn decode_txt(bytes: &[u8]) -> Result<String, String> {
+fn decode_txt(bytes: &[u8]) -> Result<DecodedTxt, String> {
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         return String::from_utf8(bytes[3..].to_vec())
+            .map(|content| DecodedTxt {
+                content,
+                encoding: "UTF-8 BOM".to_string(),
+            })
             .map_err(|_| "TXT file is not valid UTF-8".to_string());
     }
     if bytes.starts_with(&[0xFF, 0xFE]) {
         let (text, _, had_errors) = UTF_16LE.decode(&bytes[2..]);
         return (!had_errors)
-            .then(|| text.into_owned())
+            .then(|| DecodedTxt {
+                content: text.into_owned(),
+                encoding: "UTF-16LE".to_string(),
+            })
             .ok_or_else(|| "TXT file has invalid UTF-16LE content".to_string());
     }
     if bytes.starts_with(&[0xFE, 0xFF]) {
         let (text, _, had_errors) = UTF_16BE.decode(&bytes[2..]);
         return (!had_errors)
-            .then(|| text.into_owned())
+            .then(|| DecodedTxt {
+                content: text.into_owned(),
+                encoding: "UTF-16BE".to_string(),
+            })
             .ok_or_else(|| "TXT file has invalid UTF-16BE content".to_string());
     }
     if let Ok(text) = std::str::from_utf8(bytes) {
-        return Ok(text.to_string());
+        return Ok(DecodedTxt {
+            content: text.to_string(),
+            encoding: "UTF-8".to_string(),
+        });
     }
     let (text, _, had_errors) = GBK.decode(bytes);
     (!had_errors)
-        .then(|| text.into_owned())
+        .then(|| DecodedTxt {
+            content: text.into_owned(),
+            encoding: "GB18030 / GBK".to_string(),
+        })
         .ok_or_else(|| "TXT file is not valid UTF-8, UTF-16, or GB18030/GBK".to_string())
 }
 
@@ -439,10 +502,42 @@ fn is_txt_heading(value: &str) -> bool {
     if lower.starts_with("chapter ") || lower.starts_with("chapter\t") {
         return true;
     }
-    value.starts_with('第')
-        && ["章", "节", "回", "卷", "部", "篇"]
-            .iter()
-            .any(|suffix| value.ends_with(suffix))
+    if !value.starts_with('第') {
+        return false;
+    }
+    let ordinal = value
+        .chars()
+        .skip(1)
+        .take_while(|character| {
+            character.is_ascii_digit()
+                || matches!(
+                    character,
+                    '零' | '〇'
+                        | '一'
+                        | '二'
+                        | '三'
+                        | '四'
+                        | '五'
+                        | '六'
+                        | '七'
+                        | '八'
+                        | '九'
+                        | '十'
+                        | '百'
+                        | '千'
+                        | '万'
+                        | '两'
+                )
+        })
+        .collect::<String>();
+    if ordinal.is_empty() {
+        return false;
+    }
+    let suffix_index = 1 + ordinal.chars().count();
+    matches!(
+        value.chars().nth(suffix_index),
+        Some('章' | '节' | '回' | '卷' | '部' | '篇')
+    )
 }
 
 fn split_txt_sections(content: &str) -> Vec<ParsedSection> {
@@ -620,6 +715,9 @@ fn parse_opf(bytes: &[u8]) -> Result<OpfPackage, String> {
                             if properties.split_whitespace().any(|value| value == "nav") {
                                 package.nav_href = Some(href.clone());
                             }
+                            if media_type == "application/x-dtbncx+xml" {
+                                package.ncx_href = Some(href.clone());
+                            }
                             package
                                 .manifest
                                 .insert(id, ManifestItem { href, media_type });
@@ -643,6 +741,9 @@ fn parse_opf(bytes: &[u8]) -> Result<OpfPackage, String> {
                     if !id.is_empty() && !href.is_empty() {
                         if properties.split_whitespace().any(|value| value == "nav") {
                             package.nav_href = Some(href.clone());
+                        }
+                        if media_type == "application/x-dtbncx+xml" {
+                            package.ncx_href = Some(href.clone());
                         }
                         package
                             .manifest
@@ -739,6 +840,60 @@ fn parse_nav_titles(bytes: &[u8], nav_path: &str) -> Result<HashMap<String, Stri
     Ok(titles)
 }
 
+fn parse_ncx_titles(bytes: &[u8], ncx_path: &str) -> Result<HashMap<String, String>, String> {
+    let mut reader = Reader::from_reader(Cursor::new(bytes));
+    reader.config_mut().trim_text(true);
+    let mut buffer = Vec::new();
+    let mut capturing_label = false;
+    let mut label = String::new();
+    let mut titles = HashMap::new();
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(Event::Start(event)) => match xml_local_name(event.name().as_ref()).as_str() {
+                "text" => {
+                    capturing_label = true;
+                    label.clear();
+                }
+                "content" => {
+                    if let Some(source) = attribute_value(&event, "src")? {
+                        let title = normalize_text(&label);
+                        if !title.is_empty() {
+                            let resolved = resolve_archive_path(ncx_path, &source)?;
+                            titles.entry(resolved).or_insert(title);
+                        }
+                    }
+                }
+                _ => {}
+            },
+            Ok(Event::Empty(event)) if xml_local_name(event.name().as_ref()) == "content" => {
+                if let Some(source) = attribute_value(&event, "src")? {
+                    let title = normalize_text(&label);
+                    if !title.is_empty() {
+                        let resolved = resolve_archive_path(ncx_path, &source)?;
+                        titles.entry(resolved).or_insert(title);
+                    }
+                }
+            }
+            Ok(Event::Text(event)) if capturing_label => {
+                label.push_str(&xml_text(event.as_ref())?);
+                label.push(' ');
+            }
+            Ok(Event::CData(event)) if capturing_label => {
+                label.push_str(&xml_text(event.as_ref())?);
+                label.push(' ');
+            }
+            Ok(Event::End(event)) if xml_local_name(event.name().as_ref()) == "text" => {
+                capturing_label = false;
+            }
+            Ok(Event::Eof) => break,
+            Err(error) => return Err(format!("Failed to parse EPUB NCX: {error}")),
+            _ => {}
+        }
+        buffer.clear();
+    }
+    Ok(titles)
+}
+
 fn element_name(handle: &Handle) -> Option<String> {
     match &handle.data {
         NodeData::Element { name, .. } => Some(name.local.as_ref().to_ascii_lowercase()),
@@ -817,18 +972,111 @@ fn xhtml_to_text(bytes: &[u8]) -> Result<(String, Option<String>), String> {
     Ok((text, title))
 }
 
+fn find_first_element(handle: &Handle, names: &[&str]) -> Option<Handle> {
+    if element_name(handle)
+        .as_deref()
+        .is_some_and(|name| names.contains(&name))
+    {
+        return Some(handle.clone());
+    }
+    handle
+        .children
+        .borrow()
+        .iter()
+        .find_map(|child| find_first_element(child, names))
+}
+
+fn append_web_text(handle: &Handle, output: &mut String) {
+    let name = element_name(handle);
+    if matches!(
+        name.as_deref(),
+        Some(
+            "script"
+                | "style"
+                | "head"
+                | "nav"
+                | "header"
+                | "footer"
+                | "aside"
+                | "form"
+                | "noscript"
+                | "svg"
+        )
+    ) {
+        return;
+    }
+    let is_block = matches!(
+        name.as_deref(),
+        Some(
+            "p" | "div"
+                | "li"
+                | "br"
+                | "tr"
+                | "section"
+                | "article"
+                | "h1"
+                | "h2"
+                | "h3"
+                | "h4"
+                | "h5"
+                | "h6"
+        )
+    );
+    if is_block && !output.is_empty() {
+        output.push('\n');
+    }
+    if let NodeData::Text { contents } = &handle.data {
+        output.push_str(&contents.borrow());
+    }
+    for child in handle.children.borrow().iter() {
+        append_web_text(child, output);
+    }
+    if is_block {
+        output.push('\n');
+    }
+}
+
+fn html_to_main_text(bytes: &[u8]) -> Result<(String, Option<String>), String> {
+    let input = String::from_utf8_lossy(bytes);
+    let dom = parse_document(RcDom::default(), Default::default()).one(input.as_ref());
+    let root = find_first_element(&dom.document, &["article"])
+        .or_else(|| find_first_element(&dom.document, &["main"]))
+        .or_else(|| find_first_element(&dom.document, &["body"]))
+        .unwrap_or_else(|| dom.document.clone());
+    let title = first_heading(&root).or_else(|| first_heading(&dom.document));
+    let mut text = String::new();
+    append_web_text(&root, &mut text);
+    let text = text
+        .lines()
+        .map(normalize_text)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    if text.is_empty() {
+        return Err("网页没有可保存的正文，未创建素材".to_string());
+    }
+    Ok((text, title))
+}
+
 #[tauri::command]
 pub fn preview_web_material(source_url: String) -> Result<WebMaterialPreview, String> {
-    let url = Url::parse(source_url.trim()).map_err(|_| "网页地址无效".to_string())?;
-    if !matches!(url.scheme(), "http" | "https") {
-        return Err("仅支持 http 和 https 网页地址".to_string());
-    }
-    let source_name = url.host_str().unwrap_or("网页来源").to_string();
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .redirect(Policy::limited(5))
         .build()
         .map_err(|error| format!("无法创建网页请求: {error}"))?;
+    preview_web_material_with_client(source_url, &client)
+}
+
+fn preview_web_material_with_client(
+    source_url: String,
+    client: &Client,
+) -> Result<WebMaterialPreview, String> {
+    let url = Url::parse(source_url.trim()).map_err(|_| "网页地址无效".to_string())?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("仅支持 http 和 https 网页地址".to_string());
+    }
+    let source_name = url.host_str().unwrap_or("网页来源").to_string();
     let mut response = client
         .get(url)
         .send()
@@ -861,7 +1109,7 @@ pub fn preview_web_material(source_url: String) -> Result<WebMaterialPreview, St
         return Err("网页响应超过 5MB 限制，未创建素材".to_string());
     }
     let (content, heading) = if content_type.starts_with("text/html") {
-        xhtml_to_text(&bytes)?
+        html_to_main_text(&bytes)?
     } else {
         (String::from_utf8_lossy(&bytes).trim().to_string(), None)
     };
@@ -880,16 +1128,25 @@ fn parse_epub(source: &SourceFile) -> Result<ParsedDocument, String> {
     let mut archive = ZipArchive::new(Cursor::new(source.bytes.as_slice()))
         .map_err(|error| format!("Failed to open EPUB archive: {error}"))?;
     validate_archive(&mut archive)?;
+    if archive.by_name("META-INF/encryption.xml").is_ok() {
+        return Err("Encrypted or DRM-protected EPUB files are not supported".to_string());
+    }
     let opf_path = parse_container(&archive_file(&mut archive, "META-INF/container.xml")?)?;
     archive_member_path(&opf_path)?;
     let package = parse_opf(&archive_file(&mut archive, &opf_path)?)?;
-    let nav_titles = match package.nav_href.as_deref() {
+    let mut nav_titles = match package.nav_href.as_deref() {
         Some(href) => {
             let nav_path = resolve_archive_path(&opf_path, href)?;
             parse_nav_titles(&archive_file(&mut archive, &nav_path)?, &nav_path)?
         }
         None => HashMap::new(),
     };
+    if nav_titles.is_empty() {
+        if let Some(href) = package.ncx_href.as_deref() {
+            let ncx_path = resolve_archive_path(&opf_path, href)?;
+            nav_titles = parse_ncx_titles(&archive_file(&mut archive, &ncx_path)?, &ncx_path)?;
+        }
+    }
     let mut sections = Vec::new();
     for (order, idref) in package.spine.iter().enumerate() {
         let item = package
@@ -903,7 +1160,10 @@ fn parse_epub(source: &SourceFile) -> Result<ParsedDocument, String> {
             continue;
         }
         let content_path = resolve_archive_path(&opf_path, &item.href)?;
-        let (content, heading) = xhtml_to_text(&archive_file(&mut archive, &content_path)?)?;
+        let chapter_bytes = archive_file(&mut archive, &content_path)?;
+        let Ok((content, heading)) = xhtml_to_text(&chapter_bytes) else {
+            continue;
+        };
         sections.push(ParsedSection {
             title: nav_titles
                 .get(&content_path)
@@ -929,14 +1189,16 @@ fn parse_epub(source: &SourceFile) -> Result<ParsedDocument, String> {
         },
         author: package.author,
         sections,
+        detected_encoding: None,
+        raw_text: None,
     })
 }
 
 fn parse_source(source: &SourceFile) -> Result<ParsedDocument, String> {
     match source.extension.as_str() {
         "txt" => {
-            let content = decode_txt(&source.bytes)?;
-            let sections = split_txt_sections(&content);
+            let decoded = decode_txt(&source.bytes)?;
+            let sections = split_txt_sections(&decoded.content);
             if sections.is_empty() {
                 return Err("TXT file has no readable content".to_string());
             }
@@ -950,6 +1212,8 @@ fn parse_source(source: &SourceFile) -> Result<ParsedDocument, String> {
                 title,
                 author: String::new(),
                 sections,
+                detected_encoding: Some(decoded.encoding),
+                raw_text: Some(decoded.content),
             })
         }
         "epub" => parse_epub(source),
@@ -963,6 +1227,7 @@ fn preview(source: &SourceFile, parsed: &ParsedDocument) -> MaterialDocumentImpo
         format: parsed.format.clone(),
         title: parsed.title.clone(),
         author: parsed.author.clone(),
+        detected_encoding: parsed.detected_encoding.clone(),
         sections: parsed
             .sections
             .iter()
@@ -971,9 +1236,92 @@ fn preview(source: &SourceFile, parsed: &ParsedDocument) -> MaterialDocumentImpo
                 order,
                 title: section.title.clone(),
                 character_count: section.content.chars().count(),
+                content_preview: section.content.chars().take(120).collect(),
             })
             .collect(),
     }
+}
+
+fn apply_import_options(
+    mut parsed: ParsedDocument,
+    options: MaterialDocumentImportOptions,
+) -> Result<ParsedDocument, String> {
+    if let Some(title) = options.title {
+        let title = title.trim();
+        if title.is_empty() || title.chars().count() > 200 {
+            return Err("Document title must contain 1 to 200 characters".to_string());
+        }
+        parsed.title = title.to_string();
+    }
+    if let Some(author) = options.author {
+        if author.chars().count() > 200 {
+            return Err("Document author cannot exceed 200 characters".to_string());
+        }
+        parsed.author = author.trim().to_string();
+    }
+    if parsed.format != MaterialDocumentFormat::Txt {
+        if options.txt_mode.is_some() || !options.txt_section_edits.is_empty() {
+            return Err("TXT import options cannot be applied to an EPUB".to_string());
+        }
+        return Ok(parsed);
+    }
+
+    match options.txt_mode.unwrap_or(TxtImportMode::DetectedSections) {
+        TxtImportMode::Single => {
+            let content = parsed
+                .raw_text
+                .as_deref()
+                .map(str::trim)
+                .filter(|content| !content.is_empty())
+                .ok_or_else(|| "TXT file has no readable content".to_string())?;
+            parsed.sections = vec![ParsedSection {
+                title: "全文".to_string(),
+                content: content.to_string(),
+            }];
+        }
+        TxtImportMode::DetectedSections => {
+            if options.txt_section_edits.is_empty() {
+                return Ok(parsed);
+            }
+            if options.txt_section_edits.len() != parsed.sections.len() {
+                return Err("TXT chapter adjustments no longer match the preview".to_string());
+            }
+            let mut adjusted: Vec<ParsedSection> = Vec::new();
+            for (expected_order, (section, edit)) in parsed
+                .sections
+                .into_iter()
+                .zip(options.txt_section_edits)
+                .enumerate()
+            {
+                if edit.order != expected_order {
+                    return Err("TXT chapter adjustments are out of order".to_string());
+                }
+                let title = edit.title.trim();
+                if title.is_empty() || title.chars().count() > 200 {
+                    return Err("TXT chapter titles must contain 1 to 200 characters".to_string());
+                }
+                if edit.merge_with_previous {
+                    let previous = adjusted
+                        .last_mut()
+                        .ok_or_else(|| "The first TXT section cannot merge backward".to_string())?;
+                    previous.content.push_str("\n\n");
+                    previous.content.push_str(title);
+                    previous.content.push('\n');
+                    previous.content.push_str(&section.content);
+                } else {
+                    adjusted.push(ParsedSection {
+                        title: title.to_string(),
+                        content: section.content,
+                    });
+                }
+            }
+            parsed.sections = adjusted;
+        }
+    }
+    if parsed.sections.is_empty() {
+        return Err("Document has no sections after applying import options".to_string());
+    }
+    Ok(parsed)
 }
 
 fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -1023,11 +1371,21 @@ fn write_attachment(
     })
 }
 
-fn rollback_import(root: &Path, document_id: &str, attachment_id: &str) {
-    let _ = fs::remove_file(document_item_path(root, document_id));
-    let _ = fs::remove_file(attachment_metadata_path(root, attachment_id));
-    let _ = fs::remove_dir_all(document_sections_dir(root, document_id));
-    let _ = fs::remove_dir_all(attachment_dir(root, document_id));
+fn rollback_import(
+    root: &Path,
+    document_id: &str,
+    attachment_id: &str,
+) -> Result<FileCleanupResult, String> {
+    queue_file_cleanup(
+        root,
+        "rollback_material_document_import",
+        vec![
+            document_item_path(root, document_id),
+            attachment_metadata_path(root, attachment_id),
+            document_sections_dir(root, document_id),
+            attachment_dir(root, document_id),
+        ],
+    )
 }
 
 fn to_summary(document: &MaterialDocument) -> MaterialDocumentSummary {
@@ -1068,9 +1426,10 @@ pub fn import_material_document(
     source_path: String,
     scope: MaterialScope,
     project_ids: Vec<String>,
+    options: Option<MaterialDocumentImportOptions>,
 ) -> Result<MaterialDocument, String> {
     let source = source_file(&source_path)?;
-    let parsed = parse_source(&source)?;
+    let parsed = apply_import_options(parse_source(&source)?, options.unwrap_or_default())?;
     let project_ids = validate_scope(&scope, &project_ids)?;
     let root = materials_dir(&app_handle)?;
     let mut state = lock_document_state()?;
@@ -1131,8 +1490,15 @@ pub fn import_material_document(
         Ok::<(), String>(())
     })();
     if let Err(error) = result {
-        rollback_import(&root, &document_id, &attachment_id);
-        return Err(error);
+        return Err(match rollback_import(&root, &document_id, &attachment_id) {
+            Ok(result) if result.cleanup_pending => {
+                format!("{error}; import remnants were queued for cleanup retry")
+            }
+            Ok(_) => error,
+            Err(cleanup_error) => {
+                format!("{error}; failed to record import rollback: {cleanup_error}")
+            }
+        });
     }
     state.documents.insert(
         document_id,
@@ -1203,6 +1569,37 @@ pub fn get_material_document(
             sections: indexed.record.sections.clone(),
         })
         .ok_or_else(|| "Document not found".to_string())
+}
+
+#[tauri::command]
+pub fn get_material_document_source_status(
+    app_handle: tauri::AppHandle,
+    document_id: String,
+    section_id: Option<String>,
+) -> Result<MaterialDocumentSourceStatus, String> {
+    validate_uuid(&document_id, "document id")?;
+    if let Some(section_id) = section_id.as_deref() {
+        validate_uuid(section_id, "section id")?;
+    }
+    let root = materials_dir(&app_handle)?;
+    let mut state = lock_document_state()?;
+    ensure_document_state(&mut state, &root)?;
+    let Some(indexed) = state.documents.get(&document_id) else {
+        return Ok(MaterialDocumentSourceStatus {
+            document_exists: false,
+            section_exists: false,
+        });
+    };
+    Ok(MaterialDocumentSourceStatus {
+        document_exists: true,
+        section_exists: section_id.is_none_or(|section_id| {
+            indexed
+                .record
+                .sections
+                .iter()
+                .any(|section| section.id == section_id)
+        }),
+    })
 }
 
 #[tauri::command]
@@ -1291,34 +1688,78 @@ pub fn search_material_document_sections(
 pub fn delete_material_document(
     app_handle: tauri::AppHandle,
     document_id: String,
-) -> Result<(), String> {
+) -> Result<FileCleanupResult, String> {
     validate_uuid(&document_id, "document id")?;
     let root = materials_dir(&app_handle)?;
     let mut state = lock_document_state()?;
     ensure_document_state(&mut state, &root)?;
+    delete_material_document_from_state(&root, &mut state, &document_id)
+}
+
+fn delete_material_document_from_state(
+    root: &Path,
+    state: &mut MaterialDocumentState,
+    document_id: &str,
+) -> Result<FileCleanupResult, String> {
     let indexed = state
         .documents
-        .get(&document_id)
+        .get(document_id)
         .cloned()
         .ok_or_else(|| "Document not found".to_string())?;
-    fs::remove_file(document_item_path(&root, &document_id))
-        .map_err(|error| format!("Failed to delete document record: {error}"))?;
-    fs::remove_file(attachment_metadata_path(
-        &root,
-        &indexed.record.document.attachment_id,
-    ))
-    .map_err(|error| format!("Failed to delete attachment metadata: {error}"))?;
-    fs::remove_dir_all(document_sections_dir(&root, &document_id))
-        .map_err(|error| format!("Failed to delete document sections: {error}"))?;
-    fs::remove_dir_all(attachment_dir(&root, &document_id))
-        .map_err(|error| format!("Failed to delete document attachment: {error}"))?;
-    state.documents.remove(&document_id);
-    Ok(())
+    let result = queue_file_cleanup(
+        root,
+        "delete_material_document",
+        vec![
+            document_item_path(root, document_id),
+            attachment_metadata_path(root, &indexed.record.document.attachment_id),
+            document_sections_dir(root, document_id),
+            attachment_dir(root, document_id),
+        ],
+    )?;
+    state.documents.remove(document_id);
+    Ok(result)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::Duration;
+
+    fn test_root() -> PathBuf {
+        std::env::temp_dir().join(format!("ai-novel-document-test-{}", Uuid::new_v4()))
+    }
+
+    fn build_epub(entries: &[(&str, &str)]) -> SourceFile {
+        let cursor = Cursor::new(Vec::new());
+        let mut archive = zip::ZipWriter::new(cursor);
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, content) in entries {
+            archive.start_file(*name, options).unwrap();
+            archive.write_all(content.as_bytes()).unwrap();
+        }
+        SourceFile {
+            name: "fixture.epub".to_string(),
+            extension: "epub".to_string(),
+            bytes: archive.finish().unwrap().into_inner(),
+        }
+    }
+
+    fn serve_once(response: Vec<u8>, delay: Duration) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 2048];
+            let _ = stream.read(&mut request);
+            if !delay.is_zero() {
+                thread::sleep(delay);
+            }
+            let _ = stream.write_all(&response);
+        });
+        format!("http://{address}")
+    }
 
     #[test]
     fn detects_txt_chapters_and_keeps_intro() {
@@ -1392,12 +1833,355 @@ mod tests {
     #[test]
     fn decodes_utf16_txt_and_rejects_invalid_epub() {
         let utf16 = [0xFF, 0xFE, 0x2C, 0x7B, 0x00, 0x4E];
-        assert_eq!(decode_txt(&utf16).unwrap(), "第一");
+        let decoded = decode_txt(&utf16).unwrap();
+        assert_eq!(decoded.content, "第一");
+        assert_eq!(decoded.encoding, "UTF-16LE");
         let broken = SourceFile {
             name: "broken.epub".to_string(),
             extension: "epub".to_string(),
             bytes: b"not a zip".to_vec(),
         };
         assert!(parse_epub(&broken).is_err());
+    }
+
+    #[test]
+    fn txt_preview_reports_gb18030_and_supports_adjusted_or_single_import() {
+        let decoded = decode_txt(&[0x95, 0x34, 0xb2, 0x35]).unwrap();
+        assert_eq!(decoded.content, "𠮷");
+        assert_eq!(decoded.encoding, "GB18030 / GBK");
+
+        let source = SourceFile {
+            name: "novel.txt".to_string(),
+            extension: "txt".to_string(),
+            bytes: "序言\n第一章 起点\n正文一\n第二章 归途\n正文二"
+                .as_bytes()
+                .to_vec(),
+        };
+        let parsed = parse_source(&source).unwrap();
+        assert_eq!(parsed.sections.len(), 3);
+        assert_eq!(parsed.detected_encoding.as_deref(), Some("UTF-8"));
+        let adjusted = apply_import_options(
+            parsed.clone(),
+            MaterialDocumentImportOptions {
+                txt_mode: Some(TxtImportMode::DetectedSections),
+                txt_section_edits: vec![
+                    TxtSectionEdit {
+                        order: 0,
+                        title: "前言".to_string(),
+                        merge_with_previous: false,
+                    },
+                    TxtSectionEdit {
+                        order: 1,
+                        title: "第一章".to_string(),
+                        merge_with_previous: false,
+                    },
+                    TxtSectionEdit {
+                        order: 2,
+                        title: "第二章".to_string(),
+                        merge_with_previous: true,
+                    },
+                ],
+                ..MaterialDocumentImportOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(adjusted.sections.len(), 2);
+        assert!(adjusted.sections[1].content.contains("第二章\n正文二"));
+
+        let single = apply_import_options(
+            parsed,
+            MaterialDocumentImportOptions {
+                txt_mode: Some(TxtImportMode::Single),
+                ..MaterialDocumentImportOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(single.sections.len(), 1);
+        assert!(single.sections[0].content.contains("第二章 归途"));
+    }
+
+    #[test]
+    fn source_file_rejects_unsupported_empty_and_oversized_documents() {
+        let root = test_root();
+        fs::create_dir_all(&root).unwrap();
+        for extension in ["mobi", "azw", "azw3", "kfx"] {
+            let path = root.join(format!("book.{extension}"));
+            fs::write(&path, b"unsupported").unwrap();
+            let error = source_file(path.to_str().unwrap()).unwrap_err();
+            assert!(error.contains("not supported"));
+        }
+        let empty = root.join("empty.txt");
+        fs::write(&empty, []).unwrap();
+        assert!(source_file(empty.to_str().unwrap()).is_err());
+        let oversized = root.join("oversized.txt");
+        File::create(&oversized)
+            .unwrap()
+            .set_len(MAX_DOCUMENT_BYTES as u64 + 1)
+            .unwrap();
+        assert!(source_file(oversized.to_str().unwrap()).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn epub_supports_ncx_nested_paths_empty_spine_and_malformed_html() {
+        let source = build_epub(&[
+            (
+                "META-INF/container.xml",
+                r#"<container><rootfiles><rootfile full-path="OPS/package/book.opf"/></rootfiles></container>"#,
+            ),
+            (
+                "OPS/package/book.opf",
+                r#"<package><metadata><dc:title xmlns:dc="urn:dc">NCX Book</dc:title></metadata><manifest><item id="ncx" href="../toc/book.ncx" media-type="application/x-dtbncx+xml"/><item id="empty" href="text/empty.xhtml" media-type="application/xhtml+xml"/><item id="one" href="text/one.xhtml" media-type="application/xhtml+xml"/></manifest><spine toc="ncx"><itemref idref="empty"/><itemref idref="one"/></spine></package>"#,
+            ),
+            (
+                "OPS/toc/book.ncx",
+                r#"<ncx><navMap><navPoint><navLabel><text>目录标题</text></navLabel><content src="../package/text/one.xhtml#start"/></navPoint></navMap></ncx>"#,
+            ),
+            ("OPS/package/text/empty.xhtml", "<html><body></body></html>"),
+            (
+                "OPS/package/text/one.xhtml",
+                "<html><body><h1>破损但可恢复<p>正文 & 未闭合标签</body></html>",
+            ),
+        ]);
+        let parsed = parse_epub(&source).unwrap();
+        assert_eq!(parsed.sections.len(), 1);
+        assert_eq!(parsed.sections[0].title, "目录标题");
+        assert!(parsed.sections[0].content.contains("正文"));
+    }
+
+    #[test]
+    fn epub_rejects_encryption_and_oversized_entries() {
+        let encrypted = build_epub(&[
+            (
+                "META-INF/container.xml",
+                r#"<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>"#,
+            ),
+            ("META-INF/encryption.xml", "<encryption/>"),
+            (
+                "book.opf",
+                r#"<package><manifest><item id="one" href="one.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="one"/></spine></package>"#,
+            ),
+            ("one.xhtml", "<html><body>text</body></html>"),
+        ]);
+        assert!(parse_epub(&encrypted).unwrap_err().contains("Encrypted"));
+
+        let cursor = Cursor::new(Vec::new());
+        let mut writer = zip::ZipWriter::new(cursor);
+        writer
+            .start_file("large.xhtml", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        writer
+            .write_all(&vec![b'x'; MAX_ARCHIVE_ENTRY_BYTES as usize + 1])
+            .unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        let mut archive = ZipArchive::new(Cursor::new(bytes)).unwrap();
+        assert!(validate_archive(&mut archive)
+            .unwrap_err()
+            .contains("entry"));
+    }
+
+    #[test]
+    fn webpage_extraction_prefers_article_and_enforces_response_contract() {
+        let html = b"<html><body><nav>ignore nav</nav><article><h1>Article</h1><p>Main text</p></article><footer>ignore footer</footer></body></html>";
+        let mut response = b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\nContent-Length: ".to_vec();
+        response.extend_from_slice(html.len().to_string().as_bytes());
+        response.extend_from_slice(b"\r\n\r\n");
+        response.extend_from_slice(html);
+        let client = Client::builder()
+            .redirect(Policy::limited(5))
+            .build()
+            .unwrap();
+        let preview =
+            preview_web_material_with_client(serve_once(response, Duration::ZERO), &client)
+                .unwrap();
+        assert_eq!(preview.title, "Article");
+        assert!(preview.content.contains("Main text"));
+        assert!(!preview.content.contains("ignore"));
+
+        let wrong_type = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_vec();
+        assert!(
+            preview_web_material_with_client(serve_once(wrong_type, Duration::ZERO), &client)
+                .is_err()
+        );
+        let too_large = format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", MAX_WEB_RESPONSE_BYTES + 1).into_bytes();
+        assert!(
+            preview_web_material_with_client(serve_once(too_large, Duration::ZERO), &client)
+                .is_err()
+        );
+        let empty = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec();
+        assert!(
+            preview_web_material_with_client(serve_once(empty, Duration::ZERO), &client).is_err()
+        );
+        assert!(preview_web_material_with_client("file:///tmp/a".to_string(), &client).is_err());
+    }
+
+    #[test]
+    fn webpage_enforces_streaming_limit_redirect_limit_and_timeout() {
+        let mut streaming =
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n".to_vec();
+        streaming.extend(std::iter::repeat_n(b'x', MAX_WEB_RESPONSE_BYTES + 1));
+        let client = Client::builder()
+            .redirect(Policy::limited(5))
+            .build()
+            .unwrap();
+        assert!(
+            preview_web_material_with_client(serve_once(streaming, Duration::ZERO), &client)
+                .is_err()
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            for _ in 0..6 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0_u8; 1024];
+                let _ = stream.read(&mut request);
+                let response = format!("HTTP/1.1 302 Found\r\nLocation: http://{address}/next\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        assert!(
+            preview_web_material_with_client(format!("http://{address}/start"), &client).is_err()
+        );
+
+        let timeout_client = Client::builder()
+            .timeout(Duration::from_millis(40))
+            .redirect(Policy::limited(5))
+            .build()
+            .unwrap();
+        let slow = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 4\r\nConnection: close\r\n\r\nslow".to_vec();
+        assert!(preview_web_material_with_client(
+            serve_once(slow, Duration::from_millis(150)),
+            &timeout_client
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn cold_document_index_rebuilds_and_reports_corrupt_sections() {
+        let root = test_root();
+        initialize_document_structure(&root).unwrap();
+        let document_id = Uuid::new_v4().to_string();
+        let section_id = Uuid::new_v4().to_string();
+        let attachment_id = Uuid::new_v4().to_string();
+        let section = MaterialDocumentSection {
+            id: section_id.clone(),
+            document_id: document_id.clone(),
+            order: 0,
+            title: "Chapter".to_string(),
+            relative_path: section_relative_path(&document_id, &section_id),
+            character_count: 7,
+        };
+        let document = MaterialDocument {
+            schema_version: DOCUMENT_SCHEMA_VERSION,
+            id: document_id.clone(),
+            title: "Book".to_string(),
+            author: String::new(),
+            format: MaterialDocumentFormat::Txt,
+            attachment_id,
+            scope: MaterialScope::Global,
+            project_ids: Vec::new(),
+            section_ids: vec![section_id.clone()],
+            created_at: now_iso(),
+            updated_at: now_iso(),
+        };
+        atomic_write_bytes(&section_path(&root, &document_id, &section_id), b"keyword").unwrap();
+        atomic_write_json(
+            &document_item_path(&root, &document_id),
+            &MaterialDocumentRecord {
+                document,
+                sections: vec![section],
+            },
+        )
+        .unwrap();
+        let mut state = MaterialDocumentState::default();
+        ensure_document_state(&mut state, &root).unwrap();
+        assert_eq!(state.documents.len(), 1);
+        assert!(state.documents[&document_id].section_search_text[&section_id].contains("keyword"));
+
+        fs::remove_file(section_path(&root, &document_id, &section_id)).unwrap();
+        let mut rebuilt = MaterialDocumentState::default();
+        assert!(ensure_document_state(&mut rebuilt, &root).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn parses_real_world_accessible_epub_fixture() {
+        let source = SourceFile {
+            name: "accessible_epub_3.epub".to_string(),
+            extension: "epub".to_string(),
+            bytes: include_bytes!("../../tests/fixtures/accessible_epub_3.epub").to_vec(),
+        };
+        let parsed = parse_epub(&source).unwrap();
+        assert!(!parsed.title.trim().is_empty());
+        assert!(parsed.sections.len() > 1);
+        assert!(
+            parsed
+                .sections
+                .iter()
+                .map(|section| section.content.chars().count())
+                .sum::<usize>()
+                > 1000
+        );
+    }
+
+    #[test]
+    fn document_delete_removes_warm_and_cold_search_index_sources() {
+        let root = test_root();
+        initialize_document_structure(&root).unwrap();
+        let document_id = Uuid::new_v4().to_string();
+        let section_id = Uuid::new_v4().to_string();
+        let attachment_id = Uuid::new_v4().to_string();
+        let section = MaterialDocumentSection {
+            id: section_id.clone(),
+            document_id: document_id.clone(),
+            order: 0,
+            title: "Searchable".to_string(),
+            relative_path: section_relative_path(&document_id, &section_id),
+            character_count: 14,
+        };
+        let document = MaterialDocument {
+            schema_version: DOCUMENT_SCHEMA_VERSION,
+            id: document_id.clone(),
+            title: "Delete me".to_string(),
+            author: String::new(),
+            format: MaterialDocumentFormat::Txt,
+            attachment_id,
+            scope: MaterialScope::Global,
+            project_ids: Vec::new(),
+            section_ids: vec![section_id.clone()],
+            created_at: now_iso(),
+            updated_at: now_iso(),
+        };
+        atomic_write_bytes(
+            &section_path(&root, &document_id, &section_id),
+            b"unique keyword",
+        )
+        .unwrap();
+        atomic_write_json(
+            &document_item_path(&root, &document_id),
+            &MaterialDocumentRecord {
+                document,
+                sections: vec![section],
+            },
+        )
+        .unwrap();
+        let mut state = MaterialDocumentState::default();
+        ensure_document_state(&mut state, &root).unwrap();
+        assert!(
+            state.documents[&document_id].section_search_text[&section_id]
+                .contains("unique keyword")
+        );
+
+        let result = delete_material_document_from_state(&root, &mut state, &document_id).unwrap();
+        assert!(!result.cleanup_pending);
+        assert!(!state.documents.contains_key(&document_id));
+        assert!(!document_item_path(&root, &document_id).exists());
+        assert!(!document_sections_dir(&root, &document_id).exists());
+
+        let mut rebuilt = MaterialDocumentState::default();
+        ensure_document_state(&mut rebuilt, &root).unwrap();
+        assert!(rebuilt.documents.is_empty());
+        let _ = fs::remove_dir_all(root);
     }
 }

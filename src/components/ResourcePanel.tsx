@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
-import { readTextFile } from '@tauri-apps/plugin-fs'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import {
   createMaterial,
   deleteMaterial,
   getMaterial,
+  getMaterialPlainText,
+  getMaterialDocumentSourceStatus,
   initializeMaterialLibrary,
   listMaterialCategories,
   listMaterialKinds,
@@ -17,7 +18,10 @@ import {
   saveMaterialKinds,
   updateMaterial,
   previewWebMaterial,
-  attachMaterialImage,
+  createMaterialWithImage,
+  listMaterialImageAttachments,
+  readMaterialImageAttachment,
+  previewMarkdownMaterialImport,
 } from '../api/tauri'
 import type { ProjectMeta } from '../types/project'
 import type {
@@ -27,6 +31,8 @@ import type {
   MaterialItem,
   MaterialContextSelection,
   MaterialKindDefinition,
+  MaterialImageAttachment,
+  MaterialDocumentSourceStatus,
   MaterialPage,
   MaterialSummary,
   MaterialUsage,
@@ -64,6 +70,22 @@ const SOURCE_LABELS: Record<MaterialItem['sourceType'], string> = {
   web: '网页',
   file: '文件',
   image: '图片参考',
+}
+
+interface MaterialImagePreview {
+  attachment: MaterialImageAttachment
+  url: string
+}
+
+interface MaterialSourceTarget {
+  documentId: string
+  sectionId?: string
+}
+
+function formatBytes(value: number) {
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  return `${(value / 1024 / 1024).toFixed(1)} MB`
 }
 
 function formatDate(value: string) {
@@ -111,6 +133,7 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
   const [projects, setProjects] = useState<ProjectMeta[]>([])
   const [materialPage, setMaterialPage] = useState<MaterialPage>(EMPTY_PAGE)
   const [selectedMaterial, setSelectedMaterial] = useState<MaterialItem | null>(null)
+  const [selectedPlainText, setSelectedPlainText] = useState('')
   const [query, setQuery] = useState('')
   const [kindId, setKindId] = useState('')
   const [tag, setTag] = useState('')
@@ -125,8 +148,10 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
   const [showEditor, setShowEditor] = useState(false)
   const [showConfig, setShowConfig] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<MaterialItem | null>(null)
+  const [deleteSaving, setDeleteSaving] = useState(false)
   const [usages, setUsages] = useState<MaterialUsage[]>([])
   const [showDocuments, setShowDocuments] = useState(false)
+  const [documentSelected, setDocumentSelected] = useState(false)
   const [showWebCapture, setShowWebCapture] = useState(false)
   const [webUrl, setWebUrl] = useState('')
   const [webPreview, setWebPreview] = useState<WebMaterialPreview | null>(null)
@@ -134,14 +159,23 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
   const [webKindId, setWebKindId] = useState('')
   const [webCategoryId, setWebCategoryId] = useState('')
   const [webLoading, setWebLoading] = useState(false)
+  const [webSaving, setWebSaving] = useState(false)
   const [showMarkdownImport, setShowMarkdownImport] = useState(false)
   const [markdownName, setMarkdownName] = useState('')
   const [markdownContent, setMarkdownContent] = useState('')
+  const [markdownSourceName, setMarkdownSourceName] = useState('')
   const [markdownKindId, setMarkdownKindId] = useState('')
   const [markdownCategoryId, setMarkdownCategoryId] = useState('')
+  const [markdownSaving, setMarkdownSaving] = useState(false)
   const [imagePath, setImagePath] = useState('')
   const [imageTitle, setImageTitle] = useState('')
   const [imageDescription, setImageDescription] = useState('')
+  const [imageSourceName, setImageSourceName] = useState('')
+  const [imageTags, setImageTags] = useState('')
+  const [imageSaving, setImageSaving] = useState(false)
+  const [imagePreviews, setImagePreviews] = useState<MaterialImagePreview[]>([])
+  const [sourceStatus, setSourceStatus] = useState<MaterialDocumentSourceStatus | null>(null)
+  const [sourceTarget, setSourceTarget] = useState<MaterialSourceTarget | null>(null)
   const [showImageImport, setShowImageImport] = useState(false)
 
   const inbox = categories.find((category) => category.systemKey === 'inbox')
@@ -150,9 +184,9 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
   const projectMap = useMemo(() => new Map(projects.map((project) => [project.id, project.name])), [projects])
 
   const addSelectedToContext = () => {
-    if (!selectedMaterial || !currentChapter || !selectedMaterial.content) return
+    if (!selectedMaterial || selectedMaterial.sourceType === 'image' || !currentChapter || !selectedPlainText) return
     const next = materialContextSelections.filter((selection) => selection.materialId !== selectedMaterial.id)
-    onMaterialContextChange([...next, { materialId: selectedMaterial.id, title: selectedMaterial.title, excerpt: selectedMaterial.content }])
+    onMaterialContextChange([...next, { materialId: selectedMaterial.id, title: selectedMaterial.title, excerpt: selectedPlainText }])
   }
 
   const filter = useMemo<MaterialFilter>(() => ({
@@ -209,16 +243,43 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
     setDetailLoading(true)
     setError(null)
     try {
-      const material = await getMaterial(materialId)
+      const [material, plainText] = await Promise.all([
+        getMaterial(materialId),
+        getMaterialPlainText(materialId),
+      ])
+      const [nextUsages, attachments, nextSourceStatus] = await Promise.all([
+        listMaterialUsages(materialId),
+        listMaterialImageAttachments(materialId),
+        material.sourceDocumentId
+          ? getMaterialDocumentSourceStatus(material.sourceDocumentId, material.sourceSectionId)
+          : Promise.resolve(null),
+      ])
+      const previews = await Promise.all(attachments.map(async (attachment) => {
+        const content = await readMaterialImageAttachment(materialId, attachment.id)
+        return {
+          attachment: content.attachment,
+          url: URL.createObjectURL(new Blob([new Uint8Array(content.bytes)], { type: content.attachment.mimeType })),
+        }
+      }))
       setSelectedMaterial(material)
-      setUsages(await listMaterialUsages(materialId))
+      setSelectedPlainText(plainText)
+      setUsages(nextUsages)
+      setImagePreviews(previews)
+      setSourceStatus(nextSourceStatus)
     } catch (cause) {
       setSelectedMaterial(null)
+      setSelectedPlainText('')
+      setImagePreviews([])
+      setSourceStatus(null)
       setError(String(cause))
     } finally {
       setDetailLoading(false)
     }
   }, [])
+
+  useEffect(() => () => {
+    imagePreviews.forEach((preview) => { URL.revokeObjectURL(preview.url) })
+  }, [imagePreviews])
 
   useEffect(() => {
     if (!ready || !initialMaterialId) return
@@ -231,10 +292,14 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
   const resetPageAndSelection = () => {
     setPage(1)
     setSelectedMaterial(null)
+    setSelectedPlainText('')
+    setImagePreviews([])
+    setSourceStatus(null)
   }
 
   const selectView = (view: string) => {
     setShowDocuments(false)
+    setDocumentSelected(false)
     setFavoritesOnly(view === 'favorites')
     setCategoryId(view === 'all' || view === 'favorites'
       ? undefined
@@ -249,6 +314,7 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
       ? await updateMaterial(selectedMaterial.id, input)
       : await createMaterial(input)
     setSelectedMaterial(saved)
+    setSelectedPlainText(await getMaterialPlainText(saved.id))
     setShowEditor(false)
     setPage(1)
     await refreshPage()
@@ -267,13 +333,22 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
 
   const handleDelete = async () => {
     if (!deleteTarget) return
+    setDeleteSaving(true)
     try {
-      await deleteMaterial(deleteTarget.id)
+      const result = await deleteMaterial(deleteTarget.id)
       setDeleteTarget(null)
       setSelectedMaterial(null)
+      setSelectedPlainText('')
+      setImagePreviews([])
+      setSourceStatus(null)
       await refreshPage()
+      if (result.cleanupPending) {
+        setError('素材已删除，部分附件正在等待下次启动重试清理')
+      }
     } catch (cause) {
       setError(String(cause))
+    } finally {
+      setDeleteSaving(false)
     }
   }
 
@@ -308,6 +383,7 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
 
   const saveWebMaterial = async () => {
     if (!webPreview || !webTitle.trim() || !webKindId || !webCategoryId) return
+    setWebSaving(true)
     try {
       const saved = await createMaterial({
         title: webTitle,
@@ -328,6 +404,8 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
       await refreshPage()
     } catch (cause) {
       setError(String(cause))
+    } finally {
+      setWebSaving(false)
     }
   }
 
@@ -335,14 +413,10 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
     try {
       const path = await open({ filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }], multiple: false })
       if (typeof path !== 'string') return
-      const content = await readTextFile(path)
-      if (!content.trim()) {
-        setError('Markdown 文件为空，未创建素材')
-        return
-      }
-      const name = path.split(/[\\/]/).pop()?.replace(/\.(md|markdown)$/i, '') || '未命名 Markdown'
-      setMarkdownName(name)
-      setMarkdownContent(content)
+      const nextPreview = await previewMarkdownMaterialImport(path)
+      setMarkdownName(nextPreview.title)
+      setMarkdownContent(nextPreview.content)
+      setMarkdownSourceName(nextPreview.sourceName)
       setMarkdownKindId(kinds.find((kind) => !kind.archived)?.id ?? '')
       setMarkdownCategoryId(inbox?.id ?? '')
       setShowMarkdownImport(true)
@@ -353,8 +427,9 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
 
   const saveMarkdown = async () => {
     if (!markdownName.trim() || !markdownContent || !markdownKindId || !markdownCategoryId) return
+    setMarkdownSaving(true)
     try {
-      const saved = await createMaterial({ title: markdownName, kindId: markdownKindId, content: markdownContent, contentFormat: 'markdown', sourceType: 'file', sourceName: `${markdownName}.md`, categoryId: markdownCategoryId, scope: 'projects', projectIds: [projectId] })
+      const saved = await createMaterial({ title: markdownName, kindId: markdownKindId, content: markdownContent, contentFormat: 'markdown', sourceType: 'file', sourceName: markdownSourceName, categoryId: markdownCategoryId, scope: 'projects', projectIds: [projectId] })
       setShowMarkdownImport(false)
       setMarkdownContent('')
       setSelectedMaterial(saved)
@@ -362,6 +437,8 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
       await refreshPage()
     } catch (cause) {
       setError(String(cause))
+    } finally {
+      setMarkdownSaving(false)
     }
   }
 
@@ -372,6 +449,8 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
       setImagePath(path)
       setImageTitle(path.split(/[\\/]/).pop()?.replace(/\.(jpg|jpeg|png|webp)$/i, '') || '图片参考')
       setImageDescription('')
+      setImageSourceName(path.split(/[\\/]/).pop() ?? '')
+      setImageTags('')
       setShowImageImport(true)
     } catch (cause) { setError(String(cause)) }
   }
@@ -379,16 +458,32 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
   const saveImage = async () => {
     const kind = kinds.find((value) => !value.archived)?.id
     if (!imagePath || !imageTitle.trim() || !kind || !inbox) return
+    setImageSaving(true)
     try {
-      const material = await createMaterial({ title: imageTitle, kindId: kind, content: imageDescription, sourceType: 'image', sourceName: imagePath.split(/[\\/]/).pop() ?? '', categoryId: inbox.id, scope: 'projects', projectIds: [projectId] })
-      await attachMaterialImage(material.id, imagePath)
-      setShowImageImport(false); setImagePath(''); setSelectedMaterial(await getMaterial(material.id)); setPage(1)
+      const material = await createMaterialWithImage({ title: imageTitle, kindId: kind, content: imageDescription, sourceType: 'image', sourceName: imageSourceName.trim(), tags: imageTags.split(/[,，]/).map((value) => value.trim()).filter(Boolean), categoryId: inbox.id, scope: 'projects', projectIds: [projectId] }, imagePath)
+      setShowImageImport(false)
+      setImagePath('')
+      setPage(1)
       await refreshPage()
-    } catch (cause) { setError(String(cause)) }
+      await openMaterial(material.id)
+    } catch (cause) {
+      setError(String(cause))
+    } finally {
+      setImageSaving(false)
+    }
+  }
+
+  const openMaterialSource = () => {
+    if (!selectedMaterial?.sourceDocumentId || !sourceStatus?.documentExists || !sourceStatus.sectionExists) return
+    setSourceTarget({
+      documentId: selectedMaterial.sourceDocumentId,
+      sectionId: selectedMaterial.sourceSectionId,
+    })
+    setShowDocuments(true)
   }
 
   return (
-    <div className="material-workspace">
+    <div className={`material-workspace${selectedMaterial || documentSelected ? ' narrow-detail' : ''}`}>
       <aside className="material-library-nav">
         <div className="material-pane-header">
           <div>
@@ -407,7 +502,7 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
           <button className={favoritesOnly ? 'active' : ''} onClick={() => { selectView('favorites'); }}>
             <span className="material-nav-icon">★</span><span>收藏</span>
           </button>
-          <button className={showDocuments ? 'active' : ''} onClick={() => { setShowDocuments(true); setSelectedMaterial(null); }}>
+          <button className={showDocuments ? 'active' : ''} onClick={() => { setShowDocuments(true); setDocumentSelected(false); setSelectedMaterial(null); }}>
             <span className="material-nav-icon">▤</span><span>资料源</span>
           </button>
         </nav>
@@ -419,14 +514,14 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
           )}
         </div>
         <div className="material-nav-footer">
-          <Button variant="primary" size="md" onClick={() => { setShowDocuments(false); setSelectedMaterial(null); setShowEditor(true) }}>＋ 新建素材</Button>
+          <Button variant="primary" size="md" onClick={() => { setShowDocuments(false); setDocumentSelected(false); setSelectedMaterial(null); setShowEditor(true) }}>＋ 新建素材</Button>
           <Button variant="secondary" size="sm" onClick={() => { setShowWebCapture(true) }}>网页摘录</Button>
           <Button variant="secondary" size="sm" onClick={() => { void chooseMarkdown() }}>导入 Markdown</Button>
           <Button variant="secondary" size="sm" onClick={() => { void chooseImage() }}>图片参考</Button>
         </div>
       </aside>
 
-      {showDocuments ? <MaterialDocumentWorkspace projectId={projectId} categories={categories} kinds={kinds} /> : <>
+      {showDocuments ? <MaterialDocumentWorkspace projectId={projectId} categories={categories} kinds={kinds} initialDocumentId={sourceTarget?.documentId} initialSectionId={sourceTarget?.sectionId} onSourceOpened={() => { setSourceTarget(null) }} onSelectionChange={setDocumentSelected} /> : <>
       <section className="material-list-pane">
         <div className="material-list-toolbar">
           <input
@@ -500,6 +595,7 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
         ) : selectedMaterial ? (
           <>
             <header className="material-detail-header">
+              <Button variant="text" size="sm" className="material-narrow-back" onClick={() => { setSelectedMaterial(null); setSelectedPlainText(''); setImagePreviews([]); setSourceStatus(null) }}>← 返回素材列表</Button>
               <div className="material-detail-heading">
                 <div className="material-detail-eyebrow">
                   <span>{kindMap.get(selectedMaterial.kindId) ?? '未知类型'}</span>
@@ -508,7 +604,7 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
                 <h2>{selectedMaterial.title}</h2>
               </div>
               <div className="material-detail-actions">
-                <Button variant="secondary" size="sm" onClick={addSelectedToContext} disabled={!currentChapter || !selectedMaterial.content} title={currentChapter ? '加入本章 AI 上下文' : '请先在写作页选择章节'}>加入本章上下文</Button>
+                <Button variant="secondary" size="sm" onClick={addSelectedToContext} disabled={!currentChapter || !selectedPlainText || selectedMaterial.sourceType === 'image'} title={selectedMaterial.sourceType === 'image' ? '图片参考不加入 AI 上下文' : currentChapter ? '加入本章 AI 上下文' : '请先在写作页选择章节'}>加入本章上下文</Button>
                 <Button variant="text" size="sm" onClick={() => { void handleToggleFavorite() }} title={selectedMaterial.favorite ? '取消收藏' : '收藏'}>
                   {selectedMaterial.favorite ? '★' : '☆'}
                 </Button>
@@ -528,10 +624,23 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
                 <h3>正文</h3>
                 <pre>{selectedMaterial.content || '（空）'}</pre>
               </section>
+              {imagePreviews.length > 0 && (
+                <section className="material-detail-section material-image-section">
+                  <h3>图片附件</h3>
+                  <div className="material-image-list">
+                    {imagePreviews.map((preview) => (
+                      <figure key={preview.attachment.id}>
+                        <img src={preview.url} alt={selectedMaterial.title} />
+                        <figcaption>{preview.attachment.originalName} · {formatBytes(preview.attachment.size)}</figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                </section>
+              )}
               <section className="material-detail-section material-metadata-section">
                 <h3>整理信息</h3>
                 <dl>
-                  <div><dt>来源</dt><dd>{SOURCE_LABELS[selectedMaterial.sourceType]}{selectedMaterial.sourceName ? ` · ${selectedMaterial.sourceName}` : ''}</dd></div>
+                  <div><dt>来源</dt><dd>{SOURCE_LABELS[selectedMaterial.sourceType]}{selectedMaterial.sourceName ? ` · ${selectedMaterial.sourceName}` : ''}{selectedMaterial.sourceLocator ? ` · ${selectedMaterial.sourceLocator}` : ''}{selectedMaterial.sourceDocumentId && sourceStatus && (!sourceStatus.documentExists ? <span className="material-source-missing">来源已删除</span> : !sourceStatus.sectionExists ? <span className="material-source-missing">来源章节已删除</span> : <button className="material-source-open" onClick={openMaterialSource}>打开来源</button>)}</dd></div>
                   {selectedMaterial.sourceUrl && <div><dt>链接</dt><dd className="material-source-url">{selectedMaterial.sourceUrl}</dd></div>}
                   <div><dt>范围</dt><dd>{selectedMaterial.scope === 'global' ? '全局素材' : selectedMaterial.projectIds.map((id) => projectMap.get(id) ?? id).join('、')}</dd></div>
                   <div><dt>标签</dt><dd>{selectedMaterial.tags.length > 0 ? selectedMaterial.tags.map((itemTag) => `#${itemTag}`).join('  ') : '无'}</dd></div>
@@ -577,21 +686,21 @@ export default function ResourcePanel({ projectId, initialMaterialId, onMaterial
           <h2>删除素材</h2>
           <p>确定删除「{deleteTarget.title}」？相关使用记录也会一并删除，此操作不可恢复。</p>
           <div className="material-modal-footer">
-            <Button variant="secondary" size="md" onClick={() => { setDeleteTarget(null); }}>取消</Button>
-            <Button variant="danger" size="md" onClick={() => { void handleDelete() }}>删除</Button>
+            <Button variant="secondary" size="md" disabled={deleteSaving} onClick={() => { setDeleteTarget(null); }}>取消</Button>
+            <Button variant="danger" size="md" loading={deleteSaving} onClick={() => { void handleDelete() }}>删除</Button>
           </div>
         </Modal>
       )}
       {showWebCapture && (
         <Modal className="material-document-import-modal">
           <h2>网页摘录</h2>
-          {!webPreview ? <><input value={webUrl} onChange={(event) => { setWebUrl(event.target.value) }} placeholder="https://example.com/article" /><div className="material-modal-footer"><Button variant="secondary" size="md" onClick={() => { setShowWebCapture(false); setWebUrl('') }}>取消</Button><Button variant="primary" size="md" onClick={() => { void fetchWebPreview() }} disabled={!webUrl.trim() || webLoading}>{webLoading ? '正在抓取...' : '获取预览'}</Button></div></> : <><input value={webTitle} onChange={(event) => { setWebTitle(event.target.value) }} placeholder="素材标题" /><select value={webKindId} onChange={(event) => { setWebKindId(event.target.value) }}>{kinds.filter((kind) => !kind.archived).map((kind) => <option key={kind.id} value={kind.id}>{kind.name}</option>)}</select><select value={webCategoryId} onChange={(event) => { setWebCategoryId(event.target.value) }}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><div className="material-document-excerpt-preview">{webPreview.content}</div><div className="material-modal-footer"><Button variant="secondary" size="md" onClick={() => { setWebPreview(null) }}>重新选择</Button><Button variant="primary" size="md" onClick={() => { void saveWebMaterial() }}>保存素材</Button></div></>}
+          {!webPreview ? <><input value={webUrl} onChange={(event) => { setWebUrl(event.target.value) }} placeholder="https://example.com/article" /><div className="material-modal-footer"><Button variant="secondary" size="md" onClick={() => { setShowWebCapture(false); setWebUrl('') }}>取消</Button><Button variant="primary" size="md" loading={webLoading} onClick={() => { void fetchWebPreview() }} disabled={!webUrl.trim()}>获取预览</Button></div></> : <><input value={webTitle} onChange={(event) => { setWebTitle(event.target.value) }} placeholder="素材标题" /><select value={webKindId} onChange={(event) => { setWebKindId(event.target.value) }}>{kinds.filter((kind) => !kind.archived).map((kind) => <option key={kind.id} value={kind.id}>{kind.name}</option>)}</select><select value={webCategoryId} onChange={(event) => { setWebCategoryId(event.target.value) }}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><div className="material-document-excerpt-preview">{webPreview.content}</div><div className="material-modal-footer"><Button variant="secondary" size="md" disabled={webSaving} onClick={() => { setWebPreview(null) }}>重新选择</Button><Button variant="primary" size="md" loading={webSaving} onClick={() => { void saveWebMaterial() }}>保存素材</Button></div></>}
         </Modal>
       )}
       {showMarkdownImport && (
-        <Modal className="material-document-import-modal"><h2>导入 Markdown</h2><input value={markdownName} onChange={(event) => { setMarkdownName(event.target.value) }} placeholder="素材标题" /><select value={markdownKindId} onChange={(event) => { setMarkdownKindId(event.target.value) }}>{kinds.filter((kind) => !kind.archived).map((kind) => <option key={kind.id} value={kind.id}>{kind.name}</option>)}</select><select value={markdownCategoryId} onChange={(event) => { setMarkdownCategoryId(event.target.value) }}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><div className="material-document-excerpt-preview">{markdownContent}</div><div className="material-modal-footer"><Button variant="secondary" size="md" onClick={() => { setShowMarkdownImport(false); setMarkdownContent('') }}>取消</Button><Button variant="primary" size="md" onClick={() => { void saveMarkdown() }}>保存素材</Button></div></Modal>
+        <Modal className="material-document-import-modal"><h2>导入 Markdown</h2><input value={markdownName} onChange={(event) => { setMarkdownName(event.target.value) }} placeholder="素材标题" /><select value={markdownKindId} onChange={(event) => { setMarkdownKindId(event.target.value) }}>{kinds.filter((kind) => !kind.archived).map((kind) => <option key={kind.id} value={kind.id}>{kind.name}</option>)}</select><select value={markdownCategoryId} onChange={(event) => { setMarkdownCategoryId(event.target.value) }}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><div className="material-document-excerpt-preview">{markdownContent}</div><div className="material-modal-footer"><Button variant="secondary" size="md" disabled={markdownSaving} onClick={() => { setShowMarkdownImport(false); setMarkdownContent('') }}>取消</Button><Button variant="primary" size="md" loading={markdownSaving} onClick={() => { void saveMarkdown() }}>保存素材</Button></div></Modal>
       )}
-      {showImageImport && <Modal className="material-document-import-modal"><h2>图片参考</h2><img style={{ display: 'block', width: '100%', maxHeight: 280, objectFit: 'contain' }} src={convertFileSrc(imagePath)} alt="图片预览" /><input value={imageTitle} onChange={(event) => { setImageTitle(event.target.value) }} placeholder="素材标题" /><textarea value={imageDescription} onChange={(event) => { setImageDescription(event.target.value) }} rows={3} placeholder="图片说明" /><div className="material-modal-footer"><Button variant="secondary" size="md" onClick={() => { setShowImageImport(false); setImagePath('') }}>取消</Button><Button variant="primary" size="md" onClick={() => { void saveImage() }}>保存素材</Button></div></Modal>}
+      {showImageImport && <Modal className="material-document-import-modal"><h2>图片参考</h2><img className="material-image-import-preview" src={convertFileSrc(imagePath)} alt="图片预览" /><input value={imageTitle} onChange={(event) => { setImageTitle(event.target.value) }} placeholder="素材标题" /><textarea value={imageDescription} onChange={(event) => { setImageDescription(event.target.value) }} rows={3} placeholder="图片说明" /><input value={imageSourceName} onChange={(event) => { setImageSourceName(event.target.value) }} placeholder="来源名称" /><input value={imageTags} onChange={(event) => { setImageTags(event.target.value) }} placeholder="标签，用逗号分隔" /><div className="material-modal-footer"><Button variant="secondary" size="md" disabled={imageSaving} onClick={() => { setShowImageImport(false); setImagePath('') }}>取消</Button><Button variant="primary" size="md" loading={imageSaving} onClick={() => { void saveImage() }}>保存素材</Button></div></Modal>}
     </div>
   )
 }

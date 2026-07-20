@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   getMaterial,
+  getMaterialPlainText,
   initializeMaterialLibrary,
   listMaterialCategories,
   listMaterialKinds,
@@ -32,6 +33,7 @@ export default function MaterialSidebar({ projectId, currentChapter, materialCon
   const [selectedCategory, setSelectedCategory] = useState('')
   const [materials, setMaterials] = useState<MaterialSummary[]>([])
   const [selectedMaterial, setSelectedMaterial] = useState<MaterialItem | null>(null)
+  const [selectedPlainText, setSelectedPlainText] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -58,6 +60,7 @@ export default function MaterialSidebar({ projectId, currentChapter, materialCon
       setMaterials(page.items)
       if (selectedMaterial && !page.items.some((item) => item.id === selectedMaterial.id)) {
         setSelectedMaterial(null)
+        setSelectedPlainText('')
       }
     } catch (cause) {
       setError(String(cause))
@@ -74,10 +77,16 @@ export default function MaterialSidebar({ projectId, currentChapter, materialCon
   const handleSelect = async (materialId: string) => {
     setError(null)
     try {
-      setSelectedMaterial(await getMaterial(materialId))
+      const [material, plainText] = await Promise.all([
+        getMaterial(materialId),
+        getMaterialPlainText(materialId),
+      ])
+      setSelectedMaterial(material)
+      setSelectedPlainText(plainText)
       setSelectedExcerpt('')
     } catch (cause) {
       setSelectedMaterial(null)
+      setSelectedPlainText('')
       setError(String(cause))
     }
   }
@@ -89,7 +98,8 @@ export default function MaterialSidebar({ projectId, currentChapter, materialCon
 
   const addToContext = () => {
     if (!selectedMaterial || !currentChapter) return
-    const excerpt = selectedExcerpt || selectedMaterial.content
+    if (selectedMaterial.sourceType === 'image') return
+    const excerpt = selectedExcerpt || selectedPlainText
     if (!excerpt) return
     const next = materialContextSelections.filter((selection) => selection.materialId !== selectedMaterial.id)
     onMaterialContextChange([...next, { materialId: selectedMaterial.id, title: selectedMaterial.title, excerpt }])
@@ -111,7 +121,7 @@ export default function MaterialSidebar({ projectId, currentChapter, materialCon
       <select
         className="material-category-select"
         value={selectedCategory}
-        onChange={(event) => { setSelectedCategory(event.target.value); setSelectedMaterial(null) }}
+        onChange={(event) => { setSelectedCategory(event.target.value); setSelectedMaterial(null); setSelectedPlainText('') }}
       >
         <option value="">全部可见素材</option>
         {[...categories].sort((a, b) => a.order - b.order).map((category) => (
@@ -140,13 +150,13 @@ export default function MaterialSidebar({ projectId, currentChapter, materialCon
         <div className="material-preview">
           <div className="material-preview-header">
             <span className="material-filename">{selectedMaterial.title}</span>
-            <Button variant="primary" size="sm" onClick={() => { onInsert(selectedMaterial.id, selectedExcerpt || selectedMaterial.content); }} disabled={!(selectedExcerpt || selectedMaterial.content)}>
+            <Button variant="primary" size="sm" onClick={() => { onInsert(selectedMaterial.id, selectedExcerpt || selectedPlainText); }} disabled={selectedMaterial.sourceType === 'image' || !(selectedExcerpt || selectedPlainText)} title={selectedMaterial.sourceType === 'image' ? '图片参考不能插入正文' : undefined}>
               {selectedExcerpt ? '插入选文' : '插入全文'}
             </Button>
           </div>
-          <pre className="material-preview-content" onMouseUp={captureExcerpt} onKeyUp={captureExcerpt}>{selectedMaterial.content || '（空）'}</pre>
+          <pre className="material-preview-content" onMouseUp={captureExcerpt} onKeyUp={captureExcerpt}>{selectedPlainText || '（空）'}</pre>
           <div className="material-preview-actions">
-            <Button variant="secondary" size="sm" onClick={addToContext} disabled={!currentChapter || !selectedMaterial.content} title={currentChapter ? '加入本章 AI 上下文' : '请先选择章节'}>{selectedExcerpt ? '加入选文上下文' : '加入本章上下文'}</Button>
+            <Button variant="secondary" size="sm" onClick={addToContext} disabled={!currentChapter || !selectedPlainText || selectedMaterial.sourceType === 'image'} title={selectedMaterial.sourceType === 'image' ? '图片参考不加入 AI 上下文' : currentChapter ? '加入本章 AI 上下文' : '请先选择章节'}>{selectedExcerpt ? '加入选文上下文' : '加入本章上下文'}</Button>
             <Button variant="text" size="sm" onClick={() => { onOpenMaterial(selectedMaterial.id) }}>打开素材</Button>
           </div>
           {selectedExcerpt && <p className="material-sidebar-hint">已选择 {selectedExcerpt.length} 字，插入和上下文操作将使用选文。</p>}

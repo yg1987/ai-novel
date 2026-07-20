@@ -9,11 +9,16 @@ import type {
   MaterialDocument,
   MaterialDocumentDetail,
   MaterialDocumentImportPreview,
+  MaterialDocumentImportOptions,
   MaterialDocumentPage,
   MaterialDocumentSearchResult,
+  MaterialDocumentSourceStatus,
   MaterialDocumentSectionContent,
   WebMaterialPreview,
+  FileCleanupResult,
   MaterialImageAttachment,
+  MaterialImageAttachmentContent,
+  MarkdownMaterialImportPreview,
   MaterialFilter,
   MaterialItem,
   MaterialKindDefinition,
@@ -277,6 +282,10 @@ export async function getMaterial(materialId: string): Promise<MaterialItem> {
   return invoke<MaterialItem>('get_material', { materialId })
 }
 
+export async function getMaterialPlainText(materialId: string): Promise<string> {
+  return invoke<string>('get_material_plain_text', { materialId })
+}
+
 export async function createMaterial(input: MaterialWriteInput): Promise<MaterialItem> {
   return invoke<MaterialItem>('create_material', { input })
 }
@@ -288,8 +297,8 @@ export async function updateMaterial(
   return invoke<MaterialItem>('update_material', { materialId, patch })
 }
 
-export async function deleteMaterial(materialId: string): Promise<void> {
-  await invoke('delete_material', { materialId })
+export async function deleteMaterial(materialId: string): Promise<FileCleanupResult> {
+  return invoke<FileCleanupResult>('delete_material', { materialId })
 }
 
 export async function listMaterialCategories(): Promise<MaterialCategory[]> {
@@ -320,8 +329,9 @@ export async function importMaterialDocument(
   sourcePath: string,
   scope: 'global' | 'projects',
   projectIds: string[],
+  options?: MaterialDocumentImportOptions,
 ): Promise<MaterialDocument> {
-  return invoke<MaterialDocument>('import_material_document', { sourcePath, scope, projectIds })
+  return invoke<MaterialDocument>('import_material_document', { sourcePath, scope, projectIds, options })
 }
 
 export async function listMaterialDocuments(
@@ -334,6 +344,13 @@ export async function listMaterialDocuments(
 
 export async function getMaterialDocument(documentId: string): Promise<MaterialDocumentDetail> {
   return invoke<MaterialDocumentDetail>('get_material_document', { documentId })
+}
+
+export async function getMaterialDocumentSourceStatus(
+  documentId: string,
+  sectionId?: string,
+): Promise<MaterialDocumentSourceStatus> {
+  return invoke<MaterialDocumentSourceStatus>('get_material_document_source_status', { documentId, sectionId })
 }
 
 export async function readMaterialDocumentSection(
@@ -351,8 +368,8 @@ export async function searchMaterialDocumentSections(
   return invoke<MaterialDocumentSearchResult[]>('search_material_document_sections', { query, projectId, limit })
 }
 
-export async function deleteMaterialDocument(documentId: string): Promise<void> {
-  await invoke('delete_material_document', { documentId })
+export async function deleteMaterialDocument(documentId: string): Promise<FileCleanupResult> {
+  return invoke<FileCleanupResult>('delete_material_document', { documentId })
 }
 
 export async function previewWebMaterial(sourceUrl: string): Promise<WebMaterialPreview> {
@@ -361,6 +378,28 @@ export async function previewWebMaterial(sourceUrl: string): Promise<WebMaterial
 
 export async function attachMaterialImage(materialId: string, sourcePath: string): Promise<MaterialImageAttachment> {
   return invoke<MaterialImageAttachment>('attach_material_image', { materialId, sourcePath })
+}
+
+export async function createMaterialWithImage(
+  input: MaterialWriteInput,
+  sourcePath: string,
+): Promise<MaterialItem> {
+  return invoke<MaterialItem>('create_material_with_image', { input, sourcePath })
+}
+
+export async function listMaterialImageAttachments(materialId: string): Promise<MaterialImageAttachment[]> {
+  return invoke<MaterialImageAttachment[]>('list_material_image_attachments', { materialId })
+}
+
+export async function readMaterialImageAttachment(
+  materialId: string,
+  attachmentId: string,
+): Promise<MaterialImageAttachmentContent> {
+  return invoke<MaterialImageAttachmentContent>('read_material_image_attachment', { materialId, attachmentId })
+}
+
+export async function previewMarkdownMaterialImport(sourcePath: string): Promise<MarkdownMaterialImportPreview> {
+  return invoke<MarkdownMaterialImportPreview>('preview_markdown_material_import', { sourcePath })
 }
 
 export async function searchMaterials(

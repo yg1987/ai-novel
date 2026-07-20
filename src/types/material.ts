@@ -3,6 +3,7 @@ export type MaterialScope = 'global' | 'projects'
 export type MaterialSourceType = 'original' | 'book' | 'web' | 'file' | 'image'
 export type MaterialUsageAction = 'insert' | 'ai_context'
 export type MaterialDocumentFormat = 'txt' | 'epub'
+export type TxtImportMode = 'detected_sections' | 'single'
 
 export interface CurrentChapterRef {
   projectId: string
@@ -174,6 +175,7 @@ export interface MaterialDocumentSectionPreview {
   order: number
   title: string
   characterCount: number
+  contentPreview: string
 }
 
 export interface MaterialDocumentImportPreview {
@@ -181,7 +183,21 @@ export interface MaterialDocumentImportPreview {
   format: MaterialDocumentFormat
   title: string
   author: string
+  detectedEncoding?: string
   sections: MaterialDocumentSectionPreview[]
+}
+
+export interface TxtSectionEdit {
+  order: number
+  title: string
+  mergeWithPrevious: boolean
+}
+
+export interface MaterialDocumentImportOptions {
+  title?: string
+  author?: string
+  txtMode?: TxtImportMode
+  txtSectionEdits?: TxtSectionEdit[]
 }
 
 export interface MaterialDocumentSummary {
@@ -223,6 +239,11 @@ export interface MaterialDocumentSearchResult {
   score: number
 }
 
+export interface MaterialDocumentSourceStatus {
+  documentExists: boolean
+  sectionExists: boolean
+}
+
 export interface WebMaterialPreview {
   title: string
   sourceName: string
@@ -238,4 +259,19 @@ export interface MaterialImageAttachment {
   size: number
   relativePath: string
   createdAt: string
+}
+
+export interface MaterialImageAttachmentContent {
+  attachment: MaterialImageAttachment
+  bytes: number[]
+}
+
+export interface FileCleanupResult {
+  cleanupPending: boolean
+}
+
+export interface MarkdownMaterialImportPreview {
+  title: string
+  sourceName: string
+  content: string
 }

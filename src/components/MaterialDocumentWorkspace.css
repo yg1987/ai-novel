@@ -1,3 +1,11 @@
+.material-document-workspace {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .material-document-list-pane {
   min-width: 280px;
 }
@@ -80,6 +88,25 @@
   margin: 18px 0;
 }
 
+.material-document-preview-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.material-document-preview-fields label,
+.material-document-import-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.material-document-preview-fields span,
+.material-document-import-mode > span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .material-document-preview-meta div {
   display: flex;
   gap: 8px;
@@ -104,11 +131,68 @@
   padding: 5px 4px;
 }
 
+.material-document-preview-sections .material-document-section-edit {
+  display: grid;
+  grid-template-columns: 28px minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.material-document-section-edit:last-child {
+  border-bottom: 0;
+}
+
+.material-document-section-edit input {
+  min-width: 0;
+  margin: 0;
+}
+
+.material-document-section-edit small {
+  grid-column: 2 / -1;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.material-document-section-edit label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.material-document-section-edit label input {
+  width: auto;
+}
+
+.material-document-import-mode {
+  margin-bottom: 10px;
+}
+
+.material-document-single-summary {
+  padding: 12px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
 .material-document-scope {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-top: 16px;
+}
+
+.material-document-scope > span {
+  flex: 0 0 64px;
+  white-space: nowrap;
+}
+
+.material-document-scope select {
+  flex: 1;
+  width: auto;
+  min-width: 0;
 }
 
 .material-document-import-modal input,
@@ -136,5 +220,18 @@
     max-height: 150px;
     border-right: 0;
     border-bottom: 1px solid var(--border);
+  }
+
+  .material-document-preview-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .material-document-preview-sections .material-document-section-edit {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .material-document-section-edit label,
+  .material-document-section-edit small {
+    grid-column: 2;
   }
 }
