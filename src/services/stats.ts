@@ -39,9 +39,14 @@ export function logChapterSaved(
 
 export function logAIGenerated(
   projectId: string,
-  chapter: number,
+  chapter: number | null,
   durationMs: number,
   outputTokens?: number,
+  details?: {
+    feature?: string
+    operation?: string
+    inputTokens?: number
+  },
 ): void {
   const event: StatEvent = {
     timestamp: new Date().toISOString(),
@@ -49,6 +54,9 @@ export function logAIGenerated(
     chapter,
     duration_ms: durationMs,
     output_tokens: outputTokens,
+    input_tokens: details?.inputTokens,
+    feature: details?.feature,
+    operation: details?.operation,
   }
   apiAppend(projectId, event).catch(console.error)
 }

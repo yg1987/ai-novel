@@ -8,6 +8,12 @@ import { listProjectFiles, readProjectFile, writeProjectFile, deleteProjectFile 
 export type NoteType = 'note' | 'todo' | 'question'
 export type FilterView = 'all' | 'note' | 'todo' | 'done' | 'question' | 'resolved'
 
+export interface BrainstormNoteSource {
+  type: 'brainstorm'
+  sessionId: string
+  ideaId: string
+}
+
 export interface NoteEntry {
   id: string
   content: string
@@ -16,6 +22,7 @@ export interface NoteEntry {
   done: boolean
   resolved: boolean
   createdAt: string
+  source?: BrainstormNoteSource
 }
 
 // ─── Constants ───────────────────────────────────

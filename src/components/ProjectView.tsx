@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from 'react'
 import type { ProjectMeta } from '../types/project'
 import type { CurrentChapterRef, MaterialContextSelection } from '../types/material'
+import type { BrainstormForeshadowDraft } from '../types/brainstorm'
 import ExportDialog from './ExportDialog'
 import ArchiveDialog from './ArchiveDialog'
 import Button from './Button'
@@ -40,6 +41,8 @@ export default function ProjectView({ project, onBack }: Props) {
   const [navigateNotesChapterRef, setNavigateNotesChapterRef] = useState<string | null>(null)
   const [navigateNotesFilter, setNavigateNotesFilter] = useState<string | null>(null)
   const [navigateMaterialId, setNavigateMaterialId] = useState<string | null>(null)
+  const [brainstormSessionId, setBrainstormSessionId] = useState<string | null>(null)
+  const [brainstormForeshadowDraft, setBrainstormForeshadowDraft] = useState<BrainstormForeshadowDraft | null>(null)
 
   const handleNavigateToReview = (chapterId: string) => {
     setReviewChapterId(chapterId)
@@ -118,7 +121,7 @@ export default function ProjectView({ project, onBack }: Props) {
       case 'notes':
         return <NotesPanel projectId={project.id} onNavigateToChapter={handleNavigateToChapter} initialChapterRef={navigateNotesChapterRef} initialFilter={navigateNotesFilter} onHighlightComplete={() => { setNavigateNotesChapterRef(null); setNavigateNotesFilter(null) }} />
       case 'foreshadow':
-        return <ForeshadowPanel projectId={project.id} currentChapterId={currentChapter?.chapterId ?? null} onNavigateToCharacter={handleNavigateToCharacter} highlightId={navigateForeshadowId} onHighlightComplete={() => setNavigateForeshadowId(null)} />
+        return <ForeshadowPanel projectId={project.id} currentChapterId={currentChapter?.chapterId ?? null} onNavigateToCharacter={handleNavigateToCharacter} highlightId={navigateForeshadowId} onHighlightComplete={() => setNavigateForeshadowId(null)} initialDraft={brainstormForeshadowDraft} onInitialDraftConsumed={() => setBrainstormForeshadowDraft(null)} />
       case 'search':
         return <SearchPanel projectId={project.id} onOpenFile={handleSearchOpenFile} />
       case 'stats':
@@ -128,7 +131,7 @@ export default function ProjectView({ project, onBack }: Props) {
       case 'resource':
         return <ResourcePanel projectId={project.id} initialMaterialId={navigateMaterialId} onMaterialOpened={() => { setNavigateMaterialId(null) }} currentChapter={currentChapter} materialContextSelections={materialContextSelections} onMaterialContextChange={setMaterialContextSelections} />
       case 'brainstorm':
-        return <BrainstormPanel projectId={project.id} />
+        return <BrainstormPanel projectId={project.id} currentChapter={currentChapter} currentSessionId={brainstormSessionId} onCurrentSessionChange={setBrainstormSessionId} onOpenForeshadowDraft={(draft) => { setBrainstormForeshadowDraft(draft); setTab('foreshadow') }} />
       case 'graph':
         return (
           <RelationshipGraph

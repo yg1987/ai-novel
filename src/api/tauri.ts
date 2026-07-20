@@ -165,12 +165,15 @@ export async function vectorSearchChunks(
 export interface StatEvent {
   timestamp: string
   event_type: string
-  chapter?: number
+  chapter?: number | null
   char_count?: number
   word_count?: number
   duration_ms?: number
   prompt_tokens?: number
+  input_tokens?: number
   output_tokens?: number
+  feature?: string
+  operation?: string
   event_version?: number
 }
 

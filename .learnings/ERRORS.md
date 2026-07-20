@@ -784,3 +784,38 @@ Run the release build with a packaging-appropriate time budget only when prepari
 - **Notes**: Deferred release and installer verification to the future packaging stage by user direction.
 
 ---
+
+## [ERR-20260720-007] git-diff-trailing-whitespace
+
+**Logged**: 2026-07-20T14:35:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+The staged brainstorm context source contained one trailing whitespace character.
+
+### Error
+```
+src/services/brainstormContext.ts:149: trailing whitespace.
+```
+
+### Context
+- Detected by `git diff --cached --check` before commit.
+
+### Suggested Fix
+Remove whitespace-only suffixes before staging code changes.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/services/brainstormContext.ts
+- Pattern-Key: fs.trailing-whitespace
+- Recurrence-Count: 1
+- First-Seen: 2026-07-20
+- Last-Seen: 2026-07-20
+
+### Resolution
+- **Resolved**: 2026-07-20T14:35:00+08:00
+- **Notes**: Removed the trailing whitespace and reran the staged diff check.
+
+---

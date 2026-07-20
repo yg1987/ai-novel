@@ -129,6 +129,8 @@ The user clarified that the issue is not executing commands such as npm or codeg
 
 On 2026-07-20, an approved PowerShell `Get-Content` command still prompted again when the path, flags, quoting, line range, or surrounding pipeline changed. Managed approvals match the beginning of each parsed command segment literally; approval of one complete `$l=Get-Content ...; $l[...]` form does not authorize arbitrary `Get-Content` variants.
 
+The user reiterated that normal repository reads, edits, and focused verification should proceed without separate conversational authorization. When a platform prompt is unavoidable, keep the command narrowly scoped and continue the requested work after approval rather than treating the prompt as a new product decision.
+
 ### Suggested Action
 Run routine checks directly when possible. Avoid changing to new npm subcommands unless necessary; prefer already-approved commands such as `npm exec tsc -- --noEmit`, `npm run build`, and established codegraph commands.
 
@@ -137,7 +139,7 @@ Run routine checks directly when possible. Avoid changing to new npm subcommands
 - Related Files: package.json, package-lock.json
 - Tags: permissions, npm, codegraph, workflow
 - Pattern-Key: config.confirmation-friction
-- Recurrence-Count: 2
+- Recurrence-Count: 3
 - First-Seen: 2026-07-16
 - Last-Seen: 2026-07-20
 
@@ -167,5 +169,86 @@ When a user says codegraph is installed, verify with `codegraph status` before c
 - Recurrence-Count: 1
 - First-Seen: 2026-07-16
 - Last-Seen: 2026-07-16
+
+---
+
+## [LRN-20260720-004] correction
+
+**Logged**: 2026-07-20T13:10:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+Large project selectors must not expose every chapter or use ambiguous native multi-select controls.
+
+### Details
+Manual testing found that the brainstorm panel rendered all selected-chapter options in the advanced area, which does not scale to projects with hundreds of chapters. Its related-character control also looked like an unclear single-choice selector despite supporting multiple values.
+
+### Suggested Action
+Keep a compact range summary in the main panel. Put range, characters and constraints in a Modal; make multi-select explicit with checkboxes, and paginate searchable chapter lists with the shared Pagination component.
+
+### Metadata
+- Source: user_feedback
+- Related Files: src/components/BrainstormPanel.tsx, src/components/BrainstormPanel.css
+- Tags: brainstorm, selector, pagination, usability
+- Pattern-Key: frontend.large-selector-usability
+- Recurrence-Count: 1
+- First-Seen: 2026-07-20
+- Last-Seen: 2026-07-20
+
+---
+
+## [LRN-20260720-005] correction
+
+**Logged**: 2026-07-20T13:45:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+When a shared Modal component is required, its close behavior must be implemented in that component rather than delegated to a workflow-specific button.
+
+### Details
+The brainstorm settings dialog reused Modal but initially offered no explicit close control; the user could only use the semantic “完成” action. This missed the established component contract and made reopening settings awkward.
+
+### Suggested Action
+For dialogs with an `onRequestClose` callback, the shared Modal supplies a visible close button, backdrop click and Escape handling. Product-specific buttons remain for their workflow meaning only.
+
+### Metadata
+- Source: user_feedback
+- Related Files: src/components/Modal.tsx, src/components/Modal.css, src/components/BrainstormPanel.tsx
+- Tags: modal, accessibility, interaction
+- Pattern-Key: frontend.modal-close-contract
+- Recurrence-Count: 1
+- First-Seen: 2026-07-20
+- Last-Seen: 2026-07-20
+
+---
+
+## [LRN-20260720-006] correction
+
+**Logged**: 2026-07-20T14:20:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+Configuration modals must use the established cancel-and-confirm footer, with draft edits that cancel can discard.
+
+### Details
+The brainstorm conditions dialog had a visible close control but used a single "完成" action while immediately applying edits. This did not match the project's modal convention and made cancellation semantically meaningless.
+
+### Suggested Action
+Keep modal input in a local draft. Route close, backdrop, Escape, and the secondary footer button through cancellation; use the primary footer button to apply the draft. Reuse the shared Modal and Pagination components.
+
+### Metadata
+- Source: user_feedback
+- Related Files: src/components/BrainstormPanel.tsx, src/components/BrainstormPanel.css
+- Tags: brainstorm, modal, draft-state, pagination
+- Pattern-Key: frontend.modal-action-contract
+- Recurrence-Count: 1
+- First-Seen: 2026-07-20
+- Last-Seen: 2026-07-20
 
 ---

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { ForeshadowEntry, ForeshadowInspiration, ForeshadowStatus } from '../types/novel'
 import { DEFAULT_FORESHADOW_CONFIG } from '../types/novel'
 import type { ChapterMeta } from '../types/chapter'
+import type { BrainstormForeshadowDraft } from '../types/brainstorm'
 import { listChapters, listProjectFiles } from '../api/tauri'
 import {
   loadForeshadows,
@@ -38,17 +39,26 @@ interface Props {
   onNavigateToCharacter?: (name: string) => void
   highlightId?: string | null
   onHighlightComplete?: () => void
+  initialDraft?: BrainstormForeshadowDraft | null
+  onInitialDraftConsumed?: () => void
 }
 
-export default function ForeshadowPanel({ projectId, currentChapterId, onNavigateToCharacter, highlightId, onHighlightComplete }: Props) {
+export default function ForeshadowPanel({ projectId, currentChapterId, onNavigateToCharacter, highlightId, onHighlightComplete, initialDraft, onInitialDraftConsumed }: Props) {
   const [entries, setEntries] = useState<ForeshadowEntry[]>([])
   const [chapters, setChapters] = useState<ChapterMeta[]>([])
   const [characterNames, setCharacterNames] = useState<string[]>([])
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
-  const [showForm, setShowForm] = useState(false)
+  const [showForm, setShowForm] = useState(() => Boolean(initialDraft))
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [form, setForm] = useState<ForeshadowFormData>(emptyForeshadowForm(currentChapterId))
+  const [form, setForm] = useState<ForeshadowFormData>(() => initialDraft ? {
+    ...emptyForeshadowForm(currentChapterId),
+    name: initialDraft.name,
+    description: initialDraft.description,
+    plantedChapterId: initialDraft.plantedChapterId || currentChapterId || '',
+    relatedCharacters: initialDraft.relatedCharacters,
+    notes: initialDraft.notes,
+  } : emptyForeshadowForm(currentChapterId))
   const [advancePrompt, setAdvancePrompt] = useState<{ entryId: string; desc: string } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ForeshadowEntry | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -99,6 +109,12 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
     }, 3000)
     return () => window.clearTimeout(timer)
   }, [highlightId, onHighlightComplete])
+
+  useEffect(() => {
+    if (!initialDraft || !onInitialDraftConsumed) return
+    const timer = window.setTimeout(onInitialDraftConsumed, 0)
+    return () => window.clearTimeout(timer)
+  }, [initialDraft, onInitialDraftConsumed])
 
   const volumes = [...new Set(chapters.map((chapter) => chapter.volume))].sort()
   const filtered = entries.filter((entry) => {

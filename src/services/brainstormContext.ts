@@ -1,0 +1,424 @@
+import {
+  getChapterContent,
+  getChapterOutline,
+  listChapters,
+  listProjectFiles,
+  readProjectFile,
+} from '../api/tauri'
+import { loadSections } from './worldviewConfig'
+import { loadRelationshipGraph } from './relationshipStore'
+import type { ChapterMeta } from '../types/chapter'
+import type { ChapterSnapshot } from '../types/novel'
+import type {
+  BrainstormChapterRef,
+  BrainstormContextManifestEntry,
+  BrainstormContextSource,
+  BrainstormEntityRef,
+  BrainstormRequest,
+} from '../types/brainstorm'
+import { htmlToPlainText } from '../utils/htmlToText'
+import { asString, asStringArray, isRecord } from '../utils/unknown'
+
+const INPUT_TOKEN_BUDGET = 6_000
+const CHARACTERS_PER_TOKEN = 4
+const MAX_SINGLE_SOURCE_TOKENS = 1_200
+
+export interface BrainstormAllowedEntity {
+  type: BrainstormEntityRef['type']
+  entityId: string
+  label: string
+}
+
+export interface BrainstormContext {
+  text: string
+  manifest: BrainstormContextManifestEntry[]
+  warnings: string[]
+  allowedEntities: BrainstormAllowedEntity[]
+  chapters: ChapterMeta[]
+}
+
+interface ContextSection {
+  source: BrainstormContextSource
+  entityIds: string[]
+  labels: string[]
+  text: string
+  priority: number
+}
+
+function estimateTokens(value: string): number {
+  return Math.ceil(value.length / CHARACTERS_PER_TOKEN)
+}
+
+function trimToTokenBudget(value: string, budget: number): { value: string; truncated: boolean } {
+  const maxChars = Math.max(0, budget * CHARACTERS_PER_TOKEN)
+  if (value.length <= maxChars) return { value, truncated: false }
+  return { value: `${value.slice(0, maxChars).trimEnd()}\n[内容已截断]`, truncated: true }
+}
+
+function unique<T>(values: T[]): T[] {
+  return [...new Set(values)]
+}
+
+function chapterRef(chapter: ChapterMeta): BrainstormChapterRef {
+  return { volume: chapter.volume, chapterId: chapter.id, chapterTitle: chapter.title }
+}
+
+function chapterLabel(chapter: ChapterMeta): string {
+  return `第${chapter.order}章《${chapter.title}》`
+}
+
+function isEnabled(request: BrainstormRequest, source: BrainstormContextSource): boolean {
+  return request.enabledContextSources.includes(source)
+}
+
+export function validateBrainstormRequest(request: BrainstormRequest): string | null {
+  if (request.problem.length > 1000) return '当前问题最多 1000 个字符'
+  if (request.desiredTone.length > 100) return '期望氛围最多 100 个字符'
+  if (request.mustKeep.length > 10 || request.avoid.length > 10) return '必须保留和避免方向最多各 10 条'
+  if ([...request.mustKeep, ...request.avoid].some((item) => item.length > 200)) return '每条限制最多 200 个字符'
+  if (request.relatedCharacters.length > 20) return '相关角色最多选择 20 名'
+  if (request.resultCount < 3 || request.resultCount > 6) return '生成数量必须在 3 到 6 条之间'
+  if (request.scope.type === 'current_chapter' && (!request.scope.chapter.chapterId || !request.scope.chapter.volume)) return '当前章节范围缺少章节信息'
+  if (request.scope.type === 'current_volume' && !request.scope.volume.trim()) return '当前卷范围缺少卷标识'
+  if (request.scope.type === 'selected_chapters' && request.scope.chapters.length === 0) return '请至少选择一个章节'
+  if (request.scope.type === 'selected_chapters') {
+    const keys = request.scope.chapters.map((chapter) => `${chapter.volume}:${chapter.chapterId}`)
+    if (unique(keys).length !== keys.length) return '指定章节不能重复'
+  }
+  const derivation = request.derivation
+  if (!derivation) return null
+  if (derivation.operation === 'generate') {
+    if (derivation.parentSessionId || derivation.parentIdeaIds.length > 0) return '首次生成不能带来源建议'
+    return null
+  }
+  if (!derivation.parentSessionId) return '派生灵感缺少来源会话'
+  if (derivation.operation === 'combine') {
+    if (derivation.parentIdeaIds.length !== 2) return '组合灵感必须选择两条建议'
+  } else if (derivation.parentIdeaIds.length !== 1) {
+    return '该操作必须基于一条建议'
+  }
+  if (derivation.operation === 'redo_with_feedback' && !derivation.feedback.trim()) return '请填写不满意的原因'
+  return null
+}
+
+async function resolveScopeChapters(request: BrainstormRequest, allChapters: ChapterMeta[]): Promise<ChapterMeta[]> {
+  const sorted = [...allChapters].sort((a, b) => a.order - b.order)
+  if (request.scope.type === 'whole_project') return sorted
+  if (request.scope.type === 'current_volume') return sorted.filter((chapter) => chapter.volume === request.scope.volume)
+  const requested = request.scope.type === 'current_chapter'
+    ? [request.scope.chapter]
+    : request.scope.chapters
+  const keys = new Set(requested.map((chapter) => `${chapter.volume}:${chapter.chapterId}`))
+  return sorted.filter((chapter) => keys.has(`${chapter.volume}:${chapter.id}`))
+}
+
+function addEntity(
+  entities: BrainstormAllowedEntity[],
+  type: BrainstormEntityRef['type'],
+  entityId: string,
+  label: string,
+): void {
+  if (!entities.some((entity) => entity.type === type && entity.entityId === entityId)) {
+    entities.push({ type, entityId, label })
+  }
+}
+
+async function readChapterSections(
+  request: BrainstormRequest,
+  scopedChapters: ChapterMeta[],
+  warnings: string[],
+): Promise<ContextSection[]> {
+  const sections: ContextSection[] = []
+  const relevant = request.scope.type === 'whole_project'
+    ? scopedChapters.slice(-3)
+    : scopedChapters
+
+  if (isEnabled(request, 'chapter_content') && relevant.length > 0) {
+    const entries: string[] = []
+    const labels: string[] = []
+    const entityIds: string[] = []
+    for (const chapter of relevant) {
+      try {
+        const content = htmlToPlainText(await getChapterContent(request.projectId, chapter.volume, chapter.id)).trim()
+        if (!content) continue
+        const ending = content.slice(-1_600)
+        entries.push(`## ${chapterLabel(chapter)}结尾\n${ending}`)
+        labels.push(chapterLabel(chapter))
+        entityIds.push(chapter.id)
+      } catch {
+        warnings.push(`${chapterLabel(chapter)}正文未加载`)
+      }
+    }
+    if (entries.length > 0) sections.push({ source: 'chapter_content', entityIds, labels, text: entries.join('\n\n'), priority: 1 })
+  }
+
+  if (isEnabled(request, 'chapter_snapshot') && relevant.length > 0) {
+    const entries: string[] = []
+    const labels: string[] = []
+    const entityIds: string[] = []
+    for (const chapter of relevant) {
+      const filename = `ch${String(chapter.order).padStart(3, '0')}.snapshot.json`
+      try {
+        const raw = await readProjectFile(request.projectId, 'memory/snapshots', filename)
+        if (!raw.trim()) continue
+        const snapshot: unknown = JSON.parse(raw)
+        if (!isRecord(snapshot)) continue
+        const summary = asString(snapshot.summary)
+        const hook = asString(snapshot.endingHook)
+        if (!summary && !hook) continue
+        entries.push(`## ${chapterLabel(chapter)}快照\n摘要：${summary}\n结尾钩子：${hook}`)
+        labels.push(chapterLabel(chapter))
+        entityIds.push(chapter.id)
+      } catch {
+        warnings.push(`${chapterLabel(chapter)}快照未加载`)
+      }
+    }
+    if (entries.length > 0) sections.push({ source: 'chapter_snapshot', entityIds, labels, text: entries.join('\n\n'), priority: 3 })
+  }
+
+  if (isEnabled(request, 'outline') && relevant.length > 0) {
+    const entries: string[] = []
+    const labels: string[] = []
+    const entityIds: string[] = []
+    for (const chapter of relevant) {
+      try {
+        const outline = (await getChapterOutline(request.projectId, chapter.id)).trim()
+        if (!outline) continue
+        entries.push(`## ${chapterLabel(chapter)}大纲\n${outline}`)
+        labels.push(chapterLabel(chapter))
+        entityIds.push(chapter.id)
+      } catch {
+        warnings.push(`${chapterLabel(chapter)}大纲未加载`)
+      }
+    }
+    if (entries.length > 0) sections.push({ source: 'outline', entityIds, labels, text: entries.join('\n\n'), priority: 1 })
+  }
+  return sections
+}
+
+async function readCharacterSection(request: BrainstormRequest, warnings: string[]): Promise<ContextSection | null> {
+  if (!isEnabled(request, 'characters')) return null
+  try {
+    const files = (await listProjectFiles(request.projectId, 'characters')).filter((file) => file.name.endsWith('.md'))
+    const requested = new Set(request.relatedCharacters)
+    const selected = requested.size > 0
+      ? files.filter((file) => requested.has(file.name.replace(/\.md$/i, '')))
+      : files.slice(0, 8)
+    const entries: string[] = []
+    for (const file of selected) {
+      const content = (await readProjectFile(request.projectId, 'characters', file.name)).replace(/<[^>]*>/g, '').trim()
+      if (content) entries.push(`## ${file.name.replace(/\.md$/i, '')}\n${content}`)
+    }
+    if (entries.length === 0) return null
+    return {
+      source: 'characters',
+      entityIds: selected.map((file) => file.name.replace(/\.md$/i, '')),
+      labels: selected.map((file) => file.name.replace(/\.md$/i, '')),
+      text: entries.join('\n\n'),
+      priority: request.mode === 'character_dev' ? 2 : 3,
+    }
+  } catch {
+    warnings.push('角色资料未加载')
+    return null
+  }
+}
+
+async function readWorldviewSection(request: BrainstormRequest, warnings: string[]): Promise<ContextSection | null> {
+  if (!isEnabled(request, 'worldview')) return null
+  try {
+    const configured = await loadSections(request.projectId)
+    const orderedFiles = configured?.map((section) => section.file)
+      ?? (await listProjectFiles(request.projectId, 'worldview'))
+        .map((file) => file.name)
+        .filter((name) => name.endsWith('.md'))
+        .sort()
+    const entries: string[] = []
+    const labels: string[] = []
+    for (const filename of unique(orderedFiles)) {
+      if (!filename.endsWith('.md')) continue
+      const content = (await readProjectFile(request.projectId, 'worldview', filename))
+        .replace(/^---[\s\S]*?---\n?/, '')
+        .replace(/<[^>]*>/g, '')
+        .trim()
+      if (!content) continue
+      const label = filename.replace(/\.md$/i, '')
+      labels.push(label)
+      entries.push(`## ${label}\n${content}`)
+    }
+    if (entries.length === 0) return null
+    return {
+      source: 'worldview',
+      entityIds: labels,
+      labels,
+      text: entries.join('\n\n'),
+      priority: request.mode === 'world_expand' ? 2 : 3,
+    }
+  } catch {
+    warnings.push('世界观资料未加载')
+    return null
+  }
+}
+
+async function readForeshadowSection(request: BrainstormRequest, warnings: string[]): Promise<ContextSection | null> {
+  if (!isEnabled(request, 'foreshadows')) return null
+  try {
+    const raw = await readProjectFile(request.projectId, 'memory', 'foreshadows.json')
+    if (!raw.trim()) return null
+    const parsed: unknown = JSON.parse(raw)
+    const entries = isRecord(parsed) && Array.isArray(parsed.entries) ? parsed.entries.filter(isRecord) : []
+    const pending = entries.filter((entry) => entry.status !== 'resolved' && entry.status !== 'abandoned').slice(0, 10)
+    if (pending.length === 0) return null
+    const labels = pending.map((entry) => asString(entry.name)).filter(Boolean)
+    return {
+      source: 'foreshadows',
+      entityIds: pending.map((entry) => asString(entry.id)).filter(Boolean),
+      labels,
+      text: `## 未回收伏笔\n${pending.map((entry) => `- ${asString(entry.name)}：${asString(entry.description)}`).join('\n')}`,
+      priority: 3,
+    }
+  } catch {
+    warnings.push('伏笔资料未加载')
+    return null
+  }
+}
+
+async function readRelationshipSection(request: BrainstormRequest, warnings: string[]): Promise<ContextSection | null> {
+  if (!isEnabled(request, 'relationships')) return null
+  try {
+    const graph = await loadRelationshipGraph(request.projectId)
+    const links = graph.links.slice(0, 20)
+    if (links.length === 0) return null
+    const nodeLabels = new Map(graph.nodes.map((node) => [node.id, node.label]))
+    return {
+      source: 'relationships',
+      entityIds: links.map((link) => `${link.source}:${link.target}`),
+      labels: links.map((link) => `${nodeLabels.get(link.source) ?? link.source} - ${nodeLabels.get(link.target) ?? link.target}`),
+      text: `## 角色关系\n${links.map((link) => `- ${nodeLabels.get(link.source) ?? link.source} 与 ${nodeLabels.get(link.target) ?? link.target}：${link.type}${link.description ? `（${link.description}）` : ''}`).join('\n')}`,
+      priority: request.mode === 'character_dev' ? 2 : 3,
+    }
+  } catch {
+    warnings.push('角色关系未加载')
+    return null
+  }
+}
+
+async function readNotesSection(request: BrainstormRequest, warnings: string[]): Promise<ContextSection | null> {
+  if (!isEnabled(request, 'notes')) return null
+  try {
+    const files = await listProjectFiles(request.projectId, 'notes')
+    const entries: Array<{ id: string; content: string }> = []
+    for (const file of files) {
+      if (!file.name.endsWith('.json') || file.name === 'notes.json') continue
+      const raw = await readProjectFile(request.projectId, 'notes', file.name)
+      const note: unknown = JSON.parse(raw)
+      if (!isRecord(note)) continue
+      const content = asString(note.content).trim()
+      if (content) entries.push({ id: asString(note.id, file.name.replace(/\.json$/, '')), content })
+    }
+    if (entries.length === 0) return null
+    return {
+      source: 'notes',
+      entityIds: entries.slice(0, 10).map((entry) => entry.id),
+      labels: entries.slice(0, 10).map((entry) => entry.content.slice(0, 60)),
+      text: `## 作者备注\n${entries.slice(0, 10).map((entry) => `- ${entry.content}`).join('\n')}`,
+      priority: 3,
+    }
+  } catch {
+    warnings.push('备注未加载')
+    return null
+  }
+}
+
+export async function buildBrainstormContext(request: BrainstormRequest): Promise<BrainstormContext> {
+  const validationError = validateBrainstormRequest(request)
+  if (validationError) throw new Error(validationError)
+
+  const warnings: string[] = []
+  const manifest: BrainstormContextManifestEntry[] = []
+  const allowedEntities: BrainstormAllowedEntity[] = []
+  const chapters = await listChapters(request.projectId)
+  const scopedChapters = await resolveScopeChapters(request, chapters)
+  if (request.scope.type !== 'whole_project' && scopedChapters.length === 0) {
+    throw new Error('所选范围没有可用章节，请改用全书背景模式或重新选择章节')
+  }
+
+  scopedChapters.forEach((chapter) => addEntity(allowedEntities, 'chapter', chapter.id, chapterLabel(chapter)))
+  const sections: ContextSection[] = []
+
+  if (isEnabled(request, 'project_meta')) {
+    try {
+      const raw = await readProjectFile(request.projectId, '', 'project.json')
+      const meta: unknown = JSON.parse(raw)
+      if (isRecord(meta)) {
+        sections.push({
+          source: 'project_meta', entityIds: [], labels: [asString(meta.name)],
+          text: `# 项目资料\n名称：${asString(meta.name)}\n类型：${asString(meta.genre)}\n简介：${asString(meta.description)}`,
+          priority: 1,
+        })
+      }
+    } catch {
+      warnings.push('项目资料未加载')
+    }
+  }
+
+  sections.push(...await readChapterSections(request, scopedChapters, warnings))
+  const characterSection = await readCharacterSection(request, warnings)
+  if (characterSection) sections.push(characterSection)
+  const worldviewSection = await readWorldviewSection(request, warnings)
+  if (worldviewSection) sections.push(worldviewSection)
+  const foreshadowSection = await readForeshadowSection(request, warnings)
+  if (foreshadowSection) sections.push(foreshadowSection)
+  const relationshipSection = await readRelationshipSection(request, warnings)
+  if (relationshipSection) sections.push(relationshipSection)
+  const notesSection = await readNotesSection(request, warnings)
+  if (notesSection) sections.push(notesSection)
+
+  for (const section of sections) {
+    const type: BrainstormEntityRef['type'] | null = section.source === 'characters' ? 'character'
+      : section.source === 'worldview' ? 'worldview'
+        : section.source === 'foreshadows' ? 'foreshadow'
+          : section.source === 'outline' ? 'outline'
+            : null
+    if (type) section.labels.forEach((label, index) => addEntity(allowedEntities, type, section.entityIds[index] ?? label, label))
+  }
+
+  let remaining = INPUT_TOKEN_BUDGET
+  const textParts: string[] = []
+  for (const section of sections.sort((a, b) => a.priority - b.priority)) {
+    const requestedTokens = Math.min(estimateTokens(section.text), MAX_SINGLE_SOURCE_TOKENS)
+    const allowedTokens = Math.min(requestedTokens, remaining)
+    const result = trimToTokenBudget(section.text, allowedTokens)
+    const truncated = result.truncated || estimateTokens(section.text) > MAX_SINGLE_SOURCE_TOKENS
+    manifest.push({
+      source: section.source,
+      entityIds: section.entityIds,
+      labels: section.labels,
+      estimatedTokens: estimateTokens(result.value),
+      truncated,
+    })
+    if (result.value.trim()) {
+      textParts.push(result.value)
+      remaining -= estimateTokens(result.value)
+    }
+  }
+
+  return { text: textParts.join('\n\n'), manifest, warnings, allowedEntities, chapters }
+}
+
+export function buildBrainstormUserInstructions(request: BrainstormRequest): string {
+  const scope = request.scope.type === 'current_chapter'
+    ? `当前章节：${request.scope.chapter.chapterTitle}`
+    : request.scope.type === 'current_volume'
+      ? `当前卷：${request.scope.volume}`
+      : request.scope.type === 'selected_chapters'
+        ? `指定章节：${request.scope.chapters.map((chapter) => chapter.chapterTitle).join('、')}`
+        : '全书背景'
+  return [
+    `创意尺度：${request.creativityLevel}`,
+    `分析范围：${scope}`,
+    `当前问题：${request.problem || '请根据项目状态主动寻找值得发展的方向。'}`,
+    request.desiredTone ? `期望氛围：${request.desiredTone}` : '',
+    request.mustKeep.length > 0 ? `必须保留：${request.mustKeep.join('；')}` : '',
+    request.avoid.length > 0 ? `避免方向：${request.avoid.join('；')}` : '',
+  ].filter(Boolean).join('\n')
+}

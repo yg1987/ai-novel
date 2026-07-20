@@ -19,7 +19,10 @@ pub struct StatEvent {
     pub word_count: Option<u32>,
     pub duration_ms: Option<u64>,
     pub prompt_tokens: Option<u32>,
+    pub input_tokens: Option<u32>,
     pub output_tokens: Option<u32>,
+    pub feature: Option<String>,
+    pub operation: Option<String>,
     /// None = old events (word_count = total chapter words, skip on aggregation)
     /// Some(1) = delta semantic (word_count = new words since last save)
     pub event_version: Option<u32>,
