@@ -1,6 +1,6 @@
 import { readProjectFile } from '../api/tauri'
 import type { BrainstormChapterRef, BrainstormScope } from '../types/brainstorm'
-import type { ChapterMeta } from '../types/chapter'
+import type { ChapterKey, ChapterMeta, ChapterRef } from '../types/chapter'
 import { asString, isRecord } from '../utils/unknown'
 
 export interface ChapterDisplayMetadata {
@@ -36,8 +36,9 @@ export async function loadChapterDisplayMetadata(projectId: string): Promise<Cha
   return { volumeNames, chapterTitles }
 }
 
-export function chapterRefKey(chapter: { volume: string; id?: string; chapterId?: string }): string {
-  return `${chapter.volume}:${chapter.chapterId ?? chapter.id ?? ''}`
+export function chapterRefKey(chapter: ChapterRef | Pick<ChapterMeta, 'volume' | 'id'>): ChapterKey {
+  const chapterId = 'chapterId' in chapter ? chapter.chapterId : chapter.id
+  return `${chapter.volume}:${chapterId}` as ChapterKey
 }
 
 export function compareChapters(left: ChapterMeta, right: ChapterMeta): number {
@@ -55,7 +56,7 @@ export function chapterNumberLabel(chapter: ChapterMeta, metadata: ChapterDispla
 
 export function chapterContextLabel(chapter: ChapterMeta, metadata: ChapterDisplayMetadata): string {
   const base = chapterNumberLabel(chapter, metadata)
-  const title = (metadata.chapterTitles[chapter.id] || chapter.title).trim()
+  const title = (metadata.chapterTitles[chapterRefKey(chapter)] || chapter.title).trim()
   const isNumberOnlyTitle = /^第\s*(?:\d+|[零〇一二三四五六七八九十百千万两]+)\s*章$/u.test(title)
   return title && !isNumberOnlyTitle ? `${base}《${title}》` : base
 }

@@ -498,6 +498,41 @@
 .light-check-indicator.passed { color: #28a745; }
 .light-check-indicator.failed { color: #e67e22; }
 
+.chapter-create-modal {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.chapter-create-modal label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 14px 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.chapter-create-modal input {
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.chapter-segment-header {
+  width: 100%;
+  padding: 7px 14px 7px 28px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+}
+
 
 /* ─── Focus Mode ───────────────────────────────── */
 .focus-overlay {

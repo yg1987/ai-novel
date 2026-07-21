@@ -1,5 +1,7 @@
 import { writeProjectFile, readProjectFile, listProjectFiles, loadProviderConfig } from '../api/tauri'
 import type { DeepCheckResult, DeepCheckDimension } from '../types/review'
+import type { ChapterRef } from '../types/chapter'
+import { reviewReportStem } from './reviewReportStorage'
 import type { ReviewDimensionConfig } from './reviewRules'
 import { getDefaultReviewRules } from './reviewRules'
 
@@ -37,7 +39,7 @@ function extractJSON(text: string): string | null {
  */
 export async function runDeepReview(
   projectId: string,
-  chapterId: string,
+  ref: ChapterRef,
   chapterHtml: string,
   dimensions?: ReviewDimensionConfig[],
 ): Promise<DeepCheckResult> {
@@ -185,7 +187,7 @@ ${dimJsonExample}
     }
   }
 
-  const filename = `${chapterId}_${Date.now()}.json`
+  const filename = `${reviewReportStem(ref)}__${Date.now()}.json`
   await writeProjectFile(projectId, FULL_DIR, filename, JSON.stringify(result, null, 2))
 
   return result

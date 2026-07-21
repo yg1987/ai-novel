@@ -129,14 +129,14 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
 
   const refreshWordCount = useCallback(async () => {
     try {
-      const resolved = await resolveChapterWordCount(projectId, chapterId)
+      const resolved = await resolveChapterWordCount(projectId, { volume, chapterId })
       setEffectiveWordCount(resolved.value)
       setWordCountSource(resolved.source)
     } catch {
       setEffectiveWordCount(4000)
       setWordCountSource('fallback')
     }
-  }, [projectId, chapterId])
+  }, [projectId, volume, chapterId])
 
   useEffect(() => {
     void refreshWordCount()
@@ -298,7 +298,7 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
 
   const handleResetWordCount = async () => {
     try {
-      await deleteChapterWordCountOverride(projectId, chapterId)
+      await deleteChapterWordCountOverride(projectId, { volume, chapterId })
       await refreshWordCount()
     } catch (error) {
       console.error('Failed to reset chapter word count:', error)
@@ -417,12 +417,12 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
               // Debounce save
               if (wordCountTimer.current) clearTimeout(wordCountTimer.current)
               wordCountTimer.current = setTimeout(() => {
-                saveChapterWordCountOverride(projectId, chapterId, v).catch(console.error)
+                saveChapterWordCountOverride(projectId, { volume, chapterId }, v).catch(console.error)
               }, 600)
             }}
             onBlur={() => {
               if (wordCountTimer.current) clearTimeout(wordCountTimer.current)
-              saveChapterWordCountOverride(projectId, chapterId, effectiveWordCount).catch(console.error)
+              saveChapterWordCountOverride(projectId, { volume, chapterId }, effectiveWordCount).catch(console.error)
             }}
           />
           {wordCountSource === 'manual' && (

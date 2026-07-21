@@ -46,6 +46,7 @@ export interface ReviewReportMeta {
   passed?: boolean
   overall_score?: number
   chapterId: string
+  volume: string
 }
 
 // ─── Version History ─────────────────────────────

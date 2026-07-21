@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from 'react'
 import type { ProjectMeta } from '../types/project'
+import type { ChapterRef } from '../types/chapter'
 import type { CurrentChapterRef, MaterialContextSelection } from '../types/material'
 import type { BrainstormForeshadowDraft } from '../types/brainstorm'
 import ExportDialog from './ExportDialog'
@@ -32,7 +33,7 @@ export default function ProjectView({ project, onBack }: Props) {
   const [tab, setTab] = useState<Tab>('writing')
   const [showExport, setShowExport] = useState(false)
   const [showArchive, setShowArchive] = useState(false)
-  const [reviewChapterId, setReviewChapterId] = useState<string | null>(null)
+  const [reviewChapterRef, setReviewChapterRef] = useState<ChapterRef | null>(null)
   const [navigateChapterRef, setNavigateChapterRef] = useState<string | null>(null)
   const [currentChapter, setCurrentChapter] = useState<CurrentChapterRef | null>(null)
   const [materialContextSelections, setMaterialContextSelections] = useState<MaterialContextSelection[]>([])
@@ -44,8 +45,8 @@ export default function ProjectView({ project, onBack }: Props) {
   const [brainstormSessionId, setBrainstormSessionId] = useState<string | null>(null)
   const [brainstormForeshadowDraft, setBrainstormForeshadowDraft] = useState<BrainstormForeshadowDraft | null>(null)
 
-  const handleNavigateToReview = (chapterId: string) => {
-    setReviewChapterId(chapterId)
+  const handleNavigateToReview = (ref: ChapterRef) => {
+    setReviewChapterRef(ref)
     setTab('review')
   }
 
@@ -117,7 +118,7 @@ export default function ProjectView({ project, onBack }: Props) {
       case 'worldview':
         return <WorldviewPanel projectId={project.id} />
       case 'outline':
-        return <OutlinePanel projectId={project.id} />
+        return <OutlinePanel projectId={project.id} onNavigateToWriting={(ref) => { setNavigateChapterRef(ref); setTab('writing') }} />
       case 'notes':
         return <NotesPanel projectId={project.id} onNavigateToChapter={handleNavigateToChapter} initialChapterRef={navigateNotesChapterRef} initialFilter={navigateNotesFilter} onHighlightComplete={() => { setNavigateNotesChapterRef(null); setNavigateNotesFilter(null) }} />
       case 'foreshadow':
@@ -127,7 +128,7 @@ export default function ProjectView({ project, onBack }: Props) {
       case 'stats':
         return <StatisticsPanel projectId={project.id} targetWords={project.target_words} />
       case 'review':
-        return <ReviewPanel projectId={project.id} currentChapterId={reviewChapterId} onNavigateToForeshadow={handleNavigateToForeshadow} />
+        return <ReviewPanel projectId={project.id} currentChapterRef={reviewChapterRef} onNavigateToForeshadow={handleNavigateToForeshadow} />
       case 'resource':
         return <ResourcePanel projectId={project.id} initialMaterialId={navigateMaterialId} onMaterialOpened={() => { setNavigateMaterialId(null) }} currentChapter={currentChapter} materialContextSelections={materialContextSelections} onMaterialContextChange={setMaterialContextSelections} />
       case 'brainstorm':

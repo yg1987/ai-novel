@@ -74,11 +74,11 @@ async function indexChapterContent(
 /** Step 5: Run light check and save report. */
 async function performLightCheck(
   projectId: string,
-  chapterId: string,
+  ref: { volume: string; chapterId: string },
   html: string,
 ): Promise<{ passed: boolean; issues: number } | null> {
   try {
-    const result = await runAndSaveLightCheck(projectId, chapterId, html)
+    const result = await runAndSaveLightCheck(projectId, ref, html)
     return {
       passed: result.passed,
       issues: result.checks.reduce((sum, c) => sum + c.issues.length, 0),
@@ -92,14 +92,14 @@ async function performLightCheck(
 /** Step 6: Optionally run deep review if throttle conditions are met.  */
 async function maybeRunDeepReview(
   projectId: string,
-  chapterId: string,
+  ref: { volume: string; chapterId: string },
   html: string,
   plainText: string,
 ): Promise<boolean> {
   if (plainText.trim().length <= 200) return false
-  if (chapterId.startsWith('new-')) return false
+  if (ref.chapterId.startsWith('new-')) return false
 
-  const key = `${projectId}:${chapterId}`
+  const key = `${projectId}:${ref.volume}:${ref.chapterId}`
   let throttle = deepReviewThrottle.get(key)
   if (!throttle) {
     throttle = { count: 0, lastTime: 0 }
@@ -118,7 +118,7 @@ async function maybeRunDeepReview(
 
   try {
     const { runDeepReview } = await import('./reviewDeepService')
-    await runDeepReview(projectId, chapterId, html)
+    await runDeepReview(projectId, ref, html)
     return true
   } catch (e) {
     console.error('Auto deep review failed:', e)
@@ -153,7 +153,7 @@ export async function runSavePipeline(input: SavePipelineInput): Promise<void> {
  * Does NOT save content. Call runSavePipeline separately for that.
  */
 export async function runReview(input: SavePipelineInput): Promise<ReviewResult> {
-  const { projectId, chapterId, html } = input
+  const { projectId, volume, chapterId, html } = input
   const plainText = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
 
   // Load project-level review rules
@@ -165,7 +165,7 @@ export async function runReview(input: SavePipelineInput): Promise<ReviewResult>
   // Light check
   let lightCheckResult: ReviewResult['lightCheckResult'] = null
   if (plainText.trim().length > 50) {
-    lightCheckResult = await performLightCheck(projectId, chapterId, html)
+    lightCheckResult = await performLightCheck(projectId, { volume, chapterId }, html)
   }
 
   // Consistency check (deterministic, no AI cost)
@@ -179,7 +179,7 @@ export async function runReview(input: SavePipelineInput): Promise<ReviewResult>
   }
 
   // Deep review (throttled)
-  const deepReviewTriggered = await maybeRunDeepReview(projectId, chapterId, html, plainText)
+  const deepReviewTriggered = await maybeRunDeepReview(projectId, { volume, chapterId }, html, plainText)
 
   return { bannedCheck, lightCheckResult, deepReviewTriggered, consistencyIssues }
 }

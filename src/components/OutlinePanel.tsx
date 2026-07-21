@@ -1,159 +1,83 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { listProjectFiles, readProjectFile, writeProjectFile, deleteProjectFile, loadProviderConfig } from '../api/tauri'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ChapterRef } from '../types/chapter'
+import { deleteProjectFile, listChapters, loadProviderConfig, readProjectFile, writeProjectFile } from '../api/tauri'
+import {
+  OUTLINE_DIR,
+  OUTLINE_VOLUMES_DIR,
+  chapterOrder,
+  chapterRefFromMeta,
+  compareRefs,
+  createNextOutlineChapter,
+  createOutlineChapter,
+  createOutlineVolume,
+  createOutlineVolumeAt,
+  loadOutlineCatalog,
+  outlineChapterDir,
+  outlineChapterFilename,
+  outlineVolumeFile,
+  startWritingFromOutline,
+} from '../services/chapterCatalog'
+import { chapterRefKey } from '../services/chapterDisplay'
 import { buildAIContext } from '../services/aiContext'
-import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
-import { loadChapterExpectedWords, saveChapterExpectedWords, loadSettings } from '../services/settings'
+import { loadPrompt, resetPrompt, savePrompt } from '../services/aiPrompts'
+import { loadChapterExpectedWords, loadSettings, saveChapterExpectedWords } from '../services/settings'
 import type { TextareaSelection } from '../services/rewriteUtils'
-import { getTextareaSelection, applyTextareaRewrite } from '../services/rewriteUtils'
-import { type RewriteMode } from '../services/rewriteService'
+import { applyTextareaRewrite, getTextareaSelection } from '../services/rewriteUtils'
+import type { RewriteMode } from '../services/rewriteService'
 import type { ContextMenuAction } from './SelectionContextMenu'
 import ConfirmDialog from './ConfirmDialog'
-import OutlineSidebar from './outline-panel/OutlineSidebar'
+import Modal from './Modal'
+import OutlineSidebar, { type OutlineVolumeItem } from './outline-panel/OutlineSidebar'
 import OutlineEditor from './outline-panel/OutlineEditor'
 
 interface Props {
   projectId: string
+  onNavigateToWriting: (chapterRef: string) => void
 }
 
-const OUTLINE_DIR = 'outline'
-const OUTLINE_CHAPTER_DIR = 'outline/细纲'
+type OutlineSelection =
+  | { type: 'outline' }
+  | { type: 'volume'; volume: string }
+  | { type: 'chapter'; ref: ChapterRef }
 
-interface ChapterInfo {
-  filename: string
-  label: string
-  volumeLabel: string // e.g. "卷1"
+type DeletableSelection = Exclude<OutlineSelection, { type: 'outline' }>
+
+const EXAMPLES: Record<OutlineSelection['type'], string> = {
+  outline: '故事背景：\n\n主线剧情：\n\n核心冲突：\n\n结局走向：',
+  volume: '概要：\n\n主要冲突：\n\n章节规划：\n\n本卷目标：',
+  chapter: '情节点 1：\n描述：\n类型：\n字数：',
 }
 
-// ─── Examples ─────────────────────────────────────────
-
-const EXAMPLES: Record<string, string> = {
-  outline: `故事背景：这是一个以武道为尊的世界，大陆分为五域，修炼之风盛行。
-
-主线剧情：
-- 开局：主角林氏少年林烬在家族大比中落败，被嘲笑为废柴
-- 发展：意外获得太古剑魂传承，修为突飞猛进，考入玄天宗
-- 转折：发现父母失踪与天渊封印有关，宗门内奸暴露
-- 高潮：天渊封印破裂，邪魔入侵，林烬挺身而出
-- 结局：林烬封印天渊，成为剑道至尊，揭开父母身世之谜
-
-核心冲突：林烬与宗门内奸的斗争 / 人族与邪魔的千年战争
-结局走向：HE，主角成就至尊，但留下续作空间（天渊之外还有更高层次的世界）
-
-→ 按这个框架把你的故事填进去就行，不用太详细。`,
-
-  volume: `第1卷 - 崛起篇
-
-概要：林烬从家族弃子成长为玄天宗核心弟子，初步掌握剑魂之力。
-
-主要冲突：
-- 家族内部排挤 vs 林烬的反击
-- 玄天宗入门考核的竞争
-- 首次接触天渊秘密
-
-章节规划（共 10 章）：
-第1章：家族大比落败，被羞辱
-第2章：意外获得剑魂传承
-第3-4章：拜入玄天宗
-第5-7章：修行历练，崭露头角
-第8-9章：初次接触天渊之谜
-第10章：第一卷高潮，获得秘境资格
-
-本卷目标：建立世界观，塑造主角性格，埋下天渊伏笔
-
-→ 写 3-5 句话概括本卷剧情走向就行。`,
-
-  chapter: `第3章 - 剑魂觉醒
-
-情节点 1：林烬在藏经阁被同门围攻
-描述：三名外门弟子堵住林烬，嘲讽他"废物不配进藏经阁"，动手推搡
-类型：铺垫
-字数：300 字
-
-情节点 2：危急时刻剑魂共鸣
-描述：林烬被推倒撞上墙壁，祖传玉佩碎裂，太古剑魂觉醒，剑气震退三人
-类型：爽点
-字数：200 字
-
-情节点 3：藏经阁长老现身
-描述：长老感应到剑气波动赶来，斥退众人，却若有所思地看了林烬一眼
-类型：推进
-字数：250 字
-
-情节点 4：回到住处整理思绪
-描述：林烬回想刚才的异象，决定隐瞒剑魂的秘密，私下查询父母遗物
-类型：悬念
-字数：250 字
-
-→ 每章写 3-5 个情节点，每个写清楚发生什么 + 类型 + 大概字数。`,
+function selectionKey(selection: OutlineSelection): string {
+  if (selection.type === 'outline') return 'outline'
+  if (selection.type === 'volume') return `volume:${selection.volume}`
+  return `chapter:${chapterRefKey(selection.ref)}`
 }
 
-// ─── AI prompt builders ───────────────────────────────
-
-/** 从大纲文件名推导章节 ID，如 "卷1_第1章.md" → "ch001" */
-function outlineFileToChapterId(filename: string): string | null {
-  const match = filename.match(/卷(\d+)_第(\d+)章/)
-  if (!match) return null
-  return `ch${match[2]!.padStart(3, '0')}`
+function selectionFile(selection: OutlineSelection): { subdir: string; filename: string; label: string } {
+  if (selection.type === 'outline') return { subdir: OUTLINE_DIR, filename: 'outline.md', label: '总纲' }
+  if (selection.type === 'volume') return { subdir: OUTLINE_VOLUMES_DIR, filename: outlineVolumeFile(selection.volume), label: selection.volume }
+  return { subdir: outlineChapterDir(selection.ref.volume), filename: outlineChapterFilename(selection.ref), label: `第${chapterOrder(selection.ref.chapterId)}章` }
 }
 
-function getDefaultPrompt(type: 'outline' | 'volume' | 'chapter', label: string): string {
-  const prompts: Record<'outline' | 'volume' | 'chapter', string> = {
-    outline: `你是一个网文大纲助手。根据项目信息，生成全书的总纲（故事梗概）。
-
-请按以下结构输出：
-
-## 故事背景（一句话概括世界观）
-## 主线剧情（故事的起承转合）
-## 核心冲突（主要矛盾）
-## 结局走向
-
-控制在 500 字以内，直接输出，不要加额外说明。`,
-    volume: `你是一个网文大纲助手。根据项目信息，为「${label}」生成分卷大纲。
-
-请按以下结构输出：
-
-## 概要（本卷的核心剧情）
-## 主要冲突
-## 章节规划（计划写几章，每章一句话概括）
-## 本卷目标
-
-控制在 300 字以内，直接输出，不要加额外说明。`,
-    chapter: `你是一个网文大纲助手。根据项目信息，为「${label}」生成章节细纲。
-
-请生成 3-5 个情节点，每个情节点包含：
-
-1. 情节点名称
-2. 具体描述（1-2 句话）
-3. 类型（铺垫/爽点/推进/转折/悬念）
-4. 字数预算
-
-输出格式：
-## 情节点 1
-- 名称：xxx
-- 描述：xxx
-- 类型：铺垫
-- 字数：300 字
-
-控制在 400 字以内，直接输出。`,
-  }
-  return prompts[type]
+function defaultPrompt(type: OutlineSelection['type'], label: string): string {
+  if (type === 'outline') return '你是网文大纲助手。根据项目信息生成全书总纲，包含故事背景、主线剧情、核心冲突和结局走向。'
+  if (type === 'volume') return `你是网文大纲助手。为「${label}」生成分卷纲，包含概要、主要冲突、章节规划和本卷目标。`
+  return `你是网文大纲助手。为「${label}」生成 3 到 5 个章节情节点，写清发生什么、类型和字数预算。`
 }
 
-// ─── Component ────────────────────────────────────────
-
-export default function OutlinePanel({ projectId }: Props) {
-  // Sidebar data
-  const [volumes, setVolumes] = useState<string[]>([])
-  const [chapters, setChapters] = useState<ChapterInfo[]>([])
-  const [activeFile, setActiveFile] = useState<string | null>('outline.md')
-  const [activeType, setActiveType] = useState<'outline' | 'volume' | 'chapter'>('outline')
-
-  // Editor state
+export default function OutlinePanel({ projectId, onNavigateToWriting }: Props) {
+  const [volumes, setVolumes] = useState<OutlineVolumeItem[]>([])
+  const [selection, setSelection] = useState<OutlineSelection>({ type: 'outline' })
   const [content, setContent] = useState('')
   const [editing, setEditing] = useState(false)
   const [dirty, setDirty] = useState(false)
-
-  // AI state
+  const [deleteTarget, setDeleteTarget] = useState<DeletableSelection | null>(null)
+  const [startTarget, setStartTarget] = useState<ChapterRef | null>(null)
+  const [volumeName, setVolumeName] = useState('')
+  const [chapterName, setChapterName] = useState('')
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [starting, setStarting] = useState(false)
   const [generatingAi, setGeneratingAi] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
   const [showPrompt, setShowPrompt] = useState(false)
@@ -163,369 +87,190 @@ export default function OutlinePanel({ projectId }: Props) {
   const [rewriteState, setRewriteState] = useState<(TextareaSelection & { mode: RewriteMode }) | null>(null)
   const [hasSelection, setHasSelection] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
-  const rewriteTextareaRef = useRef<HTMLTextAreaElement>(null)
-  const checkSelection = useCallback(() => {
-    const ta = rewriteTextareaRef.current
-    if (ta) setHasSelection(ta.selectionStart !== ta.selectionEnd)
-  }, [])
-
-  // ─── Expected words (chapter only) ────────────────
-
-  const [expectedWordsState, setExpectedWordsState] = useState<{
-    chapterId: string
-    value: number | null
-  } | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [expectedWords, setExpectedWords] = useState<number | null>(null)
   const expectedWordsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Derive chapterId from active outline file
-  const activeChapterId = activeFile && activeType === 'chapter'
-    ? outlineFileToChapterId(activeFile)
-    : null
-  const expectedWords = expectedWordsState?.chapterId === activeChapterId
-    ? expectedWordsState.value
-    : null
-
-  // Load expectedWords when chapter changes
-  useEffect(() => {
-    if (!activeChapterId) return
-    loadChapterExpectedWords(projectId, activeChapterId)
-      .then((v) => {
-        if (v != null) {
-          setExpectedWordsState({ chapterId: activeChapterId, value: v })
-        } else {
-          // No outline value set — use system default
-          loadSettings()
-            .then((s) => { setExpectedWordsState({ chapterId: activeChapterId, value: s.default_word_count }) })
-            .catch(() => { setExpectedWordsState({ chapterId: activeChapterId, value: 4000 }) })
-        }
-      })
-      .catch(() => { setExpectedWordsState({ chapterId: activeChapterId, value: null }) })
-  }, [projectId, activeChapterId])
-
-  const persistExpectedWords = async (id: string, words: number) => {
-    try {
-      await saveChapterExpectedWords(projectId, id, words)
-    } catch { /* ignore */ }
-  }
-
-  // ─── Data loading ──────────────────────────────────
+  const activeRef = selection.type === 'chapter' ? selection.ref : null
+  const activeFile = selectionFile(selection)
+  const activeKey = selectionKey(selection)
 
   const refresh = useCallback(async () => {
-    const [rootFiles, chapterFiles] = await Promise.all([
-      listProjectFiles(projectId, OUTLINE_DIR),
-      listProjectFiles(projectId, OUTLINE_CHAPTER_DIR).catch(() => []),
+    const [writing, catalog] = await Promise.all([listChapters(projectId), loadOutlineCatalog(projectId)])
+    const byKey = new Map<string, { ref: ChapterRef; hasWriting: boolean; hasOutline: boolean }>()
+    for (const chapter of writing) {
+      const ref = chapterRefFromMeta(chapter)
+      byKey.set(chapterRefKey(ref), { ref, hasWriting: true, hasOutline: catalog.outlineRefs.has(chapterRefKey(ref)) })
+    }
+    for (const refs of catalog.refsByVolume.values()) {
+      for (const ref of refs) {
+        const key = chapterRefKey(ref)
+        const current = byKey.get(key)
+        byKey.set(key, { ref, hasWriting: current?.hasWriting ?? false, hasOutline: true })
+      }
+    }
+    const volumeNames = new Set<string>([
+      ...writing.map((chapter) => chapter.volume),
+      ...catalog.volumeOutlines,
+      ...catalog.refsByVolume.keys(),
     ])
-
-    // Volumes: .md files at root of outline/ that aren't outline.md
-    const vols = rootFiles
-      .map((f) => f.name)
-      .filter((n) => n.endsWith('.md') && n !== 'outline.md')
-      .sort()
-    setVolumes(vols)
-
-    // Chapters: parse filenames like "卷1_第1章.md" -> volumeLabel + chapterLabel
-    const chs: ChapterInfo[] = chapterFiles
-      .map((f) => {
-        const name = f.name
-        if (!name.endsWith('.md')) return null
-        const label = name.replace(/\.md$/, '')
-        // Try to extract volume prefix (e.g. "卷1_第1章" -> volumeLabel="卷1", chapterLabel="第1章")
-        const match = label.match(/^(卷\d+)_(.+)$/)
-        if (match) {
-          return { filename: name, label: match[2]!, volumeLabel: match[1]! }
-        }
-        return { filename: name, label, volumeLabel: '' }
-      })
-      .filter((c): c is ChapterInfo => c !== null)
-      .sort((a, b) => {
-        // Sort by volume number first, then chapter number
-        const volA = parseInt(a.volumeLabel.match(/\d+/)?.[0] ?? '0')
-        const volB = parseInt(b.volumeLabel.match(/\d+/)?.[0] ?? '0')
-        if (volA !== volB) return volA - volB
-        const chA = parseInt(a.label.match(/\d+/)?.[0] ?? '0')
-        const chB = parseInt(b.label.match(/\d+/)?.[0] ?? '0')
-        return chA - chB
-      })
-    setChapters(chs)
+    setVolumes([...volumeNames].sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true })).map((volume) => ({
+      volume,
+      hasVolumeOutline: catalog.volumeOutlines.has(volume),
+      chapters: [...byKey.values()].filter((item) => item.ref.volume === volume).sort((left, right) => compareRefs(left.ref, right.ref)),
+    })))
   }, [projectId])
 
   useEffect(() => {
-    refresh().catch((e: unknown) => { console.error(e) })
+    const timer = window.setTimeout(() => { void refresh().catch(console.error) }, 0)
+    return () => window.clearTimeout(timer)
   }, [refresh])
 
-  // Load content when active file changes
   useEffect(() => {
-    if (!activeFile) return
-    if (activeType === 'chapter') {
-      readProjectFile(projectId, OUTLINE_CHAPTER_DIR, activeFile)
-        .then((c) => { setContent(c); setDirty(false) })
-        .catch((e: unknown) => { console.error(e) })
-    } else {
-      readProjectFile(projectId, OUTLINE_DIR, activeFile)
-        .then((c) => { setContent(c); setDirty(false) })
-        .catch((e: unknown) => { console.error(e) })
-    }
-  }, [projectId, activeFile, activeType])
+    let current = true
+    const file = selectionFile(selection)
+    void readProjectFile(projectId, file.subdir, file.filename)
+      .then((value) => { if (current) { setContent(value); setDirty(false) } })
+      .catch(() => { if (current) { setContent(''); setDirty(false) } })
+    return () => { current = false }
+  }, [projectId, selection])
 
-  // Load saved prompt for this type
-  const promptKey = `outline_${activeType}`
+  const promptKey = `outline_${selection.type}`
   useEffect(() => {
-    loadPrompt(projectId, promptKey).then((saved) => {
-      setEditingPrompt(saved ?? '')
-      setShowPrompt(false)
-    }).catch(() => {})
+    void loadPrompt(projectId, promptKey).then((saved) => { setEditingPrompt(saved ?? ''); setShowPrompt(false) }).catch(console.error)
   }, [projectId, promptKey])
 
-  // ─── File operations ────────────────────────────────
+  useEffect(() => {
+    if (!activeRef) return
+    let current = true
+    void loadChapterExpectedWords(projectId, activeRef)
+      .then((value) => value ?? loadSettings().then((settings) => settings.default_word_count).catch(() => 4000))
+      .then((value) => { if (current) setExpectedWords(value) })
+      .catch(() => { if (current) setExpectedWords(null) })
+    return () => { current = false }
+  }, [activeRef, projectId])
 
-  const saveFile = async () => {
-    if (!activeFile) return
-    if (activeType === 'chapter') {
-      await writeProjectFile(projectId, OUTLINE_CHAPTER_DIR, activeFile, content)
-    } else {
-      await writeProjectFile(projectId, OUTLINE_DIR, activeFile, content)
-    }
+  useEffect(() => () => { if (expectedWordsTimer.current) clearTimeout(expectedWordsTimer.current) }, [])
+
+  const open = (next: OutlineSelection) => {
+    if (dirty && !window.confirm('当前细纲有未保存修改，确定放弃并切换吗？')) return
+    setSelection(next)
+    setEditing(false)
+    setRewriteState(null)
+  }
+
+  const save = async () => {
+    await writeProjectFile(projectId, activeFile.subdir, activeFile.filename, content)
     setEditing(false)
     setDirty(false)
+    await refresh()
   }
 
-  const [deleteTarget, setDeleteTarget] = useState<{ name: string; label: string; type: 'volume' | 'chapter' } | null>(null)
-
-  const handleCreateVolume = () => {
-    const num = volumes.length + 1
-    const name = `卷${num}.md`
-    writeProjectFile(projectId, OUTLINE_DIR, name, `第${num}卷\n\n概要：\n\n章节规划：\n\n`)
-      .then(() => refresh())
-      .then(() => { setActiveFile(name); setActiveType('volume'); setEditing(true) })
-      .catch((e: unknown) => { console.error(e) })
+  const createVolume = async () => {
+    try {
+      const volume = await createOutlineVolume(projectId)
+      await refresh()
+      setSelection({ type: 'volume', volume })
+      setEditing(true)
+    } catch (error) { setActionError(error instanceof Error ? error.message : String(error)) }
   }
 
-  const handleCreateChapter = (volumeLabel: string) => {
-    const existing = chapters.filter((c) => c.volumeLabel === volumeLabel)
-    const chNum = existing.length + 1
-    const name = `${volumeLabel}_第${chNum}章.md`
-    const label = `第${chNum}章`
-    void writeProjectFile(projectId, OUTLINE_CHAPTER_DIR, name, `${label}细纲：\n\n情节点：\n\n`)
-      .then(() => refresh())
-      .then(() => { setActiveFile(name); setActiveType('chapter'); setEditing(true) })
-      .catch((e: unknown) => { console.error(e) })
+  const createVolumeOutline = async (volume: string) => {
+    try {
+      await createOutlineVolumeAt(projectId, volume)
+      await refresh()
+      setSelection({ type: 'volume', volume })
+      setEditing(true)
+    } catch (error) { setActionError(error instanceof Error ? error.message : String(error)) }
   }
 
-  const confirmDelete = () => {
-    if (!deleteTarget) return
-    const { name, type } = deleteTarget
-    if (type === 'volume') {
-      const volLabel = name.replace(/\.md$/, '')
-      const volChapters = chaptersByVolume(volLabel)
-      void Promise.all([
-        deleteProjectFile(projectId, OUTLINE_DIR, name),
-        ...volChapters.map((c) => deleteProjectFile(projectId, OUTLINE_CHAPTER_DIR, c.filename)),
-      ]).then(() => {
-        if (activeFile === name || volChapters.some((c) => c.filename === activeFile)) {
-          setActiveFile('outline.md')
-          setActiveType('outline')
-        }
-        setDeleteTarget(null)
-        void refresh()
-      }).catch((e: unknown) => { console.error(e) })
-    } else {
-      void deleteProjectFile(projectId, OUTLINE_CHAPTER_DIR, name).then(() => {
-        if (activeFile === name) {
-          setActiveFile('outline.md')
-          setActiveType('outline')
-        }
-        setDeleteTarget(null)
-        void refresh()
-      }).catch((e: unknown) => { console.error(e) })
+  const createChapter = async (volume: string) => {
+    try {
+      const ref = await createNextOutlineChapter(projectId, volume)
+      await refresh()
+      setSelection({ type: 'chapter', ref })
+      setEditing(true)
+    } catch (error) { setActionError(error instanceof Error ? error.message : String(error)) }
+  }
+
+  const createOutlineForChapter = async (ref: ChapterRef) => {
+    try {
+      await createOutlineChapter(projectId, ref)
+      await refresh()
+      setSelection({ type: 'chapter', ref })
+      setEditing(true)
+    } catch (error) { setActionError(error instanceof Error ? error.message : String(error)) }
+  }
+
+  const startWriting = async () => {
+    if (!startTarget) return
+    setStarting(true)
+    setActionError(null)
+    try {
+      await startWritingFromOutline(projectId, startTarget, { volumeName, chapterName })
+      onNavigateToWriting(`${startTarget.volume}:${startTarget.chapterId}`)
+      setStartTarget(null)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setStarting(false)
     }
   }
 
-  // ─── Navigation ─────────────────────────────────────
-
-  const openFile = (file: string, type: 'outline' | 'volume' | 'chapter') => {
-    setActiveFile(file)
-    setActiveType(type)
-    setEditing(false)
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    try {
+      if (deleteTarget.type === 'chapter') {
+        await deleteProjectFile(projectId, outlineChapterDir(deleteTarget.ref.volume), outlineChapterFilename(deleteTarget.ref))
+      } else if (deleteTarget.type === 'volume') {
+        const item = volumes.find((volume) => volume.volume === deleteTarget.volume)
+        await Promise.all([
+          deleteProjectFile(projectId, OUTLINE_VOLUMES_DIR, outlineVolumeFile(deleteTarget.volume)),
+          ...(item?.chapters.filter((chapter) => chapter.hasOutline).map((chapter) => deleteProjectFile(projectId, outlineChapterDir(chapter.ref.volume), outlineChapterFilename(chapter.ref))) ?? []),
+        ])
+      }
+      if (selectionKey(selection) === selectionKey(deleteTarget) || (deleteTarget.type === 'volume' && selection.type === 'chapter' && selection.ref.volume === deleteTarget.volume)) setSelection({ type: 'outline' })
+      setDeleteTarget(null)
+      await refresh()
+    } catch (error) { setActionError(error instanceof Error ? error.message : String(error)) }
   }
 
-  const activeLabel = () => {
-    if (!activeFile) return ''
-    if (activeFile === 'outline.md') return '📋 总纲'
-    if (activeType === 'chapter') return `📝 ${activeFile.replace(/\.md$/, '')}`
-    return `📖 ${activeFile.replace(/\.md$/, '')}`
-  }
-
-  // ─── AI generation ──────────────────────────────────
-
-  const getActiveDefaultPrompt = () => getDefaultPrompt(activeType, activeLabel())
-
-  const handleAIGenerate = async () => {
+  const aiGenerate = async () => {
     setGeneratingAi(true)
     setAiError(null)
     try {
       const config = await loadProviderConfig()
-      const provider = config.providers.find((p) => p.name === config.active_profile)
-      if (!provider) throw new Error('未配置 AI Provider')
-      if (!provider.models.analysis) throw new Error('未配置分析模型，请在 AI 配置中设置')
-
-      let context = await buildAIContext(projectId)
-
-      const systemPrompt = editingPrompt.trim() || getActiveDefaultPrompt()
-
-      const base = provider.base_url.replace(/\/+$/, '')
-      const res = await fetch(`${base}/chat/completions`, {
+      const provider = config.providers.find((item) => item.name === config.active_profile)
+      if (!provider?.models.analysis) throw new Error('未配置分析模型')
+      const response = await fetch(`${provider.base_url.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${provider.api_key}`,
-        },
-        body: JSON.stringify({
-          model: provider.models.analysis,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: context || '请生成大纲内容' },
-          ],
-          temperature: 0.8,
-          max_tokens: 2048,
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.api_key}` },
+        body: JSON.stringify({ model: provider.models.analysis, messages: [{ role: 'system', content: editingPrompt.trim() || defaultPrompt(selection.type, activeFile.label) }, { role: 'user', content: await buildAIContext(projectId) || '请生成大纲内容' }], temperature: 0.8, max_tokens: 2048 }),
       })
-      if (!res.ok) throw new Error(`API ${res.status}`)
-      const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-      const raw = data.choices?.[0]?.message?.content ?? ''
-      if (raw.trim()) {
-        setContent(raw.trim())
-        setDirty(true)
-      }
-    } catch (e) {
-      setAiError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setGeneratingAi(false)
-    }
-  }
-
-  // Volume chapters grouped
-  const chaptersByVolume = (volLabel: string) =>
-    chapters.filter((c) => c.volumeLabel === volLabel)
-
-  // ─── Rewrite handlers ──────────────────────────
-
-  const handleRewriteMode = (mode: RewriteMode) => {
-    const sel = getTextareaSelection(rewriteTextareaRef.current, content)
-    if (!sel) return
-    setRewriteState({ ...sel, mode })
-  }
-
-  const handleRewriteAccept = (newText: string) => {
-    if (!rewriteState) return
-    setContent((prev) => applyTextareaRewrite(prev, rewriteState.start, rewriteState.end, newText))
-    setDirty(true)
-    setRewriteState(null)
+      if (!response.ok) throw new Error(`API ${response.status}`)
+      const result = await response.json() as { choices?: Array<{ message?: { content?: string } }> }
+      const text = result.choices?.[0]?.message?.content?.trim()
+      if (text) { setContent(text); setDirty(true) }
+    } catch (error) { setAiError(error instanceof Error ? error.message : String(error)) } finally { setGeneratingAi(false) }
   }
 
   const menuItems: ContextMenuAction[] = contextMenu ? [
-    { label: '✏️ AI 改写', onClick: () => handleRewriteMode('rewrite') },
-    { label: '📝 AI 扩写', onClick: () => handleRewriteMode('expand') },
-    { label: '✨ AI 润色', onClick: () => handleRewriteMode('polish') },
+    { label: '✏️ AI 改写', onClick: () => { const value = getTextareaSelection(textareaRef.current, content); if (value) setRewriteState({ ...value, mode: 'rewrite' }) } },
+    { label: '📝 AI 扩写', onClick: () => { const value = getTextareaSelection(textareaRef.current, content); if (value) setRewriteState({ ...value, mode: 'expand' }) } },
+    { label: '✨ AI 润色', onClick: () => { const value = getTextareaSelection(textareaRef.current, content); if (value) setRewriteState({ ...value, mode: 'polish' }) } },
   ] : []
 
-  return (
-    <div className="panel-layout">
-      <OutlineSidebar
-        volumes={volumes}
-        chapters={chapters}
-        activeFile={activeFile}
-        onOpen={openFile}
-        onCreateVolume={handleCreateVolume}
-        onCreateChapter={handleCreateChapter}
-        onDeleteVolume={(name, label) => setDeleteTarget({ name, label, type: 'volume' })}
-        onDeleteChapter={(name, label) => setDeleteTarget({ name, label, type: 'chapter' })}
-      />
+  const deleteMessage = deleteTarget
+    ? deleteTarget.type === 'volume'
+      ? `确定删除 ${deleteTarget.volume} 的分卷纲和细纲吗？\n正文不会被删除。`
+      : `确定删除第${chapterOrder(deleteTarget.ref.chapterId)}章细纲吗？\n正文不会被删除。`
+    : ''
 
-      <OutlineEditor
-        activeFile={activeFile}
-        activeType={activeType}
-        content={content}
-        editing={editing}
-        dirty={dirty}
-        generatingAi={generatingAi}
-        aiError={aiError}
-        showPrompt={showPrompt}
-        editingPrompt={editingPrompt}
-        savingPrompt={savingPrompt}
-        showExample={showExample}
-        expectedWords={expectedWords}
-        activeChapterId={activeChapterId}
-        example={EXAMPLES[activeType] ?? '暂无示例'}
-        textareaRef={rewriteTextareaRef}
-        onContentChange={(next) => { setContent(next); setDirty(true) }}
-        onEdit={() => { setEditing(true) }}
-        onSave={() => { void saveFile() }}
-        onAIGenerate={() => { void handleAIGenerate() }}
-        onTogglePrompt={() => {
-          if (!showPrompt && !editingPrompt.trim()) {
-            setEditingPrompt(getActiveDefaultPrompt())
-          }
-          setShowPrompt(!showPrompt)
-        }}
-        onPromptChange={setEditingPrompt}
-        onResetPrompt={() => {
-          setSavingPrompt(true)
-          void resetPrompt(projectId, promptKey)
-            .then(() => {
-              setEditingPrompt('')
-              setShowPrompt(false)
-            })
-            .catch((error: unknown) => { console.error(error) })
-            .finally(() => setSavingPrompt(false))
-        }}
-        onSavePrompt={() => {
-          setSavingPrompt(true)
-          void savePrompt(projectId, promptKey, editingPrompt)
-            .catch((error: unknown) => { console.error(error) })
-            .finally(() => setSavingPrompt(false))
-        }}
-        onToggleExample={() => { setShowExample(!showExample) }}
-        onExpectedWordsChange={(value) => {
-          if (activeChapterId) setExpectedWordsState({ chapterId: activeChapterId, value })
-          if (expectedWordsTimer.current) clearTimeout(expectedWordsTimer.current)
-          expectedWordsTimer.current = setTimeout(() => {
-            if (activeChapterId && value != null) {
-              void persistExpectedWords(activeChapterId, value)
-            }
-          }, 800)
-        }}
-        onExpectedWordsCommit={(value) => {
-          if (expectedWordsTimer.current) clearTimeout(expectedWordsTimer.current)
-          if (activeChapterId) void persistExpectedWords(activeChapterId, value)
-        }}
-        onSelectionCheck={checkSelection}
-        onSelectionContextMenu={(e) => {
-          const ta = e.currentTarget
-          if (ta.selectionStart !== ta.selectionEnd) {
-            e.preventDefault()
-            setContextMenu({ x: e.clientX, y: e.clientY })
-          }
-        }}
-        rewriteState={rewriteState}
-        hasSelection={hasSelection}
-        onRewrite={handleRewriteMode}
-        onRewriteAccept={handleRewriteAccept}
-        onRewriteReject={() => setRewriteState(null)}
-        contextMenu={contextMenu}
-        onContextMenuClose={() => setContextMenu(null)}
-        menuItems={menuItems}
-      />
-
-      {deleteTarget && (
-        <ConfirmDialog
-          title={deleteTarget.type === 'volume' ? '删除分卷' : '删除章节细纲'}
-          message={`确定删除「${deleteTarget.label}」？${deleteTarget.type === 'volume' ? '\n该分卷下的所有章节细纲也将被删除。' : ''}\n此操作不可恢复。`}
-          confirmText="删除"
-          danger
-          onConfirm={confirmDelete}
-          onCancel={() => { setDeleteTarget(null) }}
-        />
-      )}
-    </div>
-  )
+  return <div className="panel-layout">
+    <OutlineSidebar volumes={volumes} activeSelection={activeKey} onOpen={open} onCreateVolume={() => { void createVolume() }} onCreateVolumeOutline={(volume) => { void createVolumeOutline(volume) }} onCreateChapter={(volume) => { void createChapter(volume) }} onCreateOutlineForChapter={(ref) => { void createOutlineForChapter(ref) }} onStartWriting={(ref) => { setStartTarget(ref); setVolumeName(''); setChapterName(''); setActionError(null) }} onDeleteVolume={(volume) => setDeleteTarget({ type: 'volume', volume })} onDeleteChapter={(ref) => setDeleteTarget({ type: 'chapter', ref })} />
+    <OutlineEditor activeFile={activeFile.label} activeType={selection.type} content={content} editing={editing} dirty={dirty} generatingAi={generatingAi} aiError={aiError} showPrompt={showPrompt} editingPrompt={editingPrompt} savingPrompt={savingPrompt} showExample={showExample} expectedWords={expectedWords} activeChapterRef={activeRef} example={EXAMPLES[selection.type]} textareaRef={textareaRef} onContentChange={(value) => { setContent(value); setDirty(true) }} onEdit={() => setEditing(true)} onSave={() => { void save().catch((error: unknown) => setActionError(error instanceof Error ? error.message : String(error))) }} onAIGenerate={() => { void aiGenerate() }} onTogglePrompt={() => { if (!showPrompt && !editingPrompt.trim()) setEditingPrompt(defaultPrompt(selection.type, activeFile.label)); setShowPrompt(!showPrompt) }} onPromptChange={setEditingPrompt} onResetPrompt={() => { setSavingPrompt(true); void resetPrompt(projectId, promptKey).then(() => { setEditingPrompt(''); setShowPrompt(false) }).catch(console.error).finally(() => setSavingPrompt(false)) }} onSavePrompt={() => { setSavingPrompt(true); void savePrompt(projectId, promptKey, editingPrompt).catch(console.error).finally(() => setSavingPrompt(false)) }} onToggleExample={() => setShowExample(!showExample)} onExpectedWordsChange={(value) => { setExpectedWords(value); if (expectedWordsTimer.current) clearTimeout(expectedWordsTimer.current); if (activeRef && value != null) expectedWordsTimer.current = setTimeout(() => { void saveChapterExpectedWords(projectId, activeRef, value).catch(console.error) }, 800) }} onExpectedWordsCommit={(value) => { if (expectedWordsTimer.current) clearTimeout(expectedWordsTimer.current); if (activeRef) void saveChapterExpectedWords(projectId, activeRef, value).catch(console.error) }} onSelectionCheck={() => { const target = textareaRef.current; if (target) setHasSelection(target.selectionStart !== target.selectionEnd) }} onSelectionContextMenu={(event) => { const target = event.currentTarget; if (target.selectionStart !== target.selectionEnd) { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY }) } }} rewriteState={rewriteState} hasSelection={hasSelection} onRewrite={(mode) => { const value = getTextareaSelection(textareaRef.current, content); if (value) setRewriteState({ ...value, mode }) }} onRewriteAccept={(text) => { if (!rewriteState) return; setContent((value) => applyTextareaRewrite(value, rewriteState.start, rewriteState.end, text)); setDirty(true); setRewriteState(null) }} onRewriteReject={() => setRewriteState(null)} contextMenu={contextMenu} onContextMenuClose={() => setContextMenu(null)} menuItems={menuItems} />
+    {actionError && <div className="error-bar">{actionError}</div>}
+    {deleteTarget && <ConfirmDialog title={deleteTarget.type === 'volume' ? '删除分卷纲' : '删除章节细纲'} message={deleteMessage} confirmText="删除细纲" danger onConfirm={() => { void confirmDelete() }} onCancel={() => setDeleteTarget(null)} />}
+    {startTarget && <Modal className="chapter-create-modal"><h2>从细纲开始写作</h2><p>{startTarget.volume} / 第{chapterOrder(startTarget.chapterId)}章</p>{startTarget.chapterId === 'ch001' && <label>卷名<input autoFocus value={volumeName} onChange={(event) => setVolumeName(event.target.value)} placeholder="例如：风起" /></label>}<label>章节名<input autoFocus={startTarget.chapterId !== 'ch001'} value={chapterName} onChange={(event) => setChapterName(event.target.value)} placeholder="例如：晴空" onKeyDown={(event) => { if (event.key === 'Enter') void startWriting() }} /></label>{actionError && <p className="error-bar">{actionError}</p>}<div className="material-modal-footer"><button onClick={() => setStartTarget(null)}>取消</button><button disabled={starting || !chapterName.trim() || (startTarget.chapterId === 'ch001' && !volumeName.trim())} onClick={() => { void startWriting() }}>{starting ? '创建中…' : '创建正文并开始写作'}</button></div></Modal>}
+  </div>
 }

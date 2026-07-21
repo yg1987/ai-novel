@@ -5,6 +5,7 @@ import RewritePreview from '../RewritePreview'
 import type { RefObject } from 'react'
 import type { RewriteMode } from '../../services/rewriteService'
 import type { TextareaSelection } from '../../services/rewriteUtils'
+import type { ChapterRef } from '../../types/chapter'
 
 interface Props {
   activeFile: string | null
@@ -19,7 +20,7 @@ interface Props {
   savingPrompt: boolean
   showExample: boolean
   expectedWords: number | null
-  activeChapterId: string | null
+  activeChapterRef: ChapterRef | null
   example: string
   textareaRef: RefObject<HTMLTextAreaElement | null>
   onContentChange: (content: string) => void
@@ -58,7 +59,7 @@ export default function OutlineEditor({
   savingPrompt,
   showExample,
   expectedWords,
-  activeChapterId,
+  activeChapterRef,
   example,
   textareaRef,
   onContentChange,
@@ -117,7 +118,7 @@ export default function OutlineEditor({
           )}
           {aiError && <div style={{ padding: '8px 24px', fontSize: '0.85rem', color: 'var(--danger)', background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>AI 生成失败：{aiError}</div>}
           {showExample && editing && <div className="sub-field-example" style={{ margin: '8px 24px' }}><pre>{example}</pre></div>}
-          {editing && activeType === 'chapter' && activeChapterId && (
+          {editing && activeType === 'chapter' && activeChapterRef && (
             <div style={{ padding: '8px 24px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--border)', background: 'var(--bg-card)' }}>
               <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>预计字数:</span>
               <input type="number" className="notes-input" style={{ width: 100 }} value={expectedWords ?? ''} placeholder="4000" min={500} max={50000} step={100} onChange={(e) => onExpectedWordsChange(e.target.value ? Math.max(500, parseInt(e.target.value, 10) || 500) : null)} onBlur={() => { const v = expectedWords; if (v != null) onExpectedWordsCommit(v) }} />

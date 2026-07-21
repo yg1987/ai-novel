@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { readProjectFile, writeProjectFile } from '../api/tauri'
+import type { ChapterRef } from '../types/chapter'
+import { chapterRefKey } from './chapterDisplay'
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -86,7 +88,7 @@ const META_DIR = 'outline'
 const OVERRIDE_DIR = 'memory'
 
 interface ChapterMetaStore {
-  [chapterId: string]: { expectedWords?: number }
+  [chapterKey: string]: { expectedWords?: number }
 }
 
 async function loadChapterMeta(projectId: string): Promise<ChapterMetaStore> {
@@ -101,20 +103,21 @@ async function loadChapterMeta(projectId: string): Promise<ChapterMetaStore> {
 
 export async function saveChapterExpectedWords(
   projectId: string,
-  chapterId: string,
+  ref: ChapterRef,
   expectedWords: number,
 ): Promise<void> {
   const meta = await loadChapterMeta(projectId)
-  meta[chapterId] = { ...meta[chapterId], expectedWords }
+  const key = chapterRefKey(ref)
+  meta[key] = { ...meta[key], expectedWords }
   await writeProjectFile(projectId, META_DIR, CHAPTER_META_FILE, JSON.stringify(meta, null, 2))
 }
 
 export async function loadChapterExpectedWords(
   projectId: string,
-  chapterId: string,
+  ref: ChapterRef,
 ): Promise<number | null> {
   const meta = await loadChapterMeta(projectId)
-  return meta[chapterId]?.expectedWords ?? null
+  return meta[chapterRefKey(ref)]?.expectedWords ?? null
 }
 
 async function loadWordCountOverrides(projectId: string): Promise<Record<string, number>> {
@@ -129,20 +132,20 @@ async function loadWordCountOverrides(projectId: string): Promise<Record<string,
 
 export async function saveChapterWordCountOverride(
   projectId: string,
-  chapterId: string,
+  ref: ChapterRef,
   wordCount: number,
 ): Promise<void> {
   const overrides = await loadWordCountOverrides(projectId)
-  overrides[chapterId] = wordCount
+  overrides[chapterRefKey(ref)] = wordCount
   await writeProjectFile(projectId, OVERRIDE_DIR, CHAPTER_WORDCOUNT_FILE, JSON.stringify(overrides, null, 2))
 }
 
 export async function deleteChapterWordCountOverride(
   projectId: string,
-  chapterId: string,
+  ref: ChapterRef,
 ): Promise<void> {
   const overrides = await loadWordCountOverrides(projectId)
-  delete overrides[chapterId]
+  delete overrides[chapterRefKey(ref)]
   await writeProjectFile(projectId, OVERRIDE_DIR, CHAPTER_WORDCOUNT_FILE, JSON.stringify(overrides, null, 2))
 }
 
@@ -157,18 +160,19 @@ export async function deleteChapterWordCountOverride(
  */
 export async function resolveChapterWordCount(
   projectId: string,
-  chapterId: string,
+  ref: ChapterRef,
 ): Promise<ChapterWordCountResolution> {
+  const key = chapterRefKey(ref)
   // ① 手动覆盖
   const overrides = await loadWordCountOverrides(projectId)
-  if (overrides[chapterId] != null) {
-    return { value: overrides[chapterId]!, source: 'manual' }
+  if (overrides[key] != null) {
+    return { value: overrides[key]!, source: 'manual' }
   }
 
   // ② 大纲设置
   const meta = await loadChapterMeta(projectId)
-  if (meta[chapterId]?.expectedWords != null) {
-    return { value: meta[chapterId]!.expectedWords!, source: 'outline' }
+  if (meta[key]?.expectedWords != null) {
+    return { value: meta[key]!.expectedWords!, source: 'outline' }
   }
 
   // ③ 系统默认

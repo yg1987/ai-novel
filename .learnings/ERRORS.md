@@ -4,6 +4,42 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260721-001] npm_test
+
+**Logged**: 2026-07-21T12:14:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Changing a shared display helper for the new chapter tree broke existing display contracts.
+
+### Error
+```
+chapterDisplay.test.ts expected the existing volume display label, but received a newly expanded raw-position label.
+```
+
+### Context
+- The writing and review UIs need full volume/chapter addresses.
+- `chapterNumberLabel()` is a shared helper with established consumers and tests.
+
+### Suggested Fix
+Keep full addresses in the new tree-specific UI and preserve shared display-helper output unless all consumers are intentionally migrated.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/services/chapterDisplay.ts
+- Pattern-Key: test.regression
+- Recurrence-Count: 1
+- First-Seen: 2026-07-21
+- Last-Seen: 2026-07-21
+
+### Resolution
+- **Resolved**: 2026-07-21T12:14:00+08:00
+- **Notes**: Restored the existing `chapterNumberLabel()` contract; writing and review retain explicit full-position labels locally.
+
+---
+
 ## [ERR-20260720-008] optional-probe-parallel-batch
 
 **Logged**: 2026-07-20T17:25:54+08:00
@@ -30,9 +66,9 @@ Run required reads first and execute optional no-match probes in a separate tool
 - Reproducible: yes
 - Related Files: AGENTS.md
 - Pattern-Key: shell.nonzero-exit
-- Recurrence-Count: 1
+- Recurrence-Count: 2
 - First-Seen: 2026-07-20
-- Last-Seen: 2026-07-20
+- Last-Seen: 2026-07-21
 
 ### Resolution
 - **Resolved**: 2026-07-20T17:25:54+08:00
@@ -73,7 +109,7 @@ Run probes that may legitimately return no matches in isolated commands, then ru
 
 ### Resolution
 - **Resolved**: 2026-07-20T00:00:00+08:00
-- **Notes**: Isolated the optional search and reran the required checks separately.
+- **Notes**: Isolated the optional search and reran the required checks separately. Recurrence on 2026-07-21 was caused by batching a mistyped optional path with required file-size and Git checks; subsequent path probes are isolated.
 
 ---
 
