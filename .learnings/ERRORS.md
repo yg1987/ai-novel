@@ -4,6 +4,79 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260720-008] optional-probe-parallel-batch
+
+**Logged**: 2026-07-20T17:25:54+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: config
+
+### Summary
+An optional dependency probe that legitimately returned no matches was run in the same parallel script as required line-number reads, so its nonzero exit obscured the required output.
+
+### Error
+```
+Script error: Exit code: 1
+```
+
+### Context
+- The batch combined a required `rg` read with an optional virtual-list dependency search.
+- The project instructions explicitly require optional probes to be isolated.
+
+### Suggested Fix
+Run required reads first and execute optional no-match probes in a separate tool call with their exit code handled independently.
+
+### Metadata
+- Reproducible: yes
+- Related Files: AGENTS.md
+- Pattern-Key: shell.nonzero-exit
+- Recurrence-Count: 1
+- First-Seen: 2026-07-20
+- Last-Seen: 2026-07-20
+
+### Resolution
+- **Resolved**: 2026-07-20T17:25:54+08:00
+- **Notes**: Split the required line-number read from the optional dependency probe before retrying.
+
+---
+
+## [ERR-20260720-008] optional-probe-batched-with-required-checks
+
+**Logged**: 2026-07-20T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+An optional `rg` no-match probe was batched with required document checks, so its expected exit code 1 hid the other verification results.
+
+### Error
+```
+Parallel verification batch exited with code 1 because the optional search found no matches.
+```
+
+### Context
+- The optional search checked that no unresolved planning words remained.
+- Required line-count, fence-balance, header, and status checks were in the same batch.
+- Project instructions require optional probes to run separately.
+
+### Suggested Fix
+Run probes that may legitimately return no matches in isolated commands, then run required verification commands independently.
+
+### Metadata
+- Reproducible: yes
+- Related Files: doc/审查模块改进计划.md
+- Pattern-Key: shell.optional-probe-batch
+- Recurrence-Count: 1
+- First-Seen: 2026-07-20
+- Last-Seen: 2026-07-20
+
+### Resolution
+- **Resolved**: 2026-07-20T00:00:00+08:00
+- **Notes**: Isolated the optional search and reran the required checks separately.
+
+---
+
 ## [ERR-20260720-008] brainstorm-provider-invalid-json
 
 **Logged**: 2026-07-20T15:40:09+08:00
@@ -827,7 +900,7 @@ Run the release build with a packaging-appropriate time budget only when prepari
 
 **Logged**: 2026-07-20T14:35:00+08:00
 **Priority**: low
-**Status**: resolved
+**Status**: promoted
 **Area**: frontend
 
 ### Summary
@@ -840,20 +913,59 @@ src/services/brainstormContext.ts:149: trailing whitespace.
 
 ### Context
 - Detected by `git diff --cached --check` before commit.
+- Recurred in Markdown metadata that used line-ending double spaces; detected by `git diff --check` during the review-plan rewrite.
+- Recurred again while updating the writing-module plan metadata with the same Markdown hard-break style.
 
 ### Suggested Fix
 Remove whitespace-only suffixes before staging code changes.
 
 ### Metadata
 - Reproducible: yes
-- Related Files: src/services/brainstormContext.ts
+- Related Files: src/services/brainstormContext.ts, doc/审查模块改进计划.md, doc/写作模块改进计划.md, AGENTS.md
 - Pattern-Key: fs.trailing-whitespace
-- Recurrence-Count: 1
+- Recurrence-Count: 3
 - First-Seen: 2026-07-20
 - Last-Seen: 2026-07-20
+- Promoted: AGENTS.md
 
 ### Resolution
 - **Resolved**: 2026-07-20T14:35:00+08:00
-- **Notes**: Removed the trailing whitespace and reran the staged diff check.
+- **Notes**: Removed all observed occurrences, replaced Markdown hard breaks with explicit `<br>`, and promoted a scoped `git diff --check` rule to the project instructions.
+
+---
+
+## [ERR-20260721-001] apply_patch
+
+**Logged**: 2026-07-21T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+A multi-hunk documentation patch was rejected because one expected acceptance-test line differed from the current file.
+
+### Error
+```text
+apply_patch verification failed: Failed to find expected lines
+```
+
+### Context
+- The rejected patch targeted `doc/大纲模块改进计划.md`.
+- No partial write occurred; the update was retried as smaller, exact hunks after reading the target range.
+
+### Suggested Fix
+For broad documentation edits, verify each target block immediately before patching and split unrelated hunks so one changed line cannot reject the entire update.
+
+### Metadata
+- Reproducible: yes
+- Related Files: doc/大纲模块改进计划.md
+- Pattern-Key: docs.patch-context
+- Recurrence-Count: 1
+- First-Seen: 2026-07-21
+- Last-Seen: 2026-07-21
+
+### Resolution
+- **Resolved**: 2026-07-21T00:00:00+08:00
+- **Notes**: Re-read the exact target range and applied the changes in smaller verified patches.
 
 ---

@@ -261,3 +261,34 @@ Keep modal input in a local draft. Route close, backdrop, Escape, and the second
 - Last-Seen: 2026-07-20
 
 ---
+
+## [LRN-20260721-001] correction
+
+**Logged**: 2026-07-21T00:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: docs
+
+### Summary
+Chapter-navigation reviews must preserve the product's explicit volume-and-chapter address model instead of inventing ambiguity around a bare global chapter number.
+
+### Details
+The review inferred that a query such as “156” needed a cross-volume disambiguation rule. The product model is instead explicitly “卷N → 第M章”; volume and chapter positions are always known in context. It also does not need legacy-data migration because all current data is disposable test data.
+
+### Suggested Action
+Before adding edge-case rules to a product plan, distinguish a shorthand used in discussion from an actual UI input contract. For this project, design chapter navigation around explicit volume and chapter positions, and omit legacy migration unless the user restores it as a requirement.
+
+### Metadata
+- Source: user_feedback
+- Related Files: doc/卷章节目录与大纲关联公共方案.md, doc/写作模块改进计划.md, doc/审查模块改进计划.md, doc/大纲模块改进计划.md
+- Tags: chapter-navigation, domain-model, scope
+- Pattern-Key: docs.domain-assumption
+- Recurrence-Count: 1
+- First-Seen: 2026-07-21
+- Last-Seen: 2026-07-21
+
+### Resolution
+- **Resolved**: 2026-07-21T00:00:00+08:00
+- **Notes**: Rewrote the four planning documents around explicit “卷 N / 第 M 章” positions, removed legacy migration scope, and specified that new writing volumes are created together with their first chapter.
+
+---
