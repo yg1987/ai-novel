@@ -6,6 +6,68 @@ Corrections, insights, and knowledge gaps captured during development.
 
 ---
 
+## [LRN-20260721-004] correction
+
+**Logged**: 2026-07-21T00:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+When restoring a direct UI action, preserve its state-transition behavior as well as its icon and target action.
+
+### Details
+Restoring the version-history icon with an unconditional open handler lost its original toggle behavior. Clicking the same chapter's history icon must close an open history pane; clicking another chapter's icon must open that chapter's history.
+
+### Suggested Action
+For restored interactions, compare both rendered controls and state updates against the known-good implementation.
+
+### Metadata
+- Source: user_feedback
+- Related Files: src/components/ChapterManager.tsx
+- Tags: behavior, toggle, ui-regression
+- Pattern-Key: frontend.behavior-regression
+- Recurrence-Count: 1
+- First-Seen: 2026-07-21
+- Last-Seen: 2026-07-21
+
+### Resolution
+- **Resolved**: 2026-07-21T00:00:00+08:00
+- **Notes**: Restored toggle semantics while retaining direct per-chapter history access.
+
+---
+
+## [LRN-20260721-003] correction
+
+**Logged**: 2026-07-21T00:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+Do not change adjacent UI behavior that the user did not request, even when touching the same component.
+
+### Details
+The user requested shared chapter segment sizing only. The writing chapter row must retain its four direct action icons; unrelated consolidation into an overflow menu is outside scope and must be restored independently.
+
+### Suggested Action
+Before editing a component, compare the requested behavior against the diff and preserve every unrelated interaction and visual affordance.
+
+### Metadata
+- Source: user_feedback
+- Related Files: src/components/ChapterManager.tsx
+- Tags: scope, ui-regression, preserve-behavior
+- Pattern-Key: frontend.scope-overreach
+- Recurrence-Count: 1
+- First-Seen: 2026-07-21
+- Last-Seen: 2026-07-21
+
+### Resolution
+- **Resolved**: 2026-07-21T00:00:00+08:00
+- **Notes**: Restoring the original four direct chapter action icons without changing the shared segment-size feature.
+
+---
+
 ## [LRN-20260721-002] correction
 
 **Logged**: 2026-07-21T15:04:00+08:00
@@ -321,5 +383,36 @@ Before adding edge-case rules to a product plan, distinguish a shorthand used in
 ### Resolution
 - **Resolved**: 2026-07-21T00:00:00+08:00
 - **Notes**: Rewrote the four planning documents around explicit “卷 N / 第 M 章” positions, removed legacy migration scope, and specified that new writing volumes are created together with their first chapter.
+
+---
+
+## [LRN-20260721-002] correction
+
+**Logged**: 2026-07-21T00:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+Chapter-generation quality must prioritize completing every outline event and a natural chapter ending over a rigid word-count floor.
+
+### Details
+The expected AI word count is a preferred planning range, not permission to omit later outline scenes. The prompt must also handle unnumbered outlines, where a scene may be expressed as a paragraph, an event, or a character action rather than an explicit list item.
+
+### Suggested Action
+Use a target-to-+300 preferred range, permit up to +600 only when necessary for complete coverage and natural closure, and perform a silent completion pass that never inserts analysis into the draft.
+
+### Metadata
+- Source: user_feedback
+- Related Files: src/contextEngine/chapterPrompt.ts, src/contextEngine/index.ts, src/components/Editor.tsx
+- Tags: chapter-generation, outline, completion, word-count
+- Pattern-Key: frontend.chapter-generation-priority
+- Recurrence-Count: 1
+- First-Seen: 2026-07-21
+- Last-Seen: 2026-07-21
+
+### Resolution
+- **Resolved**: 2026-07-21T00:00:00+08:00
+- **Notes**: Implemented the shared prompt and completion pass with non-numbered-outline handling.
 
 ---

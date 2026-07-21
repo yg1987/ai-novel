@@ -22,11 +22,13 @@ import { buildChapterRef, getNotesForChapter, loadAllNotes, type NoteEntry } fro
 import { copyChapterForPlatform } from '../services/exportService'
 import { PLATFORM_LABELS, type PublishPlatform } from '../utils/formatAdapter'
 import { showToast } from '../utils/toast'
+import type { ChapterSegmentSize } from '../hooks/useChapterSegmentSize'
 import PopupMenu from './PopupMenu'
 import Editor, { type EditorHandle } from './Editor'
 import ConfirmDialog from './ConfirmDialog'
 import Button from './Button'
 import Modal from './Modal'
+import ChapterSegmentSizeSelect from './ChapterSegmentSizeSelect'
 import type { CurrentChapterRef, MaterialCategory, MaterialContextSelection, MaterialKindDefinition } from '../types/material'
 import './ChapterManager.css'
 
@@ -36,6 +38,8 @@ const MaterialSidebar = lazy(() => import('./MaterialSidebar'))
 interface Props {
   projectId: string
   projectName: string
+  segmentSize: ChapterSegmentSize
+  onSegmentSizeChange: (value: ChapterSegmentSize) => void
   onNavigateToReview?: (ref: ChapterRef) => void
   onNavigateToNotes?: (chapterRef: string, filter: string) => void
   initialChapterRef?: string | null
@@ -51,6 +55,8 @@ type CreateDialog = { kind: 'volume' } | { kind: 'chapter'; volume: string }
 export default function ChapterManager({
   projectId,
   projectName,
+  segmentSize,
+  onSegmentSizeChange,
   onNavigateToReview,
   onNavigateToNotes,
   initialChapterRef,
@@ -70,15 +76,12 @@ export default function ChapterManager({
   const [collapsedSegments, setCollapsedSegments] = useState<Record<string, boolean>>({})
   const [chapterQuery, setChapterQuery] = useState('')
   const [jumpVolume, setJumpVolume] = useState('')
-  const [segmentSize, setSegmentSize] = useState<25 | 50 | 100>(() => {
-    const stored = Number(window.localStorage.getItem(`chapter-segment-size:${projectId}`))
-    return stored === 25 || stored === 100 ? stored : 50
-  })
   const [chapterTitles, setChapterTitles] = useState<Record<ChapterKey, string>>({})
   const [volumeNames, setVolumeNames] = useState<Record<string, string>>({})
   const [editingVolumeName, setEditingVolumeName] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState(false)
-  const [chapterMenuKey, setChapterMenuKey] = useState<ChapterKey | null>(null)
+  const [notesMenuChapterKey, setNotesMenuChapterKey] = useState<ChapterKey | null>(null)
+  const [exportMenuChapterKey, setExportMenuChapterKey] = useState<ChapterKey | null>(null)
   const [allNotes, setAllNotes] = useState<NoteEntry[]>([])
   const [deleteConfirm, setDeleteConfirm] = useState<{ kind: 'chapter'; chapter: ChapterMeta } | { kind: 'volume'; volume: string } | null>(null)
   const [createDialog, setCreateDialog] = useState<CreateDialog | null>(null)
@@ -204,9 +207,8 @@ export default function ChapterManager({
     setCollapsedSegments((previous) => ({ ...previous, [`${chapter.volume}:${Math.floor((chapter.order - 1) / segmentSize)}`]: false }))
     window.setTimeout(() => document.querySelector<HTMLElement>(`[data-chapter-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'nearest' }), 0)
   }
-  const handleSegmentSizeChange = (value: 25 | 50 | 100) => {
-    setSegmentSize(value)
-    window.localStorage.setItem(`chapter-segment-size:${projectId}`, String(value))
+  const handleSegmentSizeChange = (value: ChapterSegmentSize) => {
+    onSegmentSizeChange(value)
     setCollapsedSegments({})
   }
 
@@ -215,7 +217,10 @@ export default function ChapterManager({
     return <div key={key} data-chapter-key={key} className={`chapter-item${key === activeChapterKey ? ' active' : ''}`}>
       <span className="chapter-item-title" onClick={() => handleClickChapter(chapter)}>{getChapterDisplay(chapter)}</span>
       <span className="chapter-item-actions">
-        <PopupMenu trigger={<Button variant="ghost" size="xs" onClick={(event) => { event.stopPropagation(); setChapterMenuKey(chapterMenuKey === key ? null : key) }} title="更多章节操作">⋮</Button>} items={buildChapterMenuItems(chapter)} open={chapterMenuKey === key} onClose={() => setChapterMenuKey(null)} />
+        <PopupMenu trigger={<Button variant="ghost" size="xs" onClick={(event) => { event.stopPropagation(); setNotesMenuChapterKey(notesMenuChapterKey === key ? null : key) }} title="章节备注">📝</Button>} items={buildNotesItems(chapter)} open={notesMenuChapterKey === key} onClose={() => setNotesMenuChapterKey(null)} />
+        <PopupMenu trigger={<Button variant="ghost" size="xs" onClick={(event) => { event.stopPropagation(); setExportMenuChapterKey(exportMenuChapterKey === key ? null : key) }} title="发布复制">📋</Button>} items={buildExportItems(chapter)} open={exportMenuChapterKey === key} onClose={() => setExportMenuChapterKey(null)} />
+        <Button variant="ghost" size="xs" onClick={(event) => { event.stopPropagation(); setShowVersionHistory((shown) => activeChapterKey === key ? !shown : true); setActiveChapterKey(key) }} title="版本历史">🕐</Button>
+        <Button variant="ghost" size="xs" className="btn-tiny-danger" onClick={(event) => { event.stopPropagation(); setDeleteConfirm({ kind: 'chapter', chapter }) }} title="删除正文">✕</Button>
       </span>
     </div>
   }
@@ -340,13 +345,6 @@ export default function ChapterManager({
     ]
   }
 
-  const buildChapterMenuItems = (chapter: ChapterMeta) => [
-    ...buildNotesItems(chapter),
-    ...buildExportItems(chapter).map((item) => ({ ...item, key: `export-${item.key}`, label: `📋 ${item.label}` })),
-    { key: 'history', label: '🕐 版本历史', onClick: () => { setActiveChapterKey(chapterRefKey(chapter)); setShowVersionHistory(true) } },
-    { key: 'delete', label: '✕ 删除正文', onClick: () => setDeleteConfirm({ kind: 'chapter', chapter }) },
-  ]
-
   const handleCaptureSelection = () => {
     const text = editorRef.current?.getSelectedText().trim() ?? ''
     if (!text) return
@@ -397,7 +395,7 @@ export default function ChapterManager({
               <option value="">跳转到章节…</option>
               {jumpVolume && chaptersByVolume.find((item) => item.volume === jumpVolume)?.chapters.map((chapter) => <option key={chapterRefKey(chapter)} value={chapterRefKey(chapter)}>{getChapterDisplay(chapter)}</option>)}
             </select>
-            <label className="chapter-segment-size">每段<select value={segmentSize} onChange={(event) => handleSegmentSizeChange(Number(event.target.value) as 25 | 50 | 100)} aria-label="章节段大小"><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label>
+            <ChapterSegmentSizeSelect value={segmentSize} onChange={handleSegmentSizeChange} />
           </div>
         </div>
         <div className="chapter-list">

@@ -66,16 +66,7 @@
 
 .chapter-navigation-controls select { margin-top: 0; }
 
-.chapter-segment-size {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--text-muted);
-  font-size: 0.74rem;
-}
-
-.chapter-segment-size select { width: auto; flex: 1; }
+.chapter-navigation-controls .chapter-segment-size select { width: auto; }
 
 .chapter-new-volume-btn {
   width: 100%;

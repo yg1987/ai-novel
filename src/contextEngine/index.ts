@@ -1,7 +1,7 @@
 import { getChapterOutline, getChapterContent, readProjectFile, listChapters } from '../api/tauri'
 import { DataSourceRegistry } from './dataSource'
 import { cognitionDS, foreshadowDS, styleDS, recentSummaryDS, notesDS, materialDS } from './sources'
-import { estimateTokens, truncateToBudget, getDefaultSystemPrompt } from './budget'
+import { applyChapterPromptTemplate, estimateTokens, truncateToBudget, getDefaultSystemPrompt } from './budget'
 import type { ContextLoadContext } from './dataSource'
 import type { MaterialContextSelection } from '../types/material'
 
@@ -48,6 +48,7 @@ export async function buildContext(
   chapterId: string,
   targetWords: number,
   materialSelections: MaterialContextSelection[] = [],
+  promptTemplate: string = getDefaultSystemPrompt(),
 ): Promise<ContextPack> {
   const chapters = await listChapters(projectId)
   const chapterNumber = chapters.find(c => c.id === chapterId)?.order ?? 0
@@ -55,7 +56,7 @@ export async function buildContext(
   const ctx: ContextLoadContext = { projectId, volume, chapterId, chapterNumber, targetWords, materialSelections: fittedMaterials }
 
   // 1. Load outline. If empty, fall back to project metadata
-  const outline = await getChapterOutline(projectId, chapterId)
+  const outline = await getChapterOutline(projectId, volume, chapterId)
   let chapterGuide = outline
   if (!chapterGuide) {
     try {
@@ -85,19 +86,10 @@ export async function buildContext(
   const loaded = await registry.loadAll(ctx)
   const assembled = registry.assemble(loaded)
 
-  // 3. Keep only the top outline/ending + as many sources as fit budget
-  const promptBase = getDefaultSystemPrompt()
-  let promptBudget = MAX_PROMPT_TOKENS - estimateTokens(promptBase)
-
-  // Outline / project context gets 25% of budget
-  const guideTokens = estimateTokens(chapterGuide)
-  const guideActual = Math.min(guideTokens, Math.floor(promptBudget * 0.25))
-  promptBudget -= guideActual
-
-  // Previous ending gets 10%
-  const endingTokens = estimateTokens(previousEnding)
-  const endingActual = Math.min(endingTokens, Math.floor(promptBudget * 0.15))
-  promptBudget -= endingActual
+  // 3. Render the selected prompt before allocating the remaining context.
+  // This makes the editable default exactly the prompt used at runtime.
+  const promptBase = applyChapterPromptTemplate(promptTemplate, chapterGuide, targetWords, previousEnding)
+  const promptBudget = Math.max(0, MAX_PROMPT_TOKENS - estimateTokens(promptBase))
 
   // Remaining budget for sources (dropped lowest priority first)
   const fitted = truncateToBudget(assembled, Math.max(0, promptBudget))
@@ -105,22 +97,9 @@ export async function buildContext(
   // 4. Assemble final prompt
   const sections: string[] = [promptBase]
 
-  if (chapterGuide) {
-    if (outline) {
-      sections.push('', '## 本章大纲', '', chapterGuide)
-    } else {
-      sections.push('', '## 项目背景', chapterGuide)
-    }
-  }
-  if (previousEnding) sections.push('', '## 上一章结尾', previousEnding)
-
   for (const src of fitted) {
     sections.push('', `## ${src.name}`, src.content)
   }
-
-  sections.push('', `## 篇幅要求
-
-本章总计约 ${String(targetWords)} 字。`)
 
   return {
     systemPrompt: sections.join('\n'),

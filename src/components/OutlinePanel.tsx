@@ -24,6 +24,7 @@ import { loadChapterExpectedWords, loadSettings, saveChapterExpectedWords } from
 import type { TextareaSelection } from '../services/rewriteUtils'
 import { applyTextareaRewrite, getTextareaSelection } from '../services/rewriteUtils'
 import type { RewriteMode } from '../services/rewriteService'
+import type { ChapterSegmentSize } from '../hooks/useChapterSegmentSize'
 import type { ContextMenuAction } from './SelectionContextMenu'
 import ConfirmDialog from './ConfirmDialog'
 import Modal from './Modal'
@@ -32,6 +33,8 @@ import OutlineEditor from './outline-panel/OutlineEditor'
 
 interface Props {
   projectId: string
+  segmentSize: ChapterSegmentSize
+  onSegmentSizeChange: (value: ChapterSegmentSize) => void
   onNavigateToWriting: (chapterRef: string) => void
 }
 
@@ -66,7 +69,7 @@ function defaultPrompt(type: OutlineSelection['type'], label: string): string {
   return `你是网文大纲助手。为「${label}」生成 3 到 5 个章节情节点，写清发生什么、类型和字数预算。`
 }
 
-export default function OutlinePanel({ projectId, onNavigateToWriting }: Props) {
+export default function OutlinePanel({ projectId, segmentSize, onSegmentSizeChange, onNavigateToWriting }: Props) {
   const [volumes, setVolumes] = useState<OutlineVolumeItem[]>([])
   const [selection, setSelection] = useState<OutlineSelection>({ type: 'outline' })
   const [content, setContent] = useState('')
@@ -267,7 +270,7 @@ export default function OutlinePanel({ projectId, onNavigateToWriting }: Props) 
     : ''
 
   return <div className="panel-layout">
-    <OutlineSidebar volumes={volumes} activeSelection={activeKey} onOpen={open} onCreateVolume={() => { void createVolume() }} onCreateVolumeOutline={(volume) => { void createVolumeOutline(volume) }} onCreateChapter={(volume) => { void createChapter(volume) }} onCreateOutlineForChapter={(ref) => { void createOutlineForChapter(ref) }} onStartWriting={(ref) => { setStartTarget(ref); setVolumeName(''); setChapterName(''); setActionError(null) }} onDeleteVolume={(volume) => setDeleteTarget({ type: 'volume', volume })} onDeleteChapter={(ref) => setDeleteTarget({ type: 'chapter', ref })} />
+    <OutlineSidebar volumes={volumes} activeSelection={activeKey} segmentSize={segmentSize} onSegmentSizeChange={onSegmentSizeChange} onOpen={open} onCreateVolume={() => { void createVolume() }} onCreateVolumeOutline={(volume) => { void createVolumeOutline(volume) }} onCreateChapter={(volume) => { void createChapter(volume) }} onCreateOutlineForChapter={(ref) => { void createOutlineForChapter(ref) }} onStartWriting={(ref) => { setStartTarget(ref); setVolumeName(''); setChapterName(''); setActionError(null) }} onDeleteVolume={(volume) => setDeleteTarget({ type: 'volume', volume })} onDeleteChapter={(ref) => setDeleteTarget({ type: 'chapter', ref })} />
     <OutlineEditor activeFile={activeFile.label} activeType={selection.type} content={content} editing={editing} dirty={dirty} generatingAi={generatingAi} aiError={aiError} showPrompt={showPrompt} editingPrompt={editingPrompt} savingPrompt={savingPrompt} showExample={showExample} expectedWords={expectedWords} activeChapterRef={activeRef} example={EXAMPLES[selection.type]} textareaRef={textareaRef} onContentChange={(value) => { setContent(value); setDirty(true) }} onEdit={() => setEditing(true)} onSave={() => { void save().catch((error: unknown) => setActionError(error instanceof Error ? error.message : String(error))) }} onAIGenerate={() => { void aiGenerate() }} onTogglePrompt={() => { if (!showPrompt && !editingPrompt.trim()) setEditingPrompt(defaultPrompt(selection.type, activeFile.label)); setShowPrompt(!showPrompt) }} onPromptChange={setEditingPrompt} onResetPrompt={() => { setSavingPrompt(true); void resetPrompt(projectId, promptKey).then(() => { setEditingPrompt(''); setShowPrompt(false) }).catch(console.error).finally(() => setSavingPrompt(false)) }} onSavePrompt={() => { setSavingPrompt(true); void savePrompt(projectId, promptKey, editingPrompt).catch(console.error).finally(() => setSavingPrompt(false)) }} onToggleExample={() => setShowExample(!showExample)} onExpectedWordsChange={(value) => { setExpectedWords(value); if (expectedWordsTimer.current) clearTimeout(expectedWordsTimer.current); if (activeRef && value != null) expectedWordsTimer.current = setTimeout(() => { void saveChapterExpectedWords(projectId, activeRef, value).catch(console.error) }, 800) }} onExpectedWordsCommit={(value) => { if (expectedWordsTimer.current) clearTimeout(expectedWordsTimer.current); if (activeRef) void saveChapterExpectedWords(projectId, activeRef, value).catch(console.error) }} onSelectionCheck={() => { const target = textareaRef.current; if (target) setHasSelection(target.selectionStart !== target.selectionEnd) }} onSelectionContextMenu={(event) => { const target = event.currentTarget; if (target.selectionStart !== target.selectionEnd) { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY }) } }} rewriteState={rewriteState} hasSelection={hasSelection} onRewrite={(mode) => { const value = getTextareaSelection(textareaRef.current, content); if (value) setRewriteState({ ...value, mode }) }} onRewriteAccept={(text) => { if (!rewriteState) return; setContent((value) => applyTextareaRewrite(value, rewriteState.start, rewriteState.end, text)); setDirty(true); setRewriteState(null) }} onRewriteReject={() => setRewriteState(null)} contextMenu={contextMenu} onContextMenuClose={() => setContextMenu(null)} menuItems={menuItems} />
     {actionError && <div className="error-bar">{actionError}</div>}
     {deleteTarget && <ConfirmDialog title={deleteTarget.type === 'volume' ? '删除分卷纲' : '删除章节细纲'} message={deleteMessage} confirmText="删除细纲" danger onConfirm={() => { void confirmDelete() }} onCancel={() => setDeleteTarget(null)} />}

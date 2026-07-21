@@ -1,5 +1,8 @@
 // src/contextEngine/budget.ts
 import type { DataSourceResult } from './dataSource'
+import { DEFAULT_CHAPTER_PROMPT } from './chapterPrompt'
+
+export { DEFAULT_CHAPTER_PROMPT, applyChapterPromptTemplate } from './chapterPrompt'
 
 /** CJK-aware token estimation */
 export function estimateTokens(text: string): number {
@@ -46,15 +49,6 @@ export function truncateToBudget(
   return kept
 }
 
-const DEFAULT_SYSTEM_PROMPT = `重要：不要输出章节标题，章节标题已由系统单独设置。
-
-你是一位优秀的网络小说作家。请续写小说正文。
-
-## 格式要求
-- 只输出小说正文，不要添加解释、注释或元描述
-- 段首空两格，段落自然换行即可
-- 输出纯文本，禁止使用 markdown 语法（# ## ** * > - 等）`
-
 export function getDefaultSystemPrompt(): string {
-  return DEFAULT_SYSTEM_PROMPT
+  return DEFAULT_CHAPTER_PROMPT
 }

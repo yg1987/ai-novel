@@ -3,6 +3,7 @@ import type { ProjectMeta } from '../types/project'
 import type { ChapterRef } from '../types/chapter'
 import type { CurrentChapterRef, MaterialContextSelection } from '../types/material'
 import type { BrainstormForeshadowDraft } from '../types/brainstorm'
+import { useChapterSegmentSize } from '../hooks/useChapterSegmentSize'
 import ExportDialog from './ExportDialog'
 import ArchiveDialog from './ArchiveDialog'
 import Button from './Button'
@@ -31,6 +32,7 @@ type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'fores
 
 export default function ProjectView({ project, onBack }: Props) {
   const [tab, setTab] = useState<Tab>('writing')
+  const [chapterSegmentSize, setChapterSegmentSize] = useChapterSegmentSize(project.id)
   const [showExport, setShowExport] = useState(false)
   const [showArchive, setShowArchive] = useState(false)
   const [reviewChapterRef, setReviewChapterRef] = useState<ChapterRef | null>(null)
@@ -112,13 +114,13 @@ export default function ProjectView({ project, onBack }: Props) {
   const renderTabContent = () => {
     switch (tab) {
       case 'writing':
-        return <ChapterManager projectId={project.id} projectName={project.name} onNavigateToReview={handleNavigateToReview} onNavigateToNotes={handleNavigateToNotes} initialChapterRef={navigateChapterRef} onChapterSelect={handleChapterSelect} currentChapter={currentChapter} materialContextSelections={materialContextSelections} onMaterialContextChange={setMaterialContextSelections} onOpenMaterial={(materialId) => { setNavigateMaterialId(materialId); setTab('resource') }} />
+        return <ChapterManager projectId={project.id} projectName={project.name} segmentSize={chapterSegmentSize} onSegmentSizeChange={setChapterSegmentSize} onNavigateToReview={handleNavigateToReview} onNavigateToNotes={handleNavigateToNotes} initialChapterRef={navigateChapterRef} onChapterSelect={handleChapterSelect} currentChapter={currentChapter} materialContextSelections={materialContextSelections} onMaterialContextChange={setMaterialContextSelections} onOpenMaterial={(materialId) => { setNavigateMaterialId(materialId); setTab('resource') }} />
       case 'characters':
         return <CharacterPanel projectId={project.id} initialCharacter={navigateCharacter} />
       case 'worldview':
         return <WorldviewPanel projectId={project.id} />
       case 'outline':
-        return <OutlinePanel projectId={project.id} onNavigateToWriting={(ref) => { setNavigateChapterRef(ref); setTab('writing') }} />
+        return <OutlinePanel projectId={project.id} segmentSize={chapterSegmentSize} onSegmentSizeChange={setChapterSegmentSize} onNavigateToWriting={(ref) => { setNavigateChapterRef(ref); setTab('writing') }} />
       case 'notes':
         return <NotesPanel projectId={project.id} onNavigateToChapter={handleNavigateToChapter} initialChapterRef={navigateNotesChapterRef} initialFilter={navigateNotesFilter} onHighlightComplete={() => { setNavigateNotesChapterRef(null); setNavigateNotesFilter(null) }} />
       case 'foreshadow':
@@ -128,7 +130,7 @@ export default function ProjectView({ project, onBack }: Props) {
       case 'stats':
         return <StatisticsPanel projectId={project.id} targetWords={project.target_words} />
       case 'review':
-        return <ReviewPanel projectId={project.id} currentChapterRef={reviewChapterRef} onNavigateToForeshadow={handleNavigateToForeshadow} />
+        return <ReviewPanel projectId={project.id} segmentSize={chapterSegmentSize} onSegmentSizeChange={setChapterSegmentSize} currentChapterRef={reviewChapterRef} onNavigateToForeshadow={handleNavigateToForeshadow} />
       case 'resource':
         return <ResourcePanel projectId={project.id} initialMaterialId={navigateMaterialId} onMaterialOpened={() => { setNavigateMaterialId(null) }} currentChapter={currentChapter} materialContextSelections={materialContextSelections} onMaterialContextChange={setMaterialContextSelections} />
       case 'brainstorm':

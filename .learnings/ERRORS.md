@@ -4,6 +4,42 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260721-002] request_user_input
+
+**Logged**: 2026-07-21T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: config
+
+### Summary
+Attempted to call a Plan-mode-only user-input tool while operating in Default mode.
+
+### Error
+```text
+request_user_input is unavailable in Default mode
+```
+
+### Context
+- The call was accidental during implementation planning.
+- No user input, file, or application state was changed.
+
+### Suggested Fix
+Check the active collaboration mode before invoking mode-specific tools; use a normal final clarification only when necessary in Default mode.
+
+### Metadata
+- Reproducible: yes
+- Related Files: AGENTS.md
+- Pattern-Key: config.mode-specific-tool
+- Recurrence-Count: 3
+- First-Seen: 2026-07-21
+- Last-Seen: 2026-07-21
+
+### Resolution
+- **Resolved**: 2026-07-21T00:00:00+08:00
+- **Notes**: Recorded the mode constraint and resumed without the unavailable tool.
+
+---
+
 ## [ERR-20260721-001] npm_test
 
 **Logged**: 2026-07-21T12:14:00+08:00
@@ -103,13 +139,13 @@ Run probes that may legitimately return no matches in isolated commands, then ru
 - Reproducible: yes
 - Related Files: doc/审查模块改进计划.md
 - Pattern-Key: shell.optional-probe-batch
-- Recurrence-Count: 1
+- Recurrence-Count: 2
 - First-Seen: 2026-07-20
-- Last-Seen: 2026-07-20
+- Last-Seen: 2026-07-21
 
 ### Resolution
 - **Resolved**: 2026-07-20T00:00:00+08:00
-- **Notes**: Isolated the optional search and reran the required checks separately. Recurrence on 2026-07-21 was caused by batching a mistyped optional path with required file-size and Git checks; subsequent path probes are isolated.
+- **Notes**: Isolated the optional search and reran the required checks separately. Recurrences on 2026-07-21 included batching a mistyped optional path and a non-expanded wildcard path with required reads; subsequent path probes are isolated.
 
 ---
 
@@ -671,13 +707,13 @@ Pass the `cmd.exe /c` body as a PowerShell single-quoted string when unsetting `
 - Reproducible: yes
 - Related Files: .learnings/ERRORS.md
 - Pattern-Key: shell.quoting-error
-- Recurrence-Count: 1
+- Recurrence-Count: 2
 - First-Seen: 2026-07-17
-- Last-Seen: 2026-07-17
+- Last-Seen: 2026-07-21
 
 ### Resolution
 - **Resolved**: 2026-07-17T17:15:08+08:00
-- **Notes**: Retried with a correctly quoted child-shell command.
+- **Notes**: Retried with a correctly quoted child-shell command. Recurrence on 2026-07-21 was caused by escaped quotes in a PowerShell `rg` pattern; use a single-quoted pattern when no interpolation is required.
 
 ---
 
@@ -1003,5 +1039,76 @@ For broad documentation edits, verify each target block immediately before patch
 ### Resolution
 - **Resolved**: 2026-07-21T00:00:00+08:00
 - **Notes**: Re-read the exact target range and applied the changes in smaller verified patches.
+
+---
+
+## [ERR-20260721-002] cargo-check
+
+**Logged**: 2026-07-21T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+Rust validation was initially invoked from the repository root instead of the Tauri crate directory.
+
+### Error
+```text
+error: could not find `Cargo.toml` in `D:\opencode_work\ai_novel` or any parent directory
+```
+
+### Context
+- Command: `cargo check` from the workspace root.
+- The Rust crate is located at `src-tauri/`.
+
+### Suggested Fix
+Run Rust build commands with `src-tauri` as the working directory.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src-tauri/Cargo.toml
+- Pattern-Key: build.wrong-workdir
+- Recurrence-Count: 1
+- First-Seen: 2026-07-21
+- Last-Seen: 2026-07-21
+
+### Resolution
+- **Resolved**: 2026-07-21T00:00:00+08:00
+- **Notes**: Re-ran `cargo check` in `src-tauri`; it passed.
+
+---
+
+## [ERR-20260721-003] cargo-fmt
+
+**Logged**: 2026-07-21T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: backend
+
+### Summary
+The Rust formatter found a newly added method chain that did not match the repository's formatting style.
+
+### Error
+```text
+Diff in src-tauri/src/lib.rs: project.join("outline").join("细纲")
+```
+
+### Context
+- Detected by `cargo fmt --check` after adding volume-aware outline lookup.
+
+### Suggested Fix
+Run Rust formatting checks after editing Tauri commands and apply the formatter's minimal output.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src-tauri/src/lib.rs
+- Pattern-Key: build.rust-format
+- Recurrence-Count: 1
+- First-Seen: 2026-07-21
+- Last-Seen: 2026-07-21
+
+### Resolution
+- **Resolved**: 2026-07-21T00:00:00+08:00
+- **Notes**: Applied the single-line formatter output and rechecked.
 
 ---

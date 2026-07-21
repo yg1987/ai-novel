@@ -79,8 +79,8 @@ export async function saveProviderConfig(config: ProviderConfig): Promise<null> 
   return invoke<null>('save_provider_config', { config })
 }
 
-export async function getChapterOutline(projectId: string, chapterId: string): Promise<string> {
-  return invoke<string>('get_chapter_outline', { projectId, chapterId })
+export async function getChapterOutline(projectId: string, volume: string, chapterId: string): Promise<string> {
+  return invoke<string>('get_chapter_outline', { projectId, volume, chapterId })
 }
 
 export interface FileEntry {

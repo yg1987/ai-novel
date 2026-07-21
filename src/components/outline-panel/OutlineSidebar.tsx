@@ -3,8 +3,8 @@ import Button from '../Button'
 import type { ChapterRef } from '../../types/chapter'
 import { chapterRefKey } from '../../services/chapterDisplay'
 import { chapterOrder } from '../../services/chapterCatalog'
-
-const SEGMENT_SIZE = 50
+import type { ChapterSegmentSize } from '../../hooks/useChapterSegmentSize'
+import ChapterSegmentSizeSelect from '../ChapterSegmentSizeSelect'
 
 export interface OutlineChapterItem {
   ref: ChapterRef
@@ -28,6 +28,8 @@ type StatusFilter = 'all' | 'outline-only' | 'writing-only'
 interface Props {
   volumes: OutlineVolumeItem[]
   activeSelection: string | null
+  segmentSize: ChapterSegmentSize
+  onSegmentSizeChange: (value: ChapterSegmentSize) => void
   onOpen: (selection: OutlineOpenSelection) => void
   onCreateVolume: () => void
   onCreateVolumeOutline: (volume: string) => void
@@ -45,6 +47,8 @@ function stateLabel(chapter: OutlineChapterItem): string {
 export default function OutlineSidebar({
   volumes,
   activeSelection,
+  segmentSize,
+  onSegmentSizeChange,
   onOpen,
   onCreateVolume,
   onCreateVolumeOutline,
@@ -83,8 +87,13 @@ export default function OutlineSidebar({
 
   const openChapter = (chapter: OutlineChapterItem) => {
     setCollapsed((previous) => ({ ...previous, [chapter.ref.volume]: false }))
-    setCollapsedSegments((previous) => ({ ...previous, [`${chapter.ref.volume}:${Math.floor((chapterOrder(chapter.ref.chapterId) - 1) / SEGMENT_SIZE)}`]: false }))
+    setCollapsedSegments((previous) => ({ ...previous, [`${chapter.ref.volume}:${Math.floor((chapterOrder(chapter.ref.chapterId) - 1) / segmentSize)}`]: false }))
     if (chapter.hasOutline) onOpen({ type: 'chapter', ref: chapter.ref })
+  }
+
+  const handleSegmentSizeChange = (value: ChapterSegmentSize) => {
+    onSegmentSizeChange(value)
+    setCollapsedSegments({})
   }
 
   return <div className="panel-sidebar">
@@ -97,6 +106,7 @@ export default function OutlineSidebar({
         const target = volumes.find((item) => item.volume === jumpVolume)?.chapters.find((chapter) => chapterRefKey(chapter.ref) === event.target.value)
         if (target) openChapter(target)
       }} aria-label="选择章节"><option value="">跳转到章节…</option>{jumpVolume && volumes.find((item) => item.volume === jumpVolume)?.chapters.map((chapter) => <option key={chapterRefKey(chapter.ref)} value={chapterRefKey(chapter.ref)}>第{chapterOrder(chapter.ref.chapterId)}章</option>)}</select>
+      <ChapterSegmentSizeSelect value={segmentSize} onChange={handleSegmentSizeChange} />
     </div>
     <div className="panel-list">
       <button className={`panel-item${activeSelection === 'outline' ? ' active' : ''}`} onClick={() => onOpen({ type: 'outline' })}>📋 总纲</button>
@@ -104,9 +114,9 @@ export default function OutlineSidebar({
         const volumeSelection = `volume:${item.volume}`
         const activeInVolume = activeSelection === volumeSelection || activeChapterKey?.startsWith(`${item.volume}:`)
         const isCollapsed = normalizedQuery || statusFilter !== 'all' ? false : (collapsed[item.volume] ?? !activeInVolume)
-        const segments = Array.from({ length: Math.ceil(item.chapters.length / SEGMENT_SIZE) }, (_, index) => ({
+        const segments = Array.from({ length: Math.ceil(item.chapters.length / segmentSize) }, (_, index) => ({
           key: `${item.volume}:${index}`,
-          chapters: item.chapters.slice(index * SEGMENT_SIZE, (index + 1) * SEGMENT_SIZE),
+          chapters: item.chapters.slice(index * segmentSize, (index + 1) * segmentSize),
         }))
         return <div key={item.volume}>
           <div className={`panel-item${activeSelection === volumeSelection ? ' active' : ''}`}>
@@ -117,7 +127,7 @@ export default function OutlineSidebar({
             <Button variant="ghost" size="xs" onClick={() => onCreateChapter(item.volume)} title="添加章节细纲">＋章</Button>
             {item.hasVolumeOutline && <Button variant="danger" size="xs" onClick={() => onDeleteVolume(item.volume)} title="删除分卷纲">✕</Button>}
           </div>
-          {!isCollapsed && (item.chapters.length <= SEGMENT_SIZE ? item.chapters.map((chapter) => <OutlineChapterRow key={chapterRefKey(chapter.ref)} chapter={chapter} active={activeChapterKey === chapterRefKey(chapter.ref)} onOpen={openChapter} onCreateOutline={onCreateOutlineForChapter} onStartWriting={onStartWriting} onDelete={onDeleteChapter} />) : segments.map((segment) => {
+          {!isCollapsed && (item.chapters.length <= segmentSize ? item.chapters.map((chapter) => <OutlineChapterRow key={chapterRefKey(chapter.ref)} chapter={chapter} active={activeChapterKey === chapterRefKey(chapter.ref)} onOpen={openChapter} onCreateOutline={onCreateOutlineForChapter} onStartWriting={onStartWriting} onDelete={onDeleteChapter} />) : segments.map((segment) => {
             const containsActive = segment.chapters.some((chapter) => chapterRefKey(chapter.ref) === activeChapterKey)
             const segmentCollapsed = normalizedQuery || statusFilter !== 'all' ? false : (collapsedSegments[segment.key] ?? !containsActive)
             const first = chapterOrder(segment.chapters[0]?.ref.chapterId ?? '')

@@ -195,7 +195,7 @@ async function readChapterSections(
   if (isEnabled(request, 'outline')) {
     for (const chapter of outlineRelevant) {
       try {
-        const outline = (await getChapterOutline(request.projectId, chapter.id)).trim()
+        const outline = (await getChapterOutline(request.projectId, chapter.volume, chapter.id)).trim()
         if (!outline) continue
         const label = chapterContextLabel(chapter, metadata)
         sections.push({ source: 'outline', entityIds: [chapterRefKey(chapter)], labels: [label], text: `## ${label}大纲\n${outline}`, priority: 1 })

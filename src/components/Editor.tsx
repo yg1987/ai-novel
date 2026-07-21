@@ -4,6 +4,11 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { saveChapterContent, getChapterContent } from '../api/tauri'
 import { buildContext } from '../contextEngine'
+import {
+  buildChapterCompletionReviewMessage,
+  CHAPTER_COMPLETION_MARKER,
+  DEFAULT_CHAPTER_PROMPT as DEFAULT_PROMPT,
+} from '../contextEngine/chapterPrompt'
 import { generateChapter, stopGeneration } from '../services/aiProvider'
 import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
 import { estimateWordCount } from '../utils/cjkCount'
@@ -25,35 +30,6 @@ import SelectionContextMenu, { type ContextMenuAction } from './SelectionContext
 import type { MaterialContextSelection } from '../types/material'
 
 const PROMPT_KEY = 'chapter_generate'
-
-/** Default prompt template — {outline}, {word_count}, {previous_ending} are replaced at generation time */
-const DEFAULT_PROMPT = `重要：不要输出章节标题！
-
-你是一位网文作家。请根据大纲续写小说正文。
-
-## 本章大纲（必须严格按编号顺序执行）
-{outline}
-
-【硬性要求 — 违反则不合格】
-1. 严格按大纲编号顺序逐条推进，禁止跳序、重排或遗漏任何条目
-2. 字数：至少 {word_count} 字，至多 {word_count_high} 字。在此范围内写完所有条目并自然收尾
-3. 结尾必须是完整的句子和完整的场景，不能断在半句话或半场戏中
-{previous_ending_section}
-
-【格式】
-输出纯文本正文（无标题），段首空两格，段落自然换行`
-
-/** Replace variables in the prompt template. Removes {previous_ending_section} if no previous ending. */
-function applyPromptTemplate(template: string, outline: string, wordCount: number, previousEnding: string): string {
-  return template
-    .replace(/\{outline\}/g, outline || '（无大纲）')
-    .replace(/\{word_count_high\}/g, String(Math.ceil(wordCount * 1.15)))
-    .replace(/\{word_count\}/g, String(wordCount))
-    .replace(/\{previous_ending\}/g, previousEnding || '（无）')
-    .replace(/\{previous_ending_section\}/g, previousEnding
-      ? '\n【前文结尾】\n{previous_ending}'.replace(/\{previous_ending\}/g, previousEnding)
-      : '')
-}
 
 interface Props {
   projectId: string
@@ -237,18 +213,27 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
     stopRequestedRef.current = false
     editor.commands.focus()
     try {
-      const ctx = await buildContext(projectId, volume, chapterId, effectiveWordCount, materialContextSelections)
+      const ctx = await buildContext(
+        projectId,
+        volume,
+        chapterId,
+        effectiveWordCount,
+        materialContextSelections,
+        editingPrompt || DEFAULT_PROMPT,
+      )
       const { from } = editor.state.selection
       editor.commands.insertContentAt(from, '<p></p>')
 
-      // Use custom prompt if user saved one; otherwise use the auto-generated prompt
-      const hasCustom = editingPrompt !== DEFAULT_PROMPT
-      const systemPrompt = hasCustom
-        ? applyPromptTemplate(editingPrompt, ctx.outlineContent, ctx.wordBudget, ctx.previousEnding)
-        : ctx.systemPrompt
+      let generatedText = ''
+      let generationFailed = false
+      const flushParagraphBuffer = () => {
+        if (paragraphBuf.current.trim()) editor.commands.insertContent('<p>' + paragraphBuf.current.trim() + '</p>')
+        paragraphBuf.current = ''
+      }
 
-      await generateChapter(systemPrompt, {
+      await generateChapter(ctx.systemPrompt, {
         onToken: (text) => {
+          generatedText += text
           paragraphBuf.current += text
           let idx: number
           while ((idx = paragraphBuf.current.indexOf('\n\n')) !== -1) {
@@ -258,16 +243,40 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
           }
         },
         onDone: () => {
-          if (paragraphBuf.current.trim()) editor.commands.insertContent('<p>' + paragraphBuf.current.trim() + '</p>')
-          paragraphBuf.current = ''
-          stripMarkdownHeadings()
-          setGenerating(false)
-          setGenerationComplete(true)
-          const elapsed = Date.now() - generateStartTime.current
-          logAIGenerated(projectId, chapterNumber, elapsed)
+          flushParagraphBuffer()
         },
-        onError: (err) => { console.error(err); setGenerating(false); paragraphBuf.current = '' },
+        onError: (err) => { console.error(err); generationFailed = true; paragraphBuf.current = '' },
       }, ctx.maxTokens)
+
+      if (!generationFailed && !stopRequestedRef.current) {
+        const generatedWords = estimateWordCount(generatedText)
+        let completionReview = ''
+        let reviewFailed = false
+        const remainingHardLimit = Math.max(600, effectiveWordCount + 600 - generatedWords)
+        await generateChapter(ctx.systemPrompt, {
+          onToken: (text) => { completionReview += text },
+          onDone: () => {},
+          onError: (err) => { console.error(err); reviewFailed = true },
+        }, Math.ceil(remainingHardLimit * 1.5), buildChapterCompletionReviewMessage(
+          generatedText,
+          generatedWords,
+          effectiveWordCount,
+        ))
+
+        const reviewedText = completionReview.trim()
+        if (!reviewFailed && !stopRequestedRef.current && reviewedText && !reviewedText.startsWith(CHAPTER_COMPLETION_MARKER)) {
+          paragraphBuf.current = reviewedText
+          flushParagraphBuffer()
+        }
+      }
+
+      if (!stopRequestedRef.current) {
+        stripMarkdownHeadings()
+        setGenerationComplete(true)
+        const elapsed = Date.now() - generateStartTime.current
+        logAIGenerated(projectId, chapterNumber, elapsed)
+      }
+      setGenerating(false)
       if (ctx.materialSelections.length > 0) onMaterialContextUsed?.(ctx.materialSelections)
     } catch (e) {
       console.error('Generation failed:', e)
@@ -502,7 +511,7 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
       {showPrompt && (
         <div className="prompt-editor">
           <div className="prompt-editor-header">
-            <span>AI 生成提示词（修改后点击保存，AI 将使用你的提示词。{'{outline}'}、{'{word_count}'}、{'{previous_ending}'} 会被自动替换为实际内容）</span>
+            <span>AI 生成提示词（修改后点击保存，AI 将使用你的提示词。{'{outline}'}、{'{word_count}'}、{'{word_count_high}'}、{'{word_count_hard_max}'}、{'{previous_ending}'} 会被自动替换为实际内容）</span>
             <Button variant="text" size="sm" onClick={() => { void handleResetPrompt() }}>恢复默认</Button>
           </div>
           <textarea

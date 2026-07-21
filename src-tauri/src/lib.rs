@@ -380,11 +380,26 @@ fn commit_chapter_version(
 fn get_chapter_outline(
     app_handle: tauri::AppHandle,
     project_id: String,
+    volume: String,
     chapter_id: String,
 ) -> Result<String, String> {
-    let dir = project_dir(&app_handle, &project_id)?
+    let project = project_dir(&app_handle, &project_id)?;
+
+    // Current outline storage keeps chapters under their volume. Prefer this
+    // path so generating a chapter receives the same detail outline shown in
+    // the outline tab.
+    let current_path = project
         .join("outline")
-        .join("细纲");
+        .join("chapters")
+        .join(&volume)
+        .join(format!("{chapter_id}.md"));
+    if current_path.exists() {
+        return fs::read_to_string(&current_path)
+            .map_err(|e| format!("Failed to read outline: {e}"));
+    }
+
+    // Compatibility for projects that still use the former flat directory.
+    let dir = project.join("outline").join("细纲");
 
     // 1. Try direct match: ch001.md
     let path = dir.join(format!("{chapter_id}.md"));

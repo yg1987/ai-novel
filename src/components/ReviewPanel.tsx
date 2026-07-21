@@ -8,14 +8,17 @@ import { runAndSaveLightCheck } from '../services/reviewLightService'
 import { loadChapterReviewDetails, loadChapterReviews, type ChapterReviewData } from '../services/reviewReportStorage'
 import { loadReviewRules } from '../services/reviewRules'
 import { chapterRefKey } from '../services/chapterDisplay'
+import type { ChapterSegmentSize } from '../hooks/useChapterSegmentSize'
 import Button from './Button'
+import ChapterSegmentSizeSelect from './ChapterSegmentSizeSelect'
 import './ReviewPanel.css'
 
 const ReviewRulesEditor = lazy(() => import('./ReviewRulesEditor'))
-const SEGMENT_SIZE = 50
 
 interface Props {
   projectId: string
+  segmentSize: ChapterSegmentSize
+  onSegmentSizeChange: (value: ChapterSegmentSize) => void
   currentChapterRef: ChapterRef | null
   chapterHtml?: string
   onNavigateToForeshadow?: (id: string) => void
@@ -34,7 +37,7 @@ const issueDesc = (issue: AnyIssue) => isConsistencyIssue(issue) ? issue.descrip
 const issueSuggestion = (issue: AnyIssue) => isConsistencyIssue(issue) ? issue.suggestion : issue.suggestion
 const severityColor = (severity: string) => severity === 'error' || severity === 'S1' || severity === 'S2' ? '#e74c3c' : severity === 'warning' || severity === 'S3' ? '#e67e22' : '#888'
 
-export default function ReviewPanel({ projectId, currentChapterRef, chapterHtml = '', onNavigateToForeshadow }: Props) {
+export default function ReviewPanel({ projectId, segmentSize, onSegmentSizeChange, currentChapterRef, chapterHtml = '', onNavigateToForeshadow }: Props) {
   const [chapters, setChapters] = useState<ChapterReviewData[]>([])
   const [expandedKey, setExpandedKey] = useState<ChapterKey | null>(null)
   const [runningReview, setRunningReview] = useState(false)
@@ -62,10 +65,10 @@ export default function ReviewPanel({ projectId, currentChapterRef, chapterHtml 
       const key = chapterRefKey(currentChapterRef)
       setExpandedKey(key)
       setCollapsedVolumes((previous) => ({ ...previous, [currentChapterRef.volume]: false }))
-      setCollapsedSegments((previous) => ({ ...previous, [`${currentChapterRef.volume}:${Math.floor((Number(currentChapterRef.chapterId.replace(/^ch/i, '')) - 1) / SEGMENT_SIZE)}`]: false }))
+      setCollapsedSegments((previous) => ({ ...previous, [`${currentChapterRef.volume}:${Math.floor((Number(currentChapterRef.chapterId.replace(/^ch/i, '')) - 1) / segmentSize)}`]: false }))
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [currentChapterRef])
+  }, [currentChapterRef, segmentSize])
 
   const activeChapter = chapters.find((chapter) => chapter.key === expandedKey) ?? null
   const selectChapter = async (chapter: ChapterReviewData) => {
@@ -73,7 +76,7 @@ export default function ReviewPanel({ projectId, currentChapterRef, chapterHtml 
     setExpandedKey(chapter.key)
     setConsistencyResult(null)
     setCollapsedVolumes((previous) => ({ ...previous, [chapter.ref.volume]: false }))
-    setCollapsedSegments((previous) => ({ ...previous, [`${chapter.ref.volume}:${Math.floor((chapter.chapterOrder - 1) / SEGMENT_SIZE)}`]: false }))
+    setCollapsedSegments((previous) => ({ ...previous, [`${chapter.ref.volume}:${Math.floor((chapter.chapterOrder - 1) / segmentSize)}`]: false }))
     if (!chapter.hasReports || chapter.lightCheck || chapter.deepReviews.length > 0) return
     setLoadingDetails(true)
     try {
@@ -141,15 +144,15 @@ export default function ReviewPanel({ projectId, currentChapterRef, chapterHtml 
       const reviewed = entries.filter((entry) => entry.hasReports).length
       rows.push({ kind: 'volume', volume, label: entries[0]?.volumeLabel ?? volume, total: entries.length, reviewed, collapsed })
       if (collapsed) continue
-      if (entries.length <= SEGMENT_SIZE) {
+      if (entries.length <= segmentSize) {
         rows.push(...entries.map((chapter) => ({ kind: 'chapter' as const, chapter })))
         continue
       }
-      for (let index = 0; index < entries.length; index += SEGMENT_SIZE) {
-        const segmentEntries = entries.slice(index, index + SEGMENT_SIZE)
+      for (let index = 0; index < entries.length; index += segmentSize) {
+        const segmentEntries = entries.slice(index, index + segmentSize)
         const startOrder = segmentEntries[0]?.chapterOrder ?? 0
         const endOrder = segmentEntries.at(-1)?.chapterOrder ?? 0
-        const key = `${volume}:${Math.floor((startOrder - 1) / SEGMENT_SIZE)}`
+        const key = `${volume}:${Math.floor((startOrder - 1) / segmentSize)}`
         const containsActive = segmentEntries.some((chapter) => chapter.key === expandedKey)
         const segmentCollapsed = normalizedQuery || filter !== 'all' ? false : (collapsedSegments[key] ?? !containsActive)
         rows.push({ kind: 'segment', volume, startOrder, endOrder, collapsed: segmentCollapsed })
@@ -157,7 +160,7 @@ export default function ReviewPanel({ projectId, currentChapterRef, chapterHtml 
       }
     }
     return rows
-  }, [chapters, collapsedSegments, collapsedVolumes, expandedKey, filter, normalizedQuery])
+  }, [chapters, collapsedSegments, collapsedVolumes, expandedKey, filter, normalizedQuery, segmentSize])
 
   // TanStack Virtual returns a mutable controller; it remains local to this fixed-row tree.
   // eslint-disable-next-line react-hooks/incompatible-library -- React Compiler cannot memoize TanStack's controller API.
@@ -180,10 +183,14 @@ export default function ReviewPanel({ projectId, currentChapterRef, chapterHtml 
 
   const noSelection = !activeChapter
   const reviewVolumes = [...new Map(chapters.map((chapter) => [chapter.ref.volume, chapter.volumeLabel])).entries()]
+  const handleSegmentSizeChange = (value: ChapterSegmentSize) => {
+    onSegmentSizeChange(value)
+    setCollapsedSegments({})
+  }
   return <div className="review-panel panel-layout">
     <div className="panel-sidebar review-sidebar">
       <div className="review-sidebar-header"><h3>审查报告</h3><Button variant="ghost" size="sm" onClick={() => setShowRulesEditor(true)} title="审查规则配置">⚙</Button></div>
-      <div className="review-navigation-controls"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索卷、章号或标题" aria-label="搜索审查章节" /><select value={filter} onChange={(event) => setFilter(event.target.value as ReviewFilter)} aria-label="筛选审查状态"><option value="all">全部</option><option value="issues">有问题</option><option value="unreviewed">未审查</option><option value="reviewed">已审查</option></select><select value={jumpVolume} onChange={(event) => setJumpVolume(event.target.value)} aria-label="选择审查卷"><option value="">跳转到卷…</option>{reviewVolumes.map(([volume, label]) => <option key={volume} value={volume}>{label}</option>)}</select><select value="" disabled={!jumpVolume} onChange={(event) => { const target = chapters.find((chapter) => chapter.key === event.target.value); if (target) void selectChapter(target) }} aria-label="选择审查章节"><option value="">跳转到章节…</option>{jumpVolume && chapters.filter((chapter) => chapter.ref.volume === jumpVolume).map((chapter) => <option key={chapter.key} value={chapter.key}>{chapter.chapterLabel}</option>)}</select></div>
+      <div className="review-navigation-controls"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索卷、章号或标题" aria-label="搜索审查章节" /><select value={filter} onChange={(event) => setFilter(event.target.value as ReviewFilter)} aria-label="筛选审查状态"><option value="all">全部</option><option value="issues">有问题</option><option value="unreviewed">未审查</option><option value="reviewed">已审查</option></select><select value={jumpVolume} onChange={(event) => setJumpVolume(event.target.value)} aria-label="选择审查卷"><option value="">跳转到卷…</option>{reviewVolumes.map(([volume, label]) => <option key={volume} value={volume}>{label}</option>)}</select><select value="" disabled={!jumpVolume} onChange={(event) => { const target = chapters.find((chapter) => chapter.key === event.target.value); if (target) void selectChapter(target) }} aria-label="选择审查章节"><option value="">跳转到章节…</option>{jumpVolume && chapters.filter((chapter) => chapter.ref.volume === jumpVolume).map((chapter) => <option key={chapter.key} value={chapter.key}>{chapter.chapterLabel}</option>)}</select><ChapterSegmentSizeSelect value={segmentSize} onChange={handleSegmentSizeChange} /></div>
       <div className="review-actions-panel">
         <Button variant="primary" size="md" onClick={() => { void handleLightCheck() }} disabled={runningReview || noSelection} style={{ width: '100%', marginBottom: 6 }}>{runningReview ? '检查中…' : '⚡ 轻量检查'}</Button>
         <Button variant="primary" size="md" onClick={() => { void handleDeepReview() }} disabled={runningReview || noSelection} style={{ width: '100%', marginBottom: 6 }}>{runningReview ? '审查中…' : '🔍 AI 深度审查'}</Button>
@@ -198,7 +205,7 @@ export default function ReviewPanel({ projectId, currentChapterRef, chapterHtml 
             if (!row) return null
             const style = { height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }
             if (row.kind === 'volume') return <button key={virtualRow.key} className="review-volume-row review-virtual-row" style={style} onClick={() => setCollapsedVolumes((previous) => ({ ...previous, [row.volume]: !row.collapsed }))}>{row.collapsed ? '▶' : '▼'} <span>{row.label}</span><span>{row.reviewed}/{row.total} 已审查</span></button>
-            if (row.kind === 'segment') return <button key={virtualRow.key} className="review-segment-row review-virtual-row" style={style} onClick={() => setCollapsedSegments((previous) => ({ ...previous, [`${row.volume}:${Math.floor((row.startOrder - 1) / SEGMENT_SIZE)}`]: !row.collapsed }))}>{row.collapsed ? '▶' : '▼'} 第 {row.startOrder}–{row.endOrder} 章</button>
+            if (row.kind === 'segment') return <button key={virtualRow.key} className="review-segment-row review-virtual-row" style={style} onClick={() => setCollapsedSegments((previous) => ({ ...previous, [`${row.volume}:${Math.floor((row.startOrder - 1) / segmentSize)}`]: !row.collapsed }))}>{row.collapsed ? '▶' : '▼'} 第 {row.startOrder}–{row.endOrder} 章</button>
             const chapter = row.chapter
             const issueText = chapter.totalIssues > 0 ? `${chapter.totalIssues} 个问题` : chapter.hasReports ? '已审查' : '未审查'
             return <button key={virtualRow.key} className={`review-chapter-row review-virtual-row${expandedKey === chapter.key ? ' active' : ''}`} style={style} onClick={() => { void selectChapter(chapter) }}><span>{chapter.chapterLabel}</span><span className="review-issue-count" style={{ background: chapter.totalIssues > 0 ? '#e74c3c' : chapter.hasReports ? '#27ae60' : '#888' }}>{issueText}</span></button>
