@@ -2,13 +2,27 @@
 .review-panel { height: 100%; }
 .review-sidebar { width: 300px; overflow: hidden; }
 .review-sidebar-header {
+  display: flex; align-items: center; justify-content: space-between;
   padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.review-navigation-controls {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+}
+.review-navigation-controls input { grid-column: 1 / -1; }
+.review-navigation-controls input,
+.review-navigation-controls select {
+  min-width: 0; padding: 6px 8px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--bg); color: var(--text);
+  font: inherit; font-size: 0.78rem;
 }
 .review-actions-panel {
   padding: 12px 16px; border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
-.review-report-list { overflow-y: auto; flex: 1; }
+.review-report-list { overflow-y: auto; flex: 1; min-height: 0; }
+.review-virtual-spacer { position: relative; width: 100%; }
+.review-virtual-row { position: absolute; top: 0; left: 0; width: 100%; box-sizing: border-box; }
 .review-volume-row,
 .review-chapter-row {
   width: 100%;
@@ -25,6 +39,10 @@
   padding: 9px 12px;
   border-bottom: 1px solid var(--border);
   font-weight: 600;
+}
+.review-segment-row {
+  width: 100%; border: 0; background: var(--bg-sidebar); color: var(--text-secondary);
+  cursor: pointer; font: inherit; font-size: 0.78rem; text-align: left; padding: 8px 12px 8px 26px;
 }
 .review-chapter-row {
   display: flex;

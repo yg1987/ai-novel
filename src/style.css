@@ -850,6 +850,40 @@ body {
   color: var(--text);
 }
 
+.outline-navigation-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 0 8px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.outline-navigation-controls select {
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.76rem;
+}
+
+.outline-navigation-controls select:first-child { grid-column: 1 / -1; }
+
+.outline-segment-header {
+  width: 100%;
+  padding: 6px 12px 6px 28px;
+  border: 0;
+  background: var(--bg-sidebar);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+}
+
 .panel-item {
   display: flex;
   align-items: center;

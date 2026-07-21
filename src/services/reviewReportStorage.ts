@@ -48,6 +48,8 @@ export async function getReviewReport(projectId: string, type: 'light' | 'full',
 export interface ChapterReviewData {
   ref: ChapterRef
   key: ChapterKey
+  volumeLabel: string
+  chapterOrder: number
   chapterLabel: string
   lightCheck: LightCheckResult | null
   deepReviews: DeepCheckResult[]
@@ -77,11 +79,14 @@ export async function loadChapterReviews(projectId: string): Promise<ChapterRevi
     const key = chapterRefKey(ref)
     const chapterReports = grouped.get(key) ?? []
     const title = metadata.chapterTitles[key] || chapter.title
-    const volumeName = metadata.volumeNames[chapter.volume] || chapter.volume
+    const volumeLabel = metadata.volumeNames[chapter.volume] ? `${chapter.volume} · ${metadata.volumeNames[chapter.volume]}` : chapter.volume
+    const chapterLabel = title && title !== `第${chapter.order}章` ? `第${chapter.order}章 · ${title}` : `第${chapter.order}章`
     return {
       ref,
       key,
-      chapterLabel: `${chapter.volume} · ${volumeName} / 第${chapter.order}章 · ${title}`,
+      volumeLabel,
+      chapterOrder: chapter.order,
+      chapterLabel,
       lightCheck: null,
       deepReviews: [],
       totalIssues: 0,

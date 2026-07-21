@@ -68,12 +68,17 @@ export default function ChapterManager({
   const [showMaterial, setShowMaterial] = useState(false)
   const [collapsedVolumes, setCollapsedVolumes] = useState<Record<string, boolean>>({})
   const [collapsedSegments, setCollapsedSegments] = useState<Record<string, boolean>>({})
+  const [chapterQuery, setChapterQuery] = useState('')
+  const [jumpVolume, setJumpVolume] = useState('')
+  const [segmentSize, setSegmentSize] = useState<25 | 50 | 100>(() => {
+    const stored = Number(window.localStorage.getItem(`chapter-segment-size:${projectId}`))
+    return stored === 25 || stored === 100 ? stored : 50
+  })
   const [chapterTitles, setChapterTitles] = useState<Record<ChapterKey, string>>({})
   const [volumeNames, setVolumeNames] = useState<Record<string, string>>({})
   const [editingVolumeName, setEditingVolumeName] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState(false)
-  const [exportMenuChapterKey, setExportMenuChapterKey] = useState<ChapterKey | null>(null)
-  const [notesMenuChapterKey, setNotesMenuChapterKey] = useState<ChapterKey | null>(null)
+  const [chapterMenuKey, setChapterMenuKey] = useState<ChapterKey | null>(null)
   const [allNotes, setAllNotes] = useState<NoteEntry[]>([])
   const [deleteConfirm, setDeleteConfirm] = useState<{ kind: 'chapter'; chapter: ChapterMeta } | { kind: 'volume'; volume: string } | null>(null)
   const [createDialog, setCreateDialog] = useState<CreateDialog | null>(null)
@@ -141,10 +146,12 @@ export default function ChapterManager({
     const timer = window.setTimeout(() => {
       setActiveChapterKey(chapterRefKey(target))
       setCollapsedVolumes((previous) => ({ ...previous, [target.volume]: false }))
+      setCollapsedSegments((previous) => ({ ...previous, [`${target.volume}:${Math.floor((target.order - 1) / segmentSize)}`]: false }))
       reportChapter(target)
+      window.setTimeout(() => document.querySelector<HTMLElement>(`[data-chapter-key="${CSS.escape(chapterRefKey(target))}"]`)?.scrollIntoView({ block: 'nearest' }), 0)
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [chapters, initialChapterRef, reportChapter])
+  }, [chapters, initialChapterRef, reportChapter, segmentSize])
 
   useEffect(() => {
     void initializeMaterialLibrary()
@@ -181,19 +188,34 @@ export default function ChapterManager({
     return values
   }, [allNotes, chapters])
 
-  const getVolumeDisplay = (volume: string) => `${volume} · ${volumeNames[volume] || '未命名卷'}`
-  const getChapterDisplay = (chapter: ChapterMeta) => `第${chapter.order}章 · ${chapterTitles[chapterRefKey(chapter)] || '未命名章节'}`
-  const activeChapterTitle = activeChapter ? chapterTitles[chapterRefKey(activeChapter)] || '未命名章节' : ''
+  const getVolumeDisplay = (volume: string) => volumeNames[volume] ? `${volume} · ${volumeNames[volume]}` : volume
+  const getChapterDisplay = (chapter: ChapterMeta) => chapterTitles[chapterRefKey(chapter)] ? `第${chapter.order}章 · ${chapterTitles[chapterRefKey(chapter)]}` : `第${chapter.order}章`
+  const activeChapterTitle = activeChapter ? chapterTitles[chapterRefKey(activeChapter)] || `第${activeChapter.order}章` : ''
+  const normalizedChapterQuery = chapterQuery.trim().toLocaleLowerCase()
+  const matchesChapterQuery = (chapter: ChapterMeta) => {
+    if (!normalizedChapterQuery) return true
+    const title = chapterTitles[chapterRefKey(chapter)] || ''
+    return `${chapter.volume} ${chapter.order} ${chapter.id} ${title}`.toLocaleLowerCase().includes(normalizedChapterQuery)
+  }
+  const scrollToChapter = (chapter: ChapterMeta) => {
+    const key = chapterRefKey(chapter)
+    setActiveChapterKey(key)
+    setCollapsedVolumes((previous) => ({ ...previous, [chapter.volume]: false }))
+    setCollapsedSegments((previous) => ({ ...previous, [`${chapter.volume}:${Math.floor((chapter.order - 1) / segmentSize)}`]: false }))
+    window.setTimeout(() => document.querySelector<HTMLElement>(`[data-chapter-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'nearest' }), 0)
+  }
+  const handleSegmentSizeChange = (value: 25 | 50 | 100) => {
+    setSegmentSize(value)
+    window.localStorage.setItem(`chapter-segment-size:${projectId}`, String(value))
+    setCollapsedSegments({})
+  }
 
   const renderChapterRow = (chapter: ChapterMeta) => {
     const key = chapterRefKey(chapter)
-    return <div key={key} className={`chapter-item${key === activeChapterKey ? ' active' : ''}`}>
+    return <div key={key} data-chapter-key={key} className={`chapter-item${key === activeChapterKey ? ' active' : ''}`}>
       <span className="chapter-item-title" onClick={() => handleClickChapter(chapter)}>{getChapterDisplay(chapter)}</span>
       <span className="chapter-item-actions">
-        <PopupMenu trigger={<Button variant="ghost" size="xs" onClick={(event) => { event.stopPropagation(); setNotesMenuChapterKey(notesMenuChapterKey === key ? null : key) }} title="章节备注">📝</Button>} items={buildNotesItems(chapter)} open={notesMenuChapterKey === key} onClose={() => setNotesMenuChapterKey(null)} />
-        <PopupMenu trigger={<Button variant="ghost" size="xs" onClick={(event) => { event.stopPropagation(); setExportMenuChapterKey(exportMenuChapterKey === key ? null : key) }} title="发布复制">📋</Button>} items={buildExportItems(chapter)} open={exportMenuChapterKey === key} onClose={() => setExportMenuChapterKey(null)} />
-        <Button variant="ghost" size="xs" onClick={(event) => { event.stopPropagation(); setActiveChapterKey(key); setShowVersionHistory(true) }} title="版本历史">🕐</Button>
-        <Button variant="ghost" size="xs" className="btn-tiny-danger" onClick={(event) => { event.stopPropagation(); setDeleteConfirm({ kind: 'chapter', chapter }) }} title="删除正文">✕</Button>
+        <PopupMenu trigger={<Button variant="ghost" size="xs" onClick={(event) => { event.stopPropagation(); setChapterMenuKey(chapterMenuKey === key ? null : key) }} title="更多章节操作">⋮</Button>} items={buildChapterMenuItems(chapter)} open={chapterMenuKey === key} onClose={() => setChapterMenuKey(null)} />
       </span>
     </div>
   }
@@ -214,8 +236,7 @@ export default function ChapterManager({
         ? await createNewWritingVolume(projectId, { volumeName: volumeNameInput, firstChapterName: chapterNameInput })
         : await createNextWritingChapter(projectId, createDialog.volume, { chapterName: chapterNameInput })
       await refresh()
-      setActiveChapterKey(chapterRefKey(chapter))
-      setCollapsedVolumes((previous) => ({ ...previous, [chapter.volume]: false }))
+      scrollToChapter(chapter)
       reportChapter(chapter)
       setShowVersionHistory(false)
       setCreateDialog(null)
@@ -267,7 +288,7 @@ export default function ChapterManager({
   }
 
   const handleClickChapter = (chapter: ChapterMeta) => {
-    setActiveChapterKey(chapterRefKey(chapter))
+    scrollToChapter(chapter)
     setShowVersionHistory(false)
     reportChapter(chapter)
   }
@@ -319,6 +340,13 @@ export default function ChapterManager({
     ]
   }
 
+  const buildChapterMenuItems = (chapter: ChapterMeta) => [
+    ...buildNotesItems(chapter),
+    ...buildExportItems(chapter).map((item) => ({ ...item, key: `export-${item.key}`, label: `📋 ${item.label}` })),
+    { key: 'history', label: '🕐 版本历史', onClick: () => { setActiveChapterKey(chapterRefKey(chapter)); setShowVersionHistory(true) } },
+    { key: 'delete', label: '✕ 删除正文', onClick: () => setDeleteConfirm({ kind: 'chapter', chapter }) },
+  ]
+
   const handleCaptureSelection = () => {
     const text = editorRef.current?.getSelectedText().trim() ?? ''
     if (!text) return
@@ -354,15 +382,34 @@ export default function ChapterManager({
     <div className="chapter-manager">
       <div className="chapter-sidebar">
         <div className="chapter-sidebar-header"><h3>{projectName}</h3></div>
-        <div className="chapter-sidebar-toolbar"><button className="chapter-new-volume-btn" onClick={() => openCreateDialog({ kind: 'volume' })}>+ 新建分卷</button></div>
+        <div className="chapter-sidebar-toolbar">
+          <button className="chapter-new-volume-btn" onClick={() => openCreateDialog({ kind: 'volume' })}>+ 新建分卷</button>
+          <input className="chapter-navigation-search" value={chapterQuery} onChange={(event) => setChapterQuery(event.target.value)} placeholder="搜索章号或标题" aria-label="搜索章节" />
+          <div className="chapter-navigation-controls">
+            <select value={jumpVolume} onChange={(event) => setJumpVolume(event.target.value)} aria-label="选择卷">
+              <option value="">跳转到卷…</option>
+              {chaptersByVolume.map(({ volume }) => <option key={volume} value={volume}>{getVolumeDisplay(volume)}</option>)}
+            </select>
+            <select value="" disabled={!jumpVolume} onChange={(event) => {
+              const target = chapters.find((chapter) => chapterRefKey(chapter) === event.target.value)
+              if (target) handleClickChapter(target)
+            }} aria-label="选择章节">
+              <option value="">跳转到章节…</option>
+              {jumpVolume && chaptersByVolume.find((item) => item.volume === jumpVolume)?.chapters.map((chapter) => <option key={chapterRefKey(chapter)} value={chapterRefKey(chapter)}>{getChapterDisplay(chapter)}</option>)}
+            </select>
+            <label className="chapter-segment-size">每段<select value={segmentSize} onChange={(event) => handleSegmentSizeChange(Number(event.target.value) as 25 | 50 | 100)} aria-label="章节段大小"><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label>
+          </div>
+        </div>
         <div className="chapter-list">
           {chaptersByVolume.map(({ volume, chapters: inVolume }) => {
-            const collapsed = collapsedVolumes[volume] ?? false
+            const visibleChapters = inVolume.filter(matchesChapterQuery)
+            if (visibleChapters.length === 0) return null
+            const collapsed = normalizedChapterQuery ? false : (collapsedVolumes[volume] ?? false)
             const renaming = editingVolumeName === volume
-            const segments = Array.from({ length: Math.ceil(inVolume.length / 50) }, (_, index) => ({
+            const segments = Array.from({ length: Math.ceil(visibleChapters.length / segmentSize) }, (_, index) => ({
               key: `${volume}:${index}`,
-              label: `第 ${index * 50 + 1}–${Math.min((index + 1) * 50, inVolume.length)} 章`,
-              chapters: inVolume.slice(index * 50, (index + 1) * 50),
+              label: `第 ${visibleChapters[index * segmentSize]?.order ?? 0}–${visibleChapters[Math.min((index + 1) * segmentSize, visibleChapters.length) - 1]?.order ?? 0} 章`,
+              chapters: visibleChapters.slice(index * segmentSize, (index + 1) * segmentSize),
             }))
             return <div key={volume} className="chapter-volume-group">
               <div className="chapter-volume-header" onClick={() => setCollapsedVolumes((previous) => ({ ...previous, [volume]: !previous[volume] }))}>
@@ -372,17 +419,18 @@ export default function ChapterManager({
                 {!renaming && <button className="volume-delete-btn" onClick={(event) => { event.stopPropagation(); setDeleteConfirm({ kind: 'volume', volume }) }} title="删除正文卷">✕</button>}
               </div>
               {!collapsed && <div className="chapter-volume-body">
-                {inVolume.length <= 50
-                  ? inVolume.map(renderChapterRow)
+                {visibleChapters.length <= segmentSize
+                  ? visibleChapters.map(renderChapterRow)
                   : segments.map((segment) => {
                     const containsActive = segment.chapters.some((chapter) => chapterRefKey(chapter) === activeChapterKey)
-                    const isCollapsed = collapsedSegments[segment.key] ?? !containsActive
+                    const isCollapsed = normalizedChapterQuery ? false : (collapsedSegments[segment.key] ?? !containsActive)
                     return <div key={segment.key} className="chapter-segment"><button className="chapter-segment-header" onClick={() => setCollapsedSegments((previous) => ({ ...previous, [segment.key]: !isCollapsed }))}>{isCollapsed ? '▶' : '▼'} {segment.label}</button>{!isCollapsed && segment.chapters.map(renderChapterRow)}</div>
                   })}
                 <button className="chapter-add-btn" onClick={() => openCreateDialog({ kind: 'chapter', volume })}>+ 新建章节</button>
               </div>}
             </div>
           })}
+          {normalizedChapterQuery && !chapters.some(matchesChapterQuery) && <p className="chapter-empty">没有匹配的章节</p>}
           {chapters.length === 0 && <p className="chapter-empty">暂无正文卷，点击「+ 新建分卷」创建第一章开始写作</p>}
         </div>
         <div className="chapter-sidebar-footer"><div className="chapter-footer-actions"><Button variant="ghost" size="xs" onClick={() => setShowMaterial((shown) => !shown)} title="素材库">📦 素材库</Button></div></div>
@@ -393,7 +441,7 @@ export default function ChapterManager({
           <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}><div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}><Editor ref={editorRef} key={`${activeRef.volume}-${activeRef.chapterId}-${contentVersion}`} projectId={projectId} volume={activeRef.volume} chapterId={activeRef.chapterId} chapterNumber={activeChapter.order} onNavigateToReview={onNavigateToReview ? () => onNavigateToReview(activeRef) : undefined} materialContextSelections={materialContextSelections} onMaterialContextUsed={(selections) => { if (!currentChapter) return; for (const selection of selections) void createMaterialUsage({ materialId: selection.materialId, action: 'ai_context', ...currentChapter, excerpt: selection.excerpt }).catch(console.error) }} onSaveSelection={handleCaptureSelection} /></div>{showMaterial && <Suspense fallback={<div className="material-sidebar"><div className="editor-loading">加载素材…</div></div>}><MaterialSidebar projectId={projectId} currentChapter={currentChapter} materialContextSelections={materialContextSelections} onMaterialContextChange={onMaterialContextChange} onInsert={handleMaterialInsert} onOpenMaterial={onOpenMaterial} /></Suspense>}</div>
         </div> : <div className="editor-placeholder"><p>选择或创建一个章节开始写作</p></div>}
       </div>
-      {createDialog && <Modal className="chapter-create-modal"><h2>{createDialog.kind === 'volume' ? '新建分卷与第一章' : `新建 ${createDialog.volume} 的下一章`}</h2>{createDialog.kind === 'volume' && <label>卷名<input autoFocus value={volumeNameInput} onChange={(event) => setVolumeNameInput(event.target.value)} placeholder="例如：风起" /></label>}<label>章节名<input autoFocus={createDialog.kind === 'chapter'} value={chapterNameInput} onChange={(event) => setChapterNameInput(event.target.value)} placeholder="例如：晴空" onKeyDown={(event) => { if (event.key === 'Enter') void handleCreate() }} /></label>{createError && <p className="error-bar">{createError}</p>}<div className="material-modal-footer"><Button variant="secondary" size="md" onClick={() => setCreateDialog(null)}>取消</Button><Button variant="primary" size="md" loading={creating} disabled={creating || !chapterNameInput.trim() || (createDialog.kind === 'volume' && !volumeNameInput.trim())} onClick={() => { void handleCreate() }}>创建并开始写作</Button></div></Modal>}
+      {createDialog && <Modal className="chapter-create-modal"><h2>{createDialog.kind === 'volume' ? '新建分卷与第一章' : `新建 ${createDialog.volume} 的下一章`}</h2>{createDialog.kind === 'volume' && <label>卷名（可选）<input autoFocus value={volumeNameInput} onChange={(event) => setVolumeNameInput(event.target.value)} placeholder="留空显示默认卷名" /></label>}<label>章节名（可选）<input autoFocus={createDialog.kind === 'chapter'} value={chapterNameInput} onChange={(event) => setChapterNameInput(event.target.value)} placeholder="留空显示默认章节名" onKeyDown={(event) => { if (event.key === 'Enter') void handleCreate() }} /></label>{createError && <p className="error-bar">{createError}</p>}<div className="material-modal-footer"><Button variant="secondary" size="md" onClick={() => setCreateDialog(null)}>取消</Button><Button variant="primary" size="md" loading={creating} disabled={creating} onClick={() => { void handleCreate() }}>创建并开始写作</Button></div></Modal>}
       {deleteConfirm && <ConfirmDialog title={deleteConfirm.kind === 'chapter' ? '删除正文' : '删除正文卷'} message={deleteConfirm.kind === 'chapter' ? `确定删除正文「${getChapterDisplay(deleteConfirm.chapter)}」？\n同位置细纲会被保留。` : `确定删除正文卷「${getVolumeDisplay(deleteConfirm.volume)}」及其正文？\n同位置细纲会被保留。`} confirmText="删除正文" danger onConfirm={() => { void handleDelete() }} onCancel={() => setDeleteConfirm(null)} />}
       {captureText && <Modal className="material-editor-modal"><h2>存为素材</h2><label>标题<input value={captureTitle} onChange={(event) => setCaptureTitle(event.target.value)} /></label><label>类型<select value={captureKindId} onChange={(event) => setCaptureKindId(event.target.value)}>{captureKinds.filter((kind) => !kind.archived).map((kind) => <option key={kind.id} value={kind.id}>{kind.name}</option>)}</select></label><label>标签<input value={captureTags} onChange={(event) => setCaptureTags(event.target.value)} placeholder="用逗号分隔" /></label><pre>{captureText}</pre><div className="material-modal-footer"><Button variant="secondary" size="md" onClick={() => { setCaptureText(null); editorRef.current?.focus() }}>取消</Button><Button variant="primary" size="md" disabled={captureSaving || !captureKindId} onClick={() => { void handleSaveCapture() }}>{captureSaving ? '保存中…' : '保存到收件箱'}</Button></div></Modal>}
     </div>

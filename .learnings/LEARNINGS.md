@@ -6,6 +6,37 @@ Corrections, insights, and knowledge gaps captured during development.
 
 ---
 
+## [LRN-20260721-002] correction
+
+**Logged**: 2026-07-21T15:04:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+Volume and chapter names are optional display metadata, not prerequisites for creating writing positions.
+
+### Details
+The initial implementation required both names and displayed unnamed placeholders. The product contract is position-first: users may create `卷N / 第M章` without custom names and may add or clear custom names later.
+
+### Suggested Action
+Keep creation validation limited to position and overwrite safety. Persist only non-empty custom names and derive default labels from `ChapterRef` and chapter order.
+
+### Metadata
+- Source: user_feedback
+- Related Files: src/services/chapterCatalog.ts, src/components/ChapterManager.tsx, src/components/OutlinePanel.tsx
+- Tags: chapter-navigation, optional-metadata, defaults
+- Pattern-Key: frontend.optional-display-name
+- Recurrence-Count: 1
+- First-Seen: 2026-07-21
+- Last-Seen: 2026-07-21
+
+### Resolution
+- **Resolved**: 2026-07-21T15:04:00+08:00
+- **Notes**: Made writing names optional across direct creation and outline-to-writing flows; empty values now fall back to position labels.
+
+---
+
 ## [LRN-20260717-005] correction
 
 **Logged**: 2026-07-17T17:20:00+08:00

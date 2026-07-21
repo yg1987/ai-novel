@@ -124,44 +124,41 @@ async function writeWritingChapter(
 
 export async function createNewWritingVolume(
   projectId: string,
-  input: { volumeName: string; firstChapterName: string },
+  input: { volumeName?: string; firstChapterName?: string },
 ): Promise<ChapterMeta> {
-  const volumeName = input.volumeName.trim()
-  const firstChapterName = input.firstChapterName.trim()
-  if (!volumeName || !firstChapterName) throw new Error('请填写卷名和第一章名称。')
+  const volumeName = input.volumeName?.trim() ?? ''
+  const firstChapterName = input.firstChapterName?.trim() ?? ''
   const chapters = await listChapters(projectId)
   const nextVolume = Math.max(0, ...chapters.map((chapter) => volumeOrder(chapter.volume))) + 1
   const ref: ChapterRef = { volume: `卷${nextVolume}`, chapterId: 'ch001' }
   const names = await loadWritingNames(projectId)
-  names.volumeNames[ref.volume] = volumeName
-  names.chapterTitles[chapterRefKey(ref)] = firstChapterName
+  if (volumeName) names.volumeNames[ref.volume] = volumeName
+  if (firstChapterName) names.chapterTitles[chapterRefKey(ref)] = firstChapterName
   return writeWritingChapter(projectId, ref, names)
 }
 
 export async function createNextWritingChapter(
   projectId: string,
   volume: string,
-  input: { chapterName: string },
+  input: { chapterName?: string },
 ): Promise<ChapterMeta> {
-  const chapterName = input.chapterName.trim()
-  if (!chapterName) throw new Error('请填写章节名称。')
+  const chapterName = input.chapterName?.trim() ?? ''
   const chapters = await listChapters(projectId)
   const inVolume = chapters.filter((chapter) => chapter.volume === volume)
   if (inVolume.length === 0) throw new Error('实际写作卷必须从“新建分卷”创建第一章。')
   const nextOrder = Math.max(...inVolume.map((chapter) => chapter.order)) + 1
   const ref: ChapterRef = { volume, chapterId: `ch${String(nextOrder).padStart(3, '0')}` }
   const names = await loadWritingNames(projectId)
-  names.chapterTitles[chapterRefKey(ref)] = chapterName
+  if (chapterName) names.chapterTitles[chapterRefKey(ref)] = chapterName
   return writeWritingChapter(projectId, ref, names)
 }
 
 export async function startWritingFromOutline(
   projectId: string,
   ref: ChapterRef,
-  input: { volumeName?: string; chapterName: string },
+  input: { volumeName?: string; chapterName?: string },
 ): Promise<ChapterMeta> {
-  const chapterName = input.chapterName.trim()
-  if (!chapterName) throw new Error('请填写章节名称。')
+  const chapterName = input.chapterName?.trim() ?? ''
   const chapters = await listChapters(projectId)
   const inVolume = chapters.filter((chapter) => chapter.volume === ref.volume)
   const expectedOrder = inVolume.length === 0 ? 1 : Math.max(...inVolume.map((chapter) => chapter.order)) + 1
@@ -171,10 +168,9 @@ export async function startWritingFromOutline(
   const names = await loadWritingNames(projectId)
   if (inVolume.length === 0) {
     const volumeName = input.volumeName?.trim()
-    if (!volumeName) throw new Error('从细纲创建本卷第一章时，请填写卷名。')
-    names.volumeNames[ref.volume] = volumeName
+    if (volumeName) names.volumeNames[ref.volume] = volumeName
   }
-  names.chapterTitles[chapterRefKey(ref)] = chapterName
+  if (chapterName) names.chapterTitles[chapterRefKey(ref)] = chapterName
   return writeWritingChapter(projectId, ref, names)
 }
 
