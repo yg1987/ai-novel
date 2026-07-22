@@ -223,7 +223,7 @@ For optional import formats, define a representative-sample acceptance gate firs
 An explicit request to update the changelog and submit to GitHub authorizes the routine edit, stage, commit, and push workflow.
 
 ### Details
-The user clarified that repeatedly requesting confirmation for these normal, explicitly requested repository actions creates unnecessary friction. Platform permission prompts may still appear when required by the sandbox, but the agent should not add separate conversational authorization requests or treat each Git step as a new decision.
+The user clarified that repeatedly requesting confirmation for these normal, explicitly requested repository actions creates unnecessary friction. Normal project reads, edits, writes, builds, and checks should run directly; only genuinely destructive, out-of-scope, or externally consequential actions should interrupt for authorization. Platform permission prompts may still appear when required by the sandbox, but the agent should not add separate conversational authorization requests or treat each Git step as a new decision.
 
 ### Suggested Action
 For a direct request to record changes and submit to GitHub, update the requested document, stage only relevant files, commit, and push to the configured branch. Report only genuine blockers, such as missing credentials, a rejected push, or ambiguous target branch.
@@ -233,9 +233,9 @@ For a direct request to record changes and submit to GitHub, update the requeste
 - Related Files: doc/变更记录.md, .learnings/LEARNINGS.md
 - Tags: git, changelog, permissions, workflow
 - Pattern-Key: config.confirmation-friction
-- Recurrence-Count: 3
+- Recurrence-Count: 4
 - First-Seen: 2026-07-16
-- Last-Seen: 2026-07-17
+- Last-Seen: 2026-07-22
 
 ---
 
