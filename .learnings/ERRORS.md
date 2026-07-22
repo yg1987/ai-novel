@@ -4,6 +4,42 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260722-004] shell_command
+
+**Logged**: 2026-07-22T17:28:26+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: config
+
+### Summary
+An optional development-process probe was combined with mandatory acceptance-file reads and caused the batch to fail when no process matched.
+
+### Error
+```
+Exit code: 1
+```
+
+### Context
+- The acceptance review needed source and plan reads regardless of whether the earlier Tauri development process remained active.
+- `Get-Process -Name ai-novel -ErrorAction SilentlyContinue` still returned a non-zero result without a matching process.
+
+### Suggested Fix
+Run optional no-match probes separately from required reads and handle their exit status independently.
+
+### Metadata
+- Reproducible: yes
+- Related Files: doc/关于与版本检查功能实施方案.md
+- Pattern-Key: shell.optional-probe-batch
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T17:28:26+08:00
+- **Notes**: Separated the acceptance-file reads from the optional process query.
+
+---
+
 ## [ERR-20260722-003] npm_run_tauri_dev
 
 **Logged**: 2026-07-22T17:19:00+08:00
