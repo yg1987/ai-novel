@@ -2,6 +2,16 @@
   "name": "ai-novel",
   "private": true,
   "version": "0.1.0",
+  "author": {
+    "name": "yg1987",
+    "url": "https://github.com/yg1987"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yg1987/ai-novel.git"
+  },
+  "homepage": "https://github.com/yg1987/ai-novel",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -23,6 +33,7 @@
     "@tauri-apps/cli": "^2.11.4",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@types/semver": "^7.7.1",
     "@typescript-eslint/eslint-plugin": "^8.63.0",
     "@typescript-eslint/parser": "^8.63.0",
     "@vitejs/plugin-react": "^6.0.3",
@@ -43,6 +54,7 @@
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-fs": "^2.5.1",
+    "@tauri-apps/plugin-shell": "^2.3.5",
     "@tiptap/core": "^3.27.2",
     "@tiptap/extension-placeholder": "^3.27.2",
     "@tiptap/extension-underline": "^3.27.2",
@@ -55,6 +67,7 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "recharts": "^3.9.2",
+    "semver": "^7.8.5",
     "sigma": "^3.0.3"
   }
 }

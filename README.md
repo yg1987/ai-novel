@@ -145,3 +145,13 @@ ai-novel-workspace/
 - Rust 1.70+（MSVC toolchain）
 - Visual Studio 2022 Build Tools（含 C++ 工作负载）
 - Windows 10+（WebView2 运行时）
+
+## 项目链接
+
+- 开发者：[yg1987](https://github.com/yg1987)
+- 仓库：[yg1987/ai-novel](https://github.com/yg1987/ai-novel)
+- [Release 与下载](https://github.com/yg1987/ai-novel/releases)
+
+## 许可证
+
+[MIT License](LICENSE) · Copyright (c) 2026 yg1987

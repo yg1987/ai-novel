@@ -1,8 +1,11 @@
 [package]
 name = "ai-novel"
 version = "0.1.0"
-description = "AI Novel Writer"
-authors = ["you"]
+description = "AI-powered desktop writing tool for web novels."
+authors = ["yg1987"]
+license = "MIT"
+repository = "https://github.com/yg1987/ai-novel"
+homepage = "https://github.com/yg1987/ai-novel"
 edition = "2021"
 
 [lib]

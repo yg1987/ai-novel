@@ -23,6 +23,13 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "yg1987",
+    "copyright": "Copyright (c) 2026 yg1987",
+    "homepage": "https://github.com/yg1987/ai-novel",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
+    "shortDescription": "AI-powered desktop writing tool for web novels.",
+    "longDescription": "AI Novel Writer is a local-first desktop writing tool for web novel authors, with project management, AI-assisted writing, story settings, outlines, reviews, and more.",
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -31,5 +38,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "shell": {
+      "open": "^https://github\\.com/yg1987/ai-novel(?:/.*)?$"
+    }
   }
 }

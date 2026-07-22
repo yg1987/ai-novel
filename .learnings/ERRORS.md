@@ -4,6 +4,114 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260722-003] npm_run_tauri_dev
+
+**Logged**: 2026-07-22T17:19:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+Foreground Tauri development mode exceeded the command runner timeout and left a duplicate development child process.
+
+### Error
+```
+command timed out after 14034 milliseconds
+```
+
+### Context
+- `npm run tauri:dev` is a long-running interactive process and cannot be verified through the short foreground command timeout.
+- The timed-out invocation left an orphaned `cargo run` process; a second invocation was launched as a background process.
+
+### Suggested Fix
+Start interactive Tauri development mode as an independent process, verify its exact child chain, and terminate only verified duplicate chains.
+
+### Metadata
+- Reproducible: yes
+- Related Files: package.json
+- Pattern-Key: shell.long-running-dev-process
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T17:19:00+08:00
+- **Notes**: Kept the background `npm run tauri:dev` chain and stopped only the release-build and duplicate development descendants.
+
+---
+
+## [ERR-20260722-002] npm_run_check
+
+**Logged**: 2026-07-22T17:14:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+TypeScript build failed because the new update checker declared but did not use a response interface.
+
+### Error
+```
+src/services/updateCheck.ts(31,11): error TS6196: 'ReleaseApiResponse' is declared but never used.
+```
+
+### Context
+- `npm run check` completed the configured lint gate with the existing 11 warnings, then failed during `tsc`.
+- The response is intentionally validated from `unknown`, so the declared interface was unnecessary.
+
+### Suggested Fix
+Remove unused types when runtime schema validation operates on `unknown`.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/services/updateCheck.ts
+- Pattern-Key: build.unused-type
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T17:14:00+08:00
+- **Notes**: Removed the unused interface before rerunning the build.
+
+---
+
+## [ERR-20260722-001] shell_command
+
+**Logged**: 2026-07-22T17:08:40+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: config
+
+### Summary
+Third-party type declaration probe assumed a package-root `index.d.ts` path that did not exist.
+
+### Error
+```
+Cannot find path 'D:\\opencode_work\\ai_novel\\node_modules\\semver\\index.d.ts' because it does not exist.
+```
+
+### Context
+- Command attempted to inspect installed semver and Tauri Shell type declarations.
+- The package's declaration entry must be read from its package manifest before accessing a path.
+
+### Suggested Fix
+Inspect each package's `package.json` first, then read only the declared types entry.
+
+### Metadata
+- Reproducible: yes
+- Related Files: node_modules/semver/package.json
+- Pattern-Key: shell.invalid-probe-path
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T17:08:40+08:00
+- **Notes**: Switched to manifest-first inspection.
+
+---
+
 ## [ERR-20260722-013] process-probe-timeout
 
 **Logged**: 2026-07-22T00:00:00+08:00
