@@ -119,12 +119,12 @@ export default function OutlineSidebar({
           chapters: item.chapters.slice(index * segmentSize, (index + 1) * segmentSize),
         }))
         return <div key={item.volume}>
-          <div className={`panel-item${activeSelection === volumeSelection ? ' active' : ''}`}>
+          <div className={`panel-item outline-volume-row${activeSelection === volumeSelection ? ' active' : ''}`}>
+            <Button className="outline-volume-toggle" variant="ghost" size="xs" onClick={() => setCollapsed((previous) => ({ ...previous, [item.volume]: !isCollapsed }))} title={isCollapsed ? '展开卷' : '折叠卷'}>{isCollapsed ? '▶' : '▼'}</Button>
             <button className="panel-item-main" onClick={() => onOpen({ type: 'volume', volume: item.volume })}>📖 {item.volume}</button>
             <span className="panel-item-status">{item.chapters.filter((chapter) => chapter.hasWriting && chapter.hasOutline).length}/{item.chapters.length}</span>
-            <Button variant="ghost" size="xs" onClick={() => setCollapsed((previous) => ({ ...previous, [item.volume]: !isCollapsed }))} title={isCollapsed ? '展开卷' : '折叠卷'}>{isCollapsed ? '▶' : '▼'}</Button>
             {!item.hasVolumeOutline && <Button variant="ghost" size="xs" onClick={() => onCreateVolumeOutline(item.volume)} title="创建分卷纲">＋</Button>}
-            <Button variant="ghost" size="xs" onClick={() => onCreateChapter(item.volume)} title="添加章节细纲">＋章</Button>
+            <Button className="outline-add-chapter" variant="ghost" size="xs" onClick={() => onCreateChapter(item.volume)} title="添加章节细纲">＋章</Button>
             {item.hasVolumeOutline && <Button variant="danger" size="xs" onClick={() => onDeleteVolume(item.volume)} title="删除分卷纲">✕</Button>}
           </div>
           {!isCollapsed && (item.chapters.length <= segmentSize ? item.chapters.map((chapter) => <OutlineChapterRow key={chapterRefKey(chapter.ref)} chapter={chapter} active={activeChapterKey === chapterRefKey(chapter.ref)} onOpen={openChapter} onCreateOutline={onCreateOutlineForChapter} onStartWriting={onStartWriting} onDelete={onDeleteChapter} />) : segments.map((segment) => {
@@ -150,8 +150,8 @@ function OutlineChapterRow({ chapter, active, onOpen, onCreateOutline, onStartWr
   onDelete: (ref: ChapterRef) => void
 }) {
   const key = chapterRefKey(chapter.ref)
-  return <div data-outline-chapter-key={key} className="panel-sub-item-row">
-    <button className={`panel-sub-item${active ? ' active' : ''}`} onClick={() => onOpen(chapter)} disabled={!chapter.hasOutline}>📝 第{chapterOrder(chapter.ref.chapterId)}章 <span className="outline-state">{stateLabel(chapter)}</span></button>
+  return <div data-outline-chapter-key={key} className={`panel-sub-item-row${active ? ' active' : ''}`}>
+    <button className={`panel-sub-item${active ? ' active' : ''}`} onClick={() => onOpen(chapter)} disabled={!chapter.hasOutline}><span className="outline-chapter-label">📝 第{chapterOrder(chapter.ref.chapterId)}章</span>{chapter.hasWriting && <span className="outline-state">{stateLabel(chapter)}</span>}</button>
     <span className="panel-sub-actions">
       {!chapter.hasOutline && <Button variant="ghost" size="xs" onClick={() => onCreateOutline(chapter.ref)} title="从正文创建细纲">建纲</Button>}
       {!chapter.hasWriting && <Button variant="ghost" size="xs" onClick={() => onStartWriting(chapter.ref)} title="从细纲开始写作">写作</Button>}

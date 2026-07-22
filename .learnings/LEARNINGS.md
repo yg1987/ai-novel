@@ -6,6 +6,38 @@ Corrections, insights, and knowledge gaps captured during development.
 
 ---
 
+## [LRN-20260722-001] correction
+
+**Logged**: 2026-07-22T00:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+Light review findings must preserve actionable source locations and collapse repeated matches by rule.
+
+### Details
+Displaying one issue per repeated match makes threshold-style rules such as excessive ellipses noisy, while displaying only the rule label loses the text location needed to fix it. A single grouped issue should include every matching line, character offset, and context snippet.
+
+### Suggested Action
+Carry precise offsets from the scanner, group matches by rule label, and render all grouped locations beneath the single issue.
+
+### Metadata
+- Source: user_feedback
+- Related Files: src/services/bannedWords.ts, src/services/reviewLightCheck.ts, src/components/ReviewPanel.tsx
+- Tags: review, diagnostics, source-location
+- Pattern-Key: frontend.review-location
+- Recurrence-Count: 2
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+- See Also: same task follow-up — editor has no visible line numbers
+
+### Resolution
+- **Resolved**: 2026-07-22T00:00:00+08:00
+- **Notes**: Grouped repeated light-check matches, preserved precise offsets, and rendered source contexts without exposing editor-incompatible line or character coordinates.
+
+---
+
 ## [LRN-20260721-004] correction
 
 **Logged**: 2026-07-21T00:00:00+08:00

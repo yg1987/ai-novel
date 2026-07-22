@@ -82,6 +82,7 @@ export function checkBannedWords(text: string, customRules?: BannedWordRule[]): 
   const patterns = customRules ? compilePatterns(customRules) : DEFAULT_PATTERNS
   const lines = text.split('\n')
   const matches: BannedWordMatch[] = []
+  let lineOffset = 0
 
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const line = lines[lineIdx]!
@@ -93,11 +94,13 @@ export function checkBannedWords(text: string, customRules?: BannedWordRule[]): 
           pattern: p.label,
           line: lineIdx + 1,
           context: extractContext(line, m.index, m[0].length),
+          offset: lineOffset + m.index,
           severity: p.severity,
           suggestion: p.suggestion,
         })
       }
     }
+    lineOffset += line.length + 1
   }
 
   // Calculate weighted score
@@ -124,6 +127,7 @@ export interface GroupedBannedMatch {
   severity: 1 | 2 | 3 | 4 | 5
   count: number
   suggestion?: string
+  locations: Array<{ line: number; offset: number; context: string }>
   /** First few context snippets showing where the pattern was found */
   samples: string[]
 }
@@ -134,13 +138,24 @@ export interface GroupedBannedMatch {
  * with a count and sample locations so the user can locate the issues.
  */
 export function groupBannedMatches(matches: BannedWordMatch[]): GroupedBannedMatch[] {
-  const map = new Map<string, { severity: 1 | 2 | 3 | 4 | 5; suggestion?: string; contexts: string[] }>()
+  const map = new Map<string, {
+    severity: 1 | 2 | 3 | 4 | 5
+    suggestion?: string
+    contexts: string[]
+    locations: Array<{ line: number; offset: number; context: string }>
+  }>()
   for (const m of matches) {
     const entry = map.get(m.pattern)
     if (entry) {
       entry.contexts.push(m.context)
+      entry.locations.push({ line: m.line, offset: m.offset, context: m.context })
     } else {
-      map.set(m.pattern, { severity: m.severity, suggestion: m.suggestion, contexts: [m.context] })
+      map.set(m.pattern, {
+        severity: m.severity,
+        suggestion: m.suggestion,
+        contexts: [m.context],
+        locations: [{ line: m.line, offset: m.offset, context: m.context }],
+      })
     }
   }
   // Sort by severity desc, then by count desc
@@ -150,6 +165,7 @@ export function groupBannedMatches(matches: BannedWordMatch[]): GroupedBannedMat
       severity: v.severity,
       count: v.contexts.length,
       suggestion: v.suggestion,
+      locations: v.locations,
       samples: v.contexts.slice(0, 5),
     }))
     .sort((a, b) => b.severity - a.severity || b.count - a.count)

@@ -20,7 +20,6 @@ const ReviewPanel = lazy(() => import('./ReviewPanel'))
 const ResourcePanel = lazy(() => import('./ResourcePanel'))
 const BrainstormPanel = lazy(() => import('./BrainstormPanel'))
 const RelationshipGraph = lazy(() => import('./relationship-graph/RelationshipGraph'))
-const TrendingPanel = lazy(() => import('./TrendingPanel'))
 const ChapterGraph = lazy(() => import('./ChapterGraph'))
 
 interface Props {
@@ -28,7 +27,7 @@ interface Props {
   onBack: () => void
 }
 
-type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats' | 'review' | 'resource' | 'brainstorm' | 'graph' | 'trending' | 'chaptergraph'
+type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats' | 'review' | 'resource' | 'brainstorm' | 'graph' | 'chaptergraph'
 
 export default function ProjectView({ project, onBack }: Props) {
   const [tab, setTab] = useState<Tab>('writing')
@@ -144,8 +143,6 @@ export default function ProjectView({ project, onBack }: Props) {
             onNavigateToForeshadow={handleNavigateToForeshadow}
           />
         )
-      case 'trending':
-        return <TrendingPanel />
       case 'chaptergraph':
         return <ChapterGraph projectId={project.id} />
     }
@@ -196,7 +193,6 @@ export default function ProjectView({ project, onBack }: Props) {
         <button className={`tab-btn${tab === 'resource' ? ' active' : ''}`} onClick={() => { setTab('resource') }}>📦 素材</button>
         <button className={`tab-btn${tab === 'brainstorm' ? ' active' : ''}`} onClick={() => { setTab('brainstorm') }}>💡 灵感</button>
         <button className={`tab-btn${tab === 'graph' ? ' active' : ''}`} onClick={() => { setTab('graph') }}>🕸 关系图</button>
-        <button className={`tab-btn${tab === 'trending' ? ' active' : ''}`} onClick={() => { setTab('trending') }}>🔥 热门</button>
         <button className={`tab-btn${tab === 'chaptergraph' ? ' active' : ''}`} onClick={() => { setTab('chaptergraph') }}>📊 章节图</button>
       </div>
 

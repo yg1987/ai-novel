@@ -204,7 +204,7 @@ export default function ReviewPanel({ projectId, segmentSize, onSegmentSizeChang
             const row = treeRows[virtualRow.index]
             if (!row) return null
             const style = { height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }
-            if (row.kind === 'volume') return <button key={virtualRow.key} className="review-volume-row review-virtual-row" style={style} onClick={() => setCollapsedVolumes((previous) => ({ ...previous, [row.volume]: !row.collapsed }))}>{row.collapsed ? '▶' : '▼'} <span>{row.label}</span><span>{row.reviewed}/{row.total} 已审查</span></button>
+            if (row.kind === 'volume') return <button key={virtualRow.key} className="review-volume-row review-virtual-row" style={style} onClick={() => setCollapsedVolumes((previous) => ({ ...previous, [row.volume]: !row.collapsed }))}>{row.collapsed ? '▶' : '▼'} <span>{row.label}</span><span>{row.reviewed}/{row.total} 已生成</span></button>
             if (row.kind === 'segment') return <button key={virtualRow.key} className="review-segment-row review-virtual-row" style={style} onClick={() => setCollapsedSegments((previous) => ({ ...previous, [`${row.volume}:${Math.floor((row.startOrder - 1) / segmentSize)}`]: !row.collapsed }))}>{row.collapsed ? '▶' : '▼'} 第 {row.startOrder}–{row.endOrder} 章</button>
             const chapter = row.chapter
             const issueText = chapter.totalIssues > 0 ? `${chapter.totalIssues} 个问题` : chapter.hasReports ? '已审查' : '未审查'
@@ -215,7 +215,7 @@ export default function ReviewPanel({ projectId, segmentSize, onSegmentSizeChang
     </div>
     <div className="panel-editor review-content">
       {!activeChapter ? <div className="review-empty">选择左侧正文章节开始审查。</div> : <div><h3 style={{ margin: '0 0 16px' }}>{activeChapter.volumeLabel} / {activeChapter.chapterLabel}</h3>{loadingDetails && <p className="review-empty">加载审查详情…</p>}{!loadingDetails && !activeChapter.lightCheck && activeChapter.deepReviews.length === 0 && <p className="review-empty">该章节尚未审查。</p>}
-        {activeChapter.lightCheck && <section><h4>轻量检查</h4>{activeChapter.lightCheck.checks.flatMap((check) => check.issues).map((issue, index) => <IssueRow key={index} issue={issue} />)}</section>}
+        {activeChapter.lightCheck && <section><h4>轻量检查</h4>{groupLightIssues(activeChapter.lightCheck.checks.flatMap((check) => check.issues)).map((issue, index) => <IssueRow key={index} issue={issue} />)}</section>}
         {activeChapter.deepReviews[0] && <section><h4>AI 深度审查 · {activeChapter.deepReviews[0].overall_score}/10</h4>{activeChapter.deepReviews[0].dimensions.flatMap((dimension) => dimension.issues).map((issue, index) => <IssueRow key={index} issue={issue} />)}{activeChapter.deepReviews[0].suggestions.map((suggestion) => <p key={suggestion}>• {suggestion}</p>)}</section>}
         {consistencyResult && <section><h4>一致性检查 · {consistencyResult.summary.total} 个问题</h4>{consistencyResult.issues.map((issue) => <div key={issue.id}><IssueRow issue={issue} />{issue.foreshadowId && onNavigateToForeshadow && <button onClick={() => onNavigateToForeshadow(issue.foreshadowId!)}>→ 查看伏笔</button>}</div>)}</section>}
       </div>}
@@ -224,7 +224,38 @@ export default function ReviewPanel({ projectId, segmentSize, onSegmentSizeChang
   </div>
 }
 
+function groupLightIssues(issues: ReviewIssue[]): ReviewIssue[] {
+  const grouped = new Map<string, ReviewIssue>()
+  for (const issue of issues) {
+    if (issue.checkType !== 'banned_words') {
+      grouped.set(`${grouped.size}:${issue.desc}`, issue)
+      continue
+    }
+    const key = issue.desc.replace(/（命中 \d+ 处）$/, '')
+    const current = grouped.get(key)
+    const locations = issue.locations ?? (issue.location ? [{ line: issue.location.line, offset: issue.location.offset, context: '' }] : [])
+    if (!current) {
+      grouped.set(key, { ...issue, locations })
+      continue
+    }
+    const mergedLocations = [...(current.locations ?? []), ...locations]
+    grouped.set(key, {
+      ...current,
+      desc: mergedLocations.length > 1 ? `${key}（命中 ${mergedLocations.length} 处）` : key,
+      location: current.location ?? issue.location,
+      locations: mergedLocations,
+    })
+  }
+  return [...grouped.values()]
+}
+
 function IssueRow({ issue }: { issue: AnyIssue }) {
   const severity = issueSeverity(issue)
-  return <div style={{ padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: '0.84rem' }}><span style={{ color: '#fff', background: severityColor(severity), borderRadius: 3, padding: '1px 6px', marginRight: 6 }}>{severity}</span>{issueDesc(issue)}{issueSuggestion(issue) && <div style={{ color: 'var(--text-muted)', paddingLeft: 4 }}>→ {issueSuggestion(issue)}</div>}</div>
+  const locations = !isConsistencyIssue(issue) ? issue.locations ?? [] : []
+  const snippets = locations.filter((location) => location.context.trim().length > 0)
+  return <div style={{ padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: '0.84rem' }}>
+    <div><span style={{ color: '#fff', background: severityColor(severity), borderRadius: 3, padding: '1px 6px', marginRight: 6 }}>{severity}</span>{issueDesc(issue)}</div>
+    {snippets.length > 0 && <div className="review-issue-locations">{snippets.map((location, index) => <span className="review-issue-location" key={`${location.line}:${location.offset}:${index}`}>“{location.context}”</span>)}</div>}
+    {issueSuggestion(issue) && <div style={{ color: 'var(--text-muted)', paddingLeft: 4 }}>→ {issueSuggestion(issue)}</div>}
+  </div>
 }

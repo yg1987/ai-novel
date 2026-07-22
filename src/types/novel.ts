@@ -141,6 +141,7 @@ export interface BannedWordMatch {
   pattern: string
   line: number
   context: string
+  offset: number
   severity: 1 | 2 | 3 | 4 | 5     // 5 = highest toxicity
   suggestion?: string
 }

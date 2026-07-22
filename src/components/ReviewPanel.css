@@ -67,6 +67,17 @@
   color: #fff;
   font-size: 0.7rem;
 }
+
+.review-issue-locations {
+  margin: 4px 0 0 4px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.review-issue-location {
+  display: block;
+  margin-top: 2px;
+}
 .review-report-item {
   padding: 10px 16px; cursor: pointer;
   border-bottom: 1px solid var(--border); transition: background 0.15s;

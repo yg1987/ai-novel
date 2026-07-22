@@ -40,13 +40,14 @@ export async function runLightCheck(
 
   // Check 1: Banned words
   const bannedResult = checkBannedWords(text, rules.bannedWords)
-  const bannedIssues: ReviewIssue[] = bannedResult.matches.map((m) => {
-    const offset = text.indexOf(m.context)
+  const bannedIssues: ReviewIssue[] = groupBannedMatches(bannedResult.matches).map((group) => {
+    const firstLocation = group.locations[0]
     return {
-      severity: m.severity >= 4 ? 'error' : m.severity >= 2 ? 'warning' : 'hint',
-      desc: `禁用句式：${m.pattern}`,
-      location: { line: m.line, offset: offset >= 0 ? offset : 0 },
-      suggestion: m.suggestion,
+      severity: group.severity >= 4 ? 'error' : group.severity >= 2 ? 'warning' : 'hint',
+      desc: `禁用句式：${group.pattern}${group.count > 1 ? `（命中 ${group.count} 处）` : ''}`,
+      location: firstLocation ? { line: firstLocation.line, offset: firstLocation.offset } : null,
+      locations: group.locations,
+      suggestion: group.suggestion,
       checkType: 'banned_words',
     }
   })

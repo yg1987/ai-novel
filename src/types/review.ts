@@ -4,11 +4,18 @@ export type ReviewSeverity = 'error' | 'warning' | 'hint'
 export type ReviewDimension = 'timeline' | 'character_cognition' | 'foreshadow_health' | 'setting_consistency'
 export type CheckType = 'banned_words' | 'character_names' | 'location_names'
 
+export interface ReviewIssueLocation {
+  line: number
+  offset: number
+  context: string
+}
+
 export interface ReviewIssue {
   severity: ReviewSeverity
   dimension?: ReviewDimension
   desc: string
   location?: { line: number; offset: number } | null
+  locations?: ReviewIssueLocation[]
   suggestion?: string
   checkType?: CheckType
 }

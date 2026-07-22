@@ -925,6 +925,29 @@ button.panel-sub-item {
   cursor: pointer;
 }
 
+.outline-volume-row {
+  gap: 2px;
+  padding: 5px 6px;
+}
+
+.outline-volume-row .panel-item-main {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-volume-row .btn {
+  flex-shrink: 0;
+}
+
+.outline-volume-toggle {
+  padding: 0 !important;
+}
+
+.outline-add-chapter {
+  white-space: nowrap;
+}
+
 .panel-item-status,
 .outline-state {
   color: var(--text-muted);
@@ -934,6 +957,14 @@ button.panel-sub-item {
 
 .outline-state {
   margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outline-chapter-label {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .panel-sub-actions {
@@ -963,6 +994,21 @@ button.panel-sub-item:disabled {
 
 .panel-item.active .btn-text:hover {
   opacity: 1;
+}
+
+.outline-volume-row.active .panel-item-status {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.outline-volume-row.active .btn-ghost,
+.panel-sub-item-row.active .btn-ghost {
+  color: #fff;
+}
+
+.outline-volume-row.active .btn-ghost:hover:not(:disabled),
+.panel-sub-item-row.active .btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
 }
 
 .panel-item.dragging {
@@ -1009,6 +1055,24 @@ button.panel-sub-item:disabled {
 .panel-sub-item.active {
   background: var(--accent);
   color: #fff;
+}
+
+.panel-sub-item.active .outline-state {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.panel-sub-item-row.active {
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.panel-sub-item-row.active .panel-sub-item {
+  background: transparent;
+  color: #fff;
+}
+
+.panel-sub-item-row.active .outline-state {
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .panel-sub-item-row {

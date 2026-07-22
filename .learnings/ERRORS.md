@@ -4,6 +4,71 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260722-001] git-index-write
+
+**Logged**: 2026-07-22T09:55:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: infra
+
+### Summary
+Git staging and commit could not proceed because the sandbox cannot write the repository index.
+
+### Error
+```
+fatal: Unable to create 'D:/opencode_work/ai_novel/.git/index.lock': Permission denied
+```
+
+### Context
+- `git add` was attempted for the nine files changed in this conversation after tests and build checks passed.
+- The working tree is readable and source files are writable, but `.git` is read-only to the current sandbox user.
+- No files were staged and no commit or push was created.
+
+### Suggested Fix
+Run the same `git add`, `git commit`, and `git push` commands from an environment with write permission to `.git`, after reviewing the same nine target paths.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .git/index
+- Pattern-Key: vcs.index-write-permission
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+---
+
+## [ERR-20260722-001] git-log
+
+**Logged**: 2026-07-22T00:00:00+08:00
+**Priority**: low
+**Status**: pending
+**Area**: vcs
+
+### Summary
+`git log` was blocked by Git's dubious-ownership safety check.
+
+### Error
+```text
+fatal: detected dubious ownership in repository at 'D:/opencode_work/ai_novel'
+```
+
+### Context
+- Attempted a read-only history check for the Trending tab files.
+- The current sandbox user differs from the repository owner.
+
+### Suggested Fix
+Use an approved Git safe-directory configuration only when history inspection is required; source analysis does not depend on it.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/components/TrendingPanel.tsx, src/services/trendingService.ts
+- Pattern-Key: vcs.fatal-error
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+---
+
 ## [ERR-20260721-002] request_user_input
 
 **Logged**: 2026-07-21T00:00:00+08:00
