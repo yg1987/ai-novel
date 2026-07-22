@@ -4,6 +4,183 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260722-013] process-probe-timeout
+
+**Logged**: 2026-07-22T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+A combined Windows port-and-process probe timed out while a Tauri development build was active.
+
+### Error
+```
+command timed out after 10128 milliseconds
+```
+
+### Context
+- Combined `Get-NetTCPConnection` with an unscoped process enumeration while `npm run tauri:dev` was compiling.
+- The timeout does not establish that the development server failed to start.
+
+### Suggested Fix
+Use lightweight, scoped probes separately and allow the development command itself to report startup completion.
+
+### Metadata
+- Reproducible: unknown
+- Related Files: none
+- Pattern-Key: shell.command-timeout
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T00:00:00+08:00
+- **Notes**: Treated the diagnostic timeout as inconclusive and continued with a smaller verification command.
+
+---
+
+## [ERR-20260722-012] context7-network-restriction
+
+**Logged**: 2026-07-22T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+The initial Context7 documentation lookup was blocked by sandbox network restrictions.
+
+### Error
+```text
+curl exited with code 1 and returned no response inside the restricted sandbox.
+```
+
+### Context
+- A read-only lookup was needed to verify current tauri-action release inputs.
+
+### Suggested Fix
+Retry the same read-only documentation request with explicit network approval.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .github/workflows/release.yml
+- Pattern-Key: api.context7-network
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T00:00:00+08:00
+- **Notes**: The approved Context7 request succeeded and confirmed the current v1 action inputs.
+
+---
+
+## [ERR-20260722-011] prettier-yaml-format
+
+**Logged**: 2026-07-22T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: config
+
+### Summary
+The new release workflow did not initially match the repository's Prettier YAML formatting.
+
+### Error
+```text
+Code style issues found in .github/workflows/release.yml.
+```
+
+### Context
+- `npx prettier --check .github/workflows/release.yml` was run after adding the workflow.
+
+### Suggested Fix
+Run Prettier on workflow YAML before final validation.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .github/workflows/release.yml
+- Pattern-Key: config.prettier-format
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T00:00:00+08:00
+- **Notes**: Formatted the workflow with the repository's Prettier installation.
+
+---
+
+## [ERR-20260722-010] git-dubious-ownership-in-sandbox
+
+**Logged**: 2026-07-22T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+Git refused to inspect the repository because the sandbox account differs from the workspace owner.
+
+### Error
+```text
+fatal: detected dubious ownership in repository at 'D:/opencode_work/ai_novel'
+```
+
+### Context
+- `git status --short` was run from the managed Windows sandbox.
+- The repository is owned by the Administrators group while commands run as the sandbox account.
+
+### Suggested Fix
+Pass `-c safe.directory=D:/opencode_work/ai_novel` to Git commands in this sandbox instead of changing the user's global Git configuration.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .git
+- Pattern-Key: vcs.dubious-ownership
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T00:00:00+08:00
+- **Notes**: Retried with a command-scoped safe.directory setting.
+
+---
+
+## [ERR-20260722-009] optional-process-probe
+
+**Logged**: 2026-07-22T14:38:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+A PowerShell process probe returned exit code 1 because one optional process name was absent, despite successfully listing active Cargo and Node processes.
+
+### Error
+```text
+Get-Process cargo,tauri,node -ErrorAction SilentlyContinue returned exit code 1.
+```
+
+### Context
+- The read-only probe was used only to confirm a long-running Tauri release build was still active.
+- Cargo was present and the product build was unaffected.
+
+### Suggested Fix
+Query optional process names independently, or explicitly normalize the expected not-found exit after capturing available processes.
+
+### Metadata
+- Reproducible: yes
+- Related Files: none
+- Pattern-Key: shell.nonzero-exit
+- Recurrence-Count: 12
+- First-Seen: 2026-07-17
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T14:38:00+08:00
+- **Notes**: Treated the probe as optional and continued waiting on the authoritative build command.
+
+---
+
 ## [ERR-20260722-006] powershell-rg-glob
 
 **Logged**: 2026-07-22T00:00:00+08:00
@@ -643,6 +820,8 @@ rg: src/components/*.css: 文件名、目录名或卷标语法不正确。 (os e
 - While tightening the same planning document, one `apply_patch` spanned several distant sections and failed context verification. Split unrelated document edits into small patches anchored to exact local text.
 - While recording confirmed brainstorm-plan decisions, a newly edited metadata line retained Markdown hard-break spaces and failed `git diff --check`. Do not add trailing spaces to newly inserted blockquote metadata lines.
 - A later batch combined the required working-tree whitespace check with `git diff --cached --check`; the staged new-file snapshot intentionally lagged behind the revised working tree and failed on old metadata spaces. Inspect staged and unstaged states separately, and never restage user state just to satisfy a review check.
+- While reviewing the version-check implementation plan, optional dependency/schema searches were placed in a parallel batch. One expected no-match exit code caused the full batch to fail. Keep fallible probes as independent commands, even after an earlier successful required path check.
+- While unifying the product name, an expected no-match branding scan was batched with `git diff --check` and a diff summary. Its exit code 1 again invalidated the required verification batch; branding residue scans must be run independently before pass/fail gates.
 
 ### Suggested Fix
 Use `rg --glob "*.css" <pattern> src` on Windows, and run optional no-match searches separately from required reads.
@@ -651,9 +830,9 @@ Use `rg --glob "*.css" <pattern> src` on Windows, and run optional no-match sear
 - Reproducible: yes
 - Related Files: none
 - Pattern-Key: shell.nonzero-exit
-- Recurrence-Count: 15
+- Recurrence-Count: 17
 - First-Seen: 2026-07-17
-- Last-Seen: 2026-07-20
+- Last-Seen: 2026-07-22
 - Promoted: AGENTS.md
 
 ### Resolution
@@ -1036,7 +1215,7 @@ Keep locator labels used by Node-side steps in Node scope, separate from browser
 
 **Logged**: 2026-07-20T00:00:00+08:00
 **Priority**: low
-**Status**: wont_fix
+**Status**: resolved
 **Area**: backend
 
 ### Summary
@@ -1058,13 +1237,13 @@ Run the release build with a packaging-appropriate time budget only when prepari
 - Reproducible: unknown
 - Related Files: src-tauri/Cargo.toml, src-tauri/Cargo.lock
 - Pattern-Key: build.timeout
-- Recurrence-Count: 1
+- Recurrence-Count: 2
 - First-Seen: 2026-07-20
-- Last-Seen: 2026-07-20
+- Last-Seen: 2026-07-22
 
 ### Resolution
-- **Resolved**: 2026-07-20T00:00:00+08:00
-- **Notes**: Deferred release and installer verification to the future packaging stage by user direction.
+- **Resolved**: 2026-07-22T15:07:22+08:00
+- **Notes**: The first complete Tauri packaging run exceeded the outer 20-minute command window, but its surviving build process completed successfully and generated the release executable, MSI, and NSIS installer. Future release builds need a packaging-scale timeout.
 
 ---
 
@@ -1457,5 +1636,42 @@ Map `finding.target` into the index summary whenever a finding is persisted.
 ### Resolution
 - **Resolved**: 2026-07-22T00:00:00+08:00
 - **Notes**: The summary writer now persists target references.
+
+---
+
+## [ERR-20260722-014] release-workflow-stale-revision
+
+**Logged**: 2026-07-22T16:45:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: infra
+
+### Summary
+The Windows release workflow was rerun from a commit that predates the `protoc` installation fix.
+
+### Error
+```text
+Could not find `protoc` while building lance-encoding v4.0.0.
+```
+
+### Context
+- GitHub Actions run `29899839795`, attempt 2, used `a147fff`.
+- The `Install Protocol Buffers compiler` step was introduced later in `fea97ea` and is already on `origin/master`.
+- Re-running a completed GitHub Actions run retains its original commit, so the new step was not executed.
+
+### Suggested Fix
+Start a new `Publish Release` workflow run from the current `master` branch instead of using **Re-run jobs** on the old run.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .github/workflows/release.yml
+- Pattern-Key: build.stale-workflow-revision
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T16:45:00+08:00
+- **Notes**: Verified the failed run's step list lacks the installer, while `origin/master` contains the committed installer step.
 
 ---

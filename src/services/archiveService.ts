@@ -8,7 +8,7 @@ import { save, open } from '@tauri-apps/plugin-dialog'
 export async function archiveProject(projectId: string, projectName: string): Promise<void> {
   const filePath = await save({
     defaultPath: `${projectName}.ai-novel.tar.gz`,
-    filters: [{ name: 'AI Novel Archive', extensions: ['tar.gz'] }],
+    filters: [{ name: 'AI Novel Writer Archive', extensions: ['tar.gz'] }],
   })
   if (!filePath) return
   await invoke<string>('archive_project', { projectId, outputPath: filePath })
@@ -19,7 +19,7 @@ export async function archiveProject(projectId: string, projectName: string): Pr
  */
 export async function importProject(): Promise<string | null> {
   const filePath = await open({
-    filters: [{ name: 'AI Novel Archive', extensions: ['tar.gz'] }],
+    filters: [{ name: 'AI Novel Writer Archive', extensions: ['tar.gz'] }],
     multiple: false,
   })
   if (!filePath) return null
