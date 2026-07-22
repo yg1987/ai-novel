@@ -1,0 +1,113 @@
+name: Publish Release
+
+run-name: Publish AI Novel v${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version without the v prefix; must match all project version files'
+        required: true
+        type: string
+      release_notes:
+        description: 'Release notes (Markdown supported)'
+        required: false
+        type: string
+      prerelease:
+        description: 'Mark this release as a prerelease'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish-windows:
+    name: Build and publish Windows installers
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate release version
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          $version = $env:RELEASE_VERSION.Trim()
+          $semverPattern = '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$'
+
+          if ($version -notmatch $semverPattern) {
+            throw "Version '$version' is not valid semantic versioning (for example: 0.2.0 or 0.2.0-beta.1)."
+          }
+
+          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tauriVersion = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $cargoManifest = Get-Content src-tauri/Cargo.toml -Raw
+          $cargoVersionMatch = [regex]::Match(
+            $cargoManifest,
+            '(?ms)^\[package\]\s+.*?^version\s*=\s*"([^"]+)"'
+          )
+
+          if (-not $cargoVersionMatch.Success) {
+            throw 'Could not read the package version from src-tauri/Cargo.toml.'
+          }
+
+          $versions = @{
+            'package.json' = $packageVersion
+            'src-tauri/tauri.conf.json' = $tauriVersion
+            'src-tauri/Cargo.toml' = $cargoVersionMatch.Groups[1].Value
+          }
+
+          foreach ($entry in $versions.GetEnumerator()) {
+            if ($entry.Value -ne $version) {
+              throw "Requested version $version does not match $($entry.Key) version $($entry.Value)."
+            }
+          }
+
+          $tag = "v$version"
+          $existingTag = git ls-remote --tags origin "refs/tags/$tag"
+          if ($existingTag) {
+            throw "Tag $tag already exists on origin. Choose a new version."
+          }
+
+          "Validated release version $version across all project manifests."
+
+      - name: Run quality gate
+        run: npm run check
+
+      - name: Build installers and publish release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v${{ inputs.version }}
+          releaseName: AI Novel v${{ inputs.version }}
+          releaseBody: ${{ inputs.release_notes }}
+          generateReleaseNotes: true
+          releaseDraft: false
+          prerelease: ${{ inputs.prerelease }}
