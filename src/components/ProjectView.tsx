@@ -20,14 +20,14 @@ const ReviewPanel = lazy(() => import('./ReviewPanel'))
 const ResourcePanel = lazy(() => import('./ResourcePanel'))
 const BrainstormPanel = lazy(() => import('./BrainstormPanel'))
 const RelationshipGraph = lazy(() => import('./relationship-graph/RelationshipGraph'))
-const ChapterGraph = lazy(() => import('./ChapterGraph'))
+const ChapterFlowPanel = lazy(() => import('./ChapterFlowPanel'))
 
 interface Props {
   project: ProjectMeta
   onBack: () => void
 }
 
-type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats' | 'review' | 'resource' | 'brainstorm' | 'graph' | 'chaptergraph'
+type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats' | 'review' | 'resource' | 'brainstorm' | 'graph' | 'chapterflow'
 
 export default function ProjectView({ project, onBack }: Props) {
   const [tab, setTab] = useState<Tab>('writing')
@@ -123,7 +123,7 @@ export default function ProjectView({ project, onBack }: Props) {
       case 'notes':
         return <NotesPanel projectId={project.id} onNavigateToChapter={handleNavigateToChapter} initialChapterRef={navigateNotesChapterRef} initialFilter={navigateNotesFilter} onHighlightComplete={() => { setNavigateNotesChapterRef(null); setNavigateNotesFilter(null) }} />
       case 'foreshadow':
-        return <ForeshadowPanel projectId={project.id} currentChapterId={currentChapter?.chapterId ?? null} onNavigateToCharacter={handleNavigateToCharacter} highlightId={navigateForeshadowId} onHighlightComplete={() => setNavigateForeshadowId(null)} initialDraft={brainstormForeshadowDraft} onInitialDraftConsumed={() => setBrainstormForeshadowDraft(null)} />
+        return <ForeshadowPanel projectId={project.id} currentChapter={currentChapter ? { volume: currentChapter.volume, chapterId: currentChapter.chapterId } : null} onNavigateToCharacter={handleNavigateToCharacter} highlightId={navigateForeshadowId} onHighlightComplete={() => setNavigateForeshadowId(null)} initialDraft={brainstormForeshadowDraft} onInitialDraftConsumed={() => setBrainstormForeshadowDraft(null)} />
       case 'search':
         return <SearchPanel projectId={project.id} onOpenFile={handleSearchOpenFile} />
       case 'stats':
@@ -143,8 +143,8 @@ export default function ProjectView({ project, onBack }: Props) {
             onNavigateToForeshadow={handleNavigateToForeshadow}
           />
         )
-      case 'chaptergraph':
-        return <ChapterGraph projectId={project.id} />
+      case 'chapterflow':
+        return <ChapterFlowPanel projectId={project.id} segmentSize={chapterSegmentSize} onSegmentSizeChange={setChapterSegmentSize} onNavigateToChapter={handleNavigateToChapter} onNavigateToForeshadow={handleNavigateToForeshadow} />
     }
   }
 
@@ -193,7 +193,7 @@ export default function ProjectView({ project, onBack }: Props) {
         <button className={`tab-btn${tab === 'resource' ? ' active' : ''}`} onClick={() => { setTab('resource') }}>📦 素材</button>
         <button className={`tab-btn${tab === 'brainstorm' ? ' active' : ''}`} onClick={() => { setTab('brainstorm') }}>💡 灵感</button>
         <button className={`tab-btn${tab === 'graph' ? ' active' : ''}`} onClick={() => { setTab('graph') }}>🕸 关系图</button>
-        <button className={`tab-btn${tab === 'chaptergraph' ? ' active' : ''}`} onClick={() => { setTab('chaptergraph') }}>📊 章节图</button>
+        <button className={`tab-btn${tab === 'chapterflow' ? ' active' : ''}`} onClick={() => { setTab('chapterflow') }}>📈 章节脉络</button>
       </div>
 
       <div className="project-tab-content">

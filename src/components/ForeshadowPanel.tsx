@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { ForeshadowEntry, ForeshadowInspiration, ForeshadowStatus } from '../types/novel'
 import { DEFAULT_FORESHADOW_CONFIG } from '../types/novel'
-import type { ChapterMeta } from '../types/chapter'
+import type { ChapterMeta, ChapterRef } from '../types/chapter'
+import { chapterRefKey } from '../services/chapterDisplay'
+import { buildChapterSequence, formatChapterId } from '../services/chapterCatalog'
 import type { BrainstormForeshadowDraft } from '../types/brainstorm'
 import { listChapters, listProjectFiles } from '../api/tauri'
 import {
@@ -15,6 +17,7 @@ import {
   saveForeshadowConfig,
   saveInspiration,
   loadInspiration,
+  initializeNewForeshadows,
 } from '../services/foreshadowStorage'
 import { runForeshadowInspire } from '../services/foreshadowInspire'
 import { usePagination } from '../hooks/usePagination'
@@ -24,6 +27,8 @@ import ForeshadowConfigPanel from './foreshadow-panel/ForeshadowConfigPanel'
 import ForeshadowFilters from './foreshadow-panel/ForeshadowFilters'
 import ForeshadowList from './foreshadow-panel/ForeshadowList'
 import ForeshadowDialogs from './foreshadow-panel/ForeshadowDialogs'
+import Modal from './Modal'
+import Button from './Button'
 import {
   DEFAULT_PAGE_SIZE,
   emptyForeshadowForm,
@@ -35,7 +40,7 @@ import './foreshadow-panel/ForeshadowPanel.css'
 
 interface Props {
   projectId: string
-  currentChapterId: string | null
+  currentChapter: ChapterRef | null
   onNavigateToCharacter?: (name: string) => void
   highlightId?: string | null
   onHighlightComplete?: () => void
@@ -43,22 +48,23 @@ interface Props {
   onInitialDraftConsumed?: () => void
 }
 
-export default function ForeshadowPanel({ projectId, currentChapterId, onNavigateToCharacter, highlightId, onHighlightComplete, initialDraft, onInitialDraftConsumed }: Props) {
+export default function ForeshadowPanel({ projectId, currentChapter, onNavigateToCharacter, highlightId, onHighlightComplete, initialDraft, onInitialDraftConsumed }: Props) {
   const [entries, setEntries] = useState<ForeshadowEntry[]>([])
   const [chapters, setChapters] = useState<ChapterMeta[]>([])
+  const [formError, setFormError] = useState<string | null>(null)
   const [characterNames, setCharacterNames] = useState<string[]>([])
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [showForm, setShowForm] = useState(() => Boolean(initialDraft))
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<ForeshadowFormData>(() => initialDraft ? {
-    ...emptyForeshadowForm(currentChapterId),
+    ...emptyForeshadowForm(currentChapter),
     name: initialDraft.name,
     description: initialDraft.description,
-    plantedChapterId: initialDraft.plantedChapterId || currentChapterId || '',
+    plantedChapter: initialDraft.plantedChapter ?? currentChapter,
     relatedCharacters: initialDraft.relatedCharacters,
     notes: initialDraft.notes,
-  } : emptyForeshadowForm(currentChapterId))
+  } : emptyForeshadowForm(currentChapter))
   const [advancePrompt, setAdvancePrompt] = useState<{ entryId: string; desc: string } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ForeshadowEntry | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -72,22 +78,29 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
   const [inspireLoading, setInspireLoading] = useState(false)
   const [inspireResult, setInspireResult] = useState<ForeshadowInspiration | null>(null)
   const [inspireError, setInspireError] = useState<string | null>(null)
+  const [storageError, setStorageError] = useState<string | null>(null)
+  const [showInitialize, setShowInitialize] = useState(false)
 
   const refresh = useCallback(async () => {
-    const [store, chapterList, characterFiles, config] = await Promise.all([
-      loadForeshadows(projectId),
-      listChapters(projectId),
-      listProjectFiles(projectId, 'characters').catch(() => []),
-      loadForeshadowConfig(projectId),
-    ])
-    setEntries(store.entries)
-    setChapters(chapterList)
-    setForeshadowConfig(config)
-    setCharacterNames(
-      characterFiles
-        .filter((file) => file.name.endsWith('.md'))
-        .map((file) => file.name.replace(/\.md$/, '')),
-    )
+    try {
+      const [store, chapterList, characterFiles, config] = await Promise.all([
+        loadForeshadows(projectId),
+        listChapters(projectId),
+        listProjectFiles(projectId, 'characters').catch(() => []),
+        loadForeshadowConfig(projectId),
+      ])
+      setEntries(store.entries)
+      setChapters(chapterList)
+      setForeshadowConfig(config)
+      setCharacterNames(
+        characterFiles
+          .filter((file) => file.name.endsWith('.md'))
+          .map((file) => file.name.replace(/\.md$/, '')),
+      )
+      setStorageError(null)
+    } catch (error) {
+      setStorageError(error instanceof Error ? error.message : String(error))
+    }
   }, [projectId])
 
   useEffect(() => { refresh().catch(console.error) }, [refresh])
@@ -150,17 +163,24 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
 
   const openAdd = () => {
     setEditingId(null)
-    setForm(emptyForeshadowForm(currentChapterId))
+    setForm(emptyForeshadowForm(currentChapter))
     setShowAdvanced(false)
     setShowCharDropdown(false)
+    setFormError(null)
     setShowForm(true)
   }
 
   const openEdit = (entry: ForeshadowEntry) => {
     setEditingId(entry.id)
-    setForm(entryToForeshadowForm(entry))
-    setShowAdvanced(!!entry.targetChapterId || !!entry.resolutionPlan || !!entry.notes)
+    const next = entryToForeshadowForm(entry)
+    if (entry.plannedResolutionChapter && !chapters.some((chapter) => (
+      chapter.volume === entry.plannedResolutionChapter?.volume
+      && chapter.id === entry.plannedResolutionChapter.chapterId
+    ))) next.plannedResolutionMode = 'future'
+    setForm(next)
+    setShowAdvanced(!!entry.plannedResolutionChapter || !!entry.resolutionPlan || !!entry.notes)
     setShowCharDropdown(false)
+    setFormError(null)
     setShowForm(true)
   }
 
@@ -181,10 +201,10 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
 
   const handleAdoptSuggestion = (index: number, prefill: ForeshadowSuggestionPrefill) => {
     setForm({
-      ...emptyForeshadowForm(currentChapterId),
+      ...emptyForeshadowForm(currentChapter),
       name: prefill.name || '',
       description: prefill.description || '',
-      plantedChapterId: prefill.plantedChapterId || currentChapterId || '',
+      plantedChapter: prefill.plantedChapter ?? currentChapter,
       relatedCharacters: prefill.relatedCharacters || [],
     })
     setEditingId(null)
@@ -202,6 +222,31 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
   }
 
   const handleSave = async () => {
+    if (!form.plantedChapter) return
+    setFormError(null)
+    const futureOrder = Number(form.futureResolutionOrder)
+    const plannedResolutionChapter = form.plannedResolutionMode === 'future'
+      ? (form.futureResolutionVolume && Number.isInteger(futureOrder) && futureOrder > 0
+        ? { volume: form.futureResolutionVolume, chapterId: formatChapterId(futureOrder) }
+        : undefined)
+      : form.plannedResolutionChapter ?? undefined
+    if (form.plannedResolutionMode === 'future' && plannedResolutionChapter) {
+      const sequence = buildChapterSequence(chapters)
+      const alreadyWritten = chapters.some((chapter) => (
+        chapter.volume === plannedResolutionChapter.volume && chapter.id === plannedResolutionChapter.chapterId
+      ))
+      const futureSequence = buildChapterSequence([...chapters, {
+        volume: plannedResolutionChapter.volume,
+        id: plannedResolutionChapter.chapterId,
+        order: futureOrder,
+        title: '',
+      }])
+      const plannedPosition = futureSequence.positionByKey.get(chapterRefKey(plannedResolutionChapter))
+      if (alreadyWritten || plannedPosition !== sequence.lastWrittenPosition + 1) {
+        setFormError('未来章节必须位于当前最后一章之后，且尚未创建正文。')
+        return
+      }
+    }
     const now = new Date().toISOString().slice(0, 16)
     if (editingId) {
       await updateForeshadow(projectId, editingId, {
@@ -209,9 +254,9 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
         description: form.description,
         category: form.category,
         importance: form.importance,
-        plantedChapterId: form.plantedChapterId,
-        targetChapterId: form.targetChapterId || undefined,
-        clues: form.clues,
+        plantedChapter: form.plantedChapter,
+        plannedResolutionChapter,
+        progress: form.progress,
         relatedCharacters: form.relatedCharacters,
         notes: form.notes,
         resolutionPlan: form.resolutionPlan || undefined,
@@ -225,9 +270,9 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
         status: 'planted',
         category: form.category,
         importance: form.importance,
-        plantedChapterId: form.plantedChapterId,
-        targetChapterId: form.targetChapterId || undefined,
-        clues: form.clues,
+        plantedChapter: form.plantedChapter,
+        plannedResolutionChapter,
+        progress: form.progress,
         relatedCharacters: form.relatedCharacters,
         notes: form.notes,
         resolutionPlan: form.resolutionPlan || undefined,
@@ -250,8 +295,9 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
 
   const handleAdvanceConfirm = async () => {
     if (!advancePrompt) return
+    if (!currentChapter) return
     await changeStatus(projectId, advancePrompt.entryId, 'advanced', {
-      chapterId: currentChapterId ?? '',
+      chapter: currentChapter,
       description: advancePrompt.desc || '（手动推进）',
     })
     setAdvancePrompt(null)
@@ -272,6 +318,12 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
     await refresh()
   }
 
+  const handleInitialize = async () => {
+    await initializeNewForeshadows(projectId)
+    setShowInitialize(false)
+    await refresh()
+  }
+
   const toggleCharacter = (name: string) => {
     setForm((prev) => ({
       ...prev,
@@ -281,8 +333,14 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
     }))
   }
 
-  const renderChapterSelect = (value: string, onChange: (value: string) => void) => (
-    <select value={value} onChange={(event) => onChange(event.target.value)}>
+  const renderChapterSelect = (value: ChapterRef | null | undefined, onChange: (value: ChapterRef | null) => void) => (
+    <select
+      value={value ? chapterRefKey(value) : ''}
+      onChange={(event) => {
+        const next = chapters.find((chapter) => chapterRefKey(chapter) === event.target.value)
+        onChange(next ? { volume: next.volume, chapterId: next.id } : null)
+      }}
+    >
       <option value="">（未选择）</option>
       {volumes.map((volume) => (
         <optgroup key={volume} label={volume}>
@@ -290,7 +348,7 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
             .filter((chapter) => chapter.volume === volume)
             .sort((a, b) => a.order - b.order)
             .map((chapter) => (
-              <option key={chapter.id} value={chapter.id}>
+              <option key={chapterRefKey(chapter)} value={chapterRefKey(chapter)}>
                 {chapter.title}
               </option>
             ))}
@@ -298,6 +356,27 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
       ))}
     </select>
   )
+
+  if (storageError) {
+    return (
+      <div className="foreshadow-panel">
+        <div className="foreshadow-empty">
+          <p>{storageError}</p>
+          <Button variant="danger" size="sm" onClick={() => setShowInitialize(true)}>初始化新伏笔数据</Button>
+        </div>
+        {showInitialize && (
+          <Modal>
+            <h3>初始化新伏笔数据</h3>
+            <p>确认后会先备份并校验 `memory/foreshadows.json` 和旧伏笔灵感缓存，再创建新的空伏笔数据。章节正文、细纲和其他项目数据不会被删除。</p>
+            <div className="dialog-footer">
+              <Button variant="text" size="sm" onClick={() => setShowInitialize(false)}>取消</Button>
+              <Button variant="danger" size="md" onClick={() => { void handleInitialize() }}>确认初始化</Button>
+            </div>
+          </Modal>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="foreshadow-panel">
@@ -313,7 +392,7 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
       <ForeshadowHealthCard
         entries={entries}
         filteredEntries={filtered}
-        currentChapterId={currentChapterId}
+        currentChapterRef={currentChapter}
         chapters={chapters}
         config={foreshadowConfig}
         counts={counts}
@@ -337,7 +416,7 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
       <ForeshadowList
         statusFilter={statusFilter}
         inspireResult={inspireResult}
-        currentChapterId={currentChapterId}
+        currentChapterRef={currentChapter}
         chapters={chapters}
         config={foreshadowConfig}
         filteredEntries={filtered}
@@ -368,15 +447,19 @@ export default function ForeshadowPanel({ projectId, currentChapterId, onNavigat
         showForm={showForm}
         editingId={editingId}
         form={form}
+        formError={formError}
         showAdvanced={showAdvanced}
         showCharDropdown={showCharDropdown}
         characterNames={characterNames}
         renderChapterSelect={renderChapterSelect}
-        onFormChange={setForm}
+        onFormChange={(next) => {
+          setFormError(null)
+          setForm(next)
+        }}
         onToggleAdvanced={() => setShowAdvanced((prev) => !prev)}
         onToggleCharacter={toggleCharacter}
         onToggleCharDropdown={() => setShowCharDropdown((prev) => !prev)}
-        onCloseForm={() => setShowForm(false)}
+        onCloseForm={() => { setFormError(null); setShowForm(false) }}
         onSaveForm={handleSave}
         advancePrompt={advancePrompt}
         onAdvancePromptChange={setAdvancePrompt}

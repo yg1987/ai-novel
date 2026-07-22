@@ -17,15 +17,17 @@ export interface ChapterSnapshot {
   suggestions?: string[]             // AI 改进建议
 }
 
+import type { ChapterRef } from './chapter'
+
 // ─── Foreshadowing ──────────────────────────────
 
 export type ForeshadowStatus = 'planted' | 'advanced' | 'resolved' | 'abandoned'
 export type ForeshadowCategory = 'identity' | 'mystery' | 'item' | 'relationship' | 'event' | 'ability' | 'power'
 
-export interface ForeshadowClue {
-  chapterId: string
+export interface ForeshadowProgress {
+  chapter: ChapterRef
   description: string
-  timestamp: string
+  recordedAt: string
 }
 
 export interface ForeshadowEntry {
@@ -35,11 +37,11 @@ export interface ForeshadowEntry {
   status: ForeshadowStatus
   category: ForeshadowCategory
   importance: number              // 0.2 / 0.4 / 0.6 / 0.8 / 1.0
-  plantedChapterId: string
-  targetChapterId?: string
-  resolvedChapterId?: string
+  plantedChapter: ChapterRef
+  plannedResolutionChapter?: ChapterRef
+  recordedResolutionChapter?: ChapterRef
   resolutionPlan?: string
-  clues: ForeshadowClue[]
+  progress: ForeshadowProgress[]
   relatedCharacters: string[]
   notes: string
   createdAt: string
@@ -47,6 +49,7 @@ export interface ForeshadowEntry {
 }
 
 export interface ForeshadowStore {
+  schemaVersion: 1
   entries: ForeshadowEntry[]
   updatedAt: string
 }

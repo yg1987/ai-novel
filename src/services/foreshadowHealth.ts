@@ -1,20 +1,22 @@
 // src/services/foreshadowHealth.ts
 // Health scoring, density analysis, and labeling for the foreshadowing system
 import type { ForeshadowEntry, ForeshadowConfig } from '../types/novel'
-import type { ChapterMeta } from '../types/chapter'
+import type { ChapterMeta, ChapterRef } from '../types/chapter'
 import { classifyForeshadows } from './foreshadowContext'
+import { buildChapterSequence } from './chapterCatalog'
+import { chapterRefKey } from './chapterDisplay'
 
 // ─── Helpers ───────────────────────────────
 
-function getChapterOrder(chapterId: string, chapters: ChapterMeta[]): number {
-  return chapters.find((c) => c.id === chapterId)?.order ?? 0
+function getChapterPosition(ref: ChapterRef, chapters: ChapterMeta[]): number {
+  return buildChapterSequence(chapters).positionByKey.get(chapterRefKey(ref)) ?? 0
 }
 
 // ─── Health Score ──────────────────────────
 
 export function calcForeshadowHealth(
   entries: ForeshadowEntry[],
-  currentChapterId: string | null,
+  currentChapter: ChapterRef | null,
   chapters: ChapterMeta[],
   config: ForeshadowConfig,
 ): number {
@@ -22,15 +24,15 @@ export function calcForeshadowHealth(
   const unresolved = entries.filter(
     (e) => e.status !== 'resolved' && e.status !== 'abandoned',
   )
-  if (!currentChapterId || unresolved.length === 0) return 100
+  if (!currentChapter || unresolved.length === 0) return 100
 
-  const classified = classifyForeshadows(entries, currentChapterId, chapters, config)
+  const classified = classifyForeshadows(entries, currentChapter, chapters, config)
 
   // Base score: critical entries are expensive, background entries mild
   let score = 100 - classified.critical.length * 10 - classified.background.length * 3
 
   // Density penalty
-  const currentOrder = getChapterOrder(currentChapterId, chapters)
+  const currentOrder = getChapterPosition(currentChapter, chapters)
   const density = unresolved.length / Math.max(1, currentOrder)
   if (density > config.densityWarningThreshold) {
     score -= Math.round((density - config.densityWarningThreshold) * 100)
@@ -53,18 +55,18 @@ export function getHealthLabel(score: number): string {
 
 export function calcForeshadowDensity(
   entries: ForeshadowEntry[],
-  currentChapterId: string | null,
+  currentChapter: ChapterRef | null,
   chapters: ChapterMeta[],
 ): { density: number; unresolved: number; totalChapters: number } {
   const unresolved = entries.filter(
     (e) => e.status !== 'resolved' && e.status !== 'abandoned',
   )
 
-  if (!currentChapterId || unresolved.length === 0) {
+  if (!currentChapter || unresolved.length === 0) {
     return { density: 0, unresolved: unresolved.length, totalChapters: chapters.length }
   }
 
-  const currentOrder = getChapterOrder(currentChapterId, chapters)
+  const currentOrder = getChapterPosition(currentChapter, chapters)
   const density = unresolved.length / Math.max(1, currentOrder)
 
   return {

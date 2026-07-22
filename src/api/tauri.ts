@@ -99,6 +99,11 @@ export async function writeProjectFile(projectId: string, subdir: string, filena
   return invoke<null>('write_project_file', { projectId, subdir, filename, content })
 }
 
+/** Writes a generated/derived project file without exposing a partial replacement to readers. */
+export async function atomicWriteProjectFile(projectId: string, subdir: string, filename: string, content: string): Promise<void> {
+  await invoke('atomic_write_project_file', { projectId, subdir, filename, content })
+}
+
 export async function deleteProjectFile(projectId: string, subdir: string, filename: string): Promise<null> {
   return invoke<null>('delete_project_file', { projectId, subdir, filename })
 }

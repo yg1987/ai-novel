@@ -67,7 +67,7 @@ export interface BrainstormDerivation {
 export interface BrainstormForeshadowDraft {
   name: string
   description: string
-  plantedChapterId: string
+  plantedChapter?: { volume: string; chapterId: string }
   relatedCharacters: string[]
   notes: string
 }

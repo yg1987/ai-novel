@@ -6,8 +6,9 @@ import {
   saveChapterContent,
   writeProjectFile,
 } from '../api/tauri'
-import type { ChapterKey, ChapterMeta, ChapterRef } from '../types/chapter'
+import type { ChapterKey, ChapterMeta, ChapterRef, ChapterSequence } from '../types/chapter'
 import { chapterRefKey, compareChapters } from './chapterDisplay'
+import { markChapterCreated } from './chapterFlowSaveCoordinator'
 
 const MEMORY_DIR = 'memory'
 const CHAPTER_TITLES_FILE = '_chapter_titles.json'
@@ -33,19 +34,37 @@ export function chapterOrder(chapterId: string): number {
   return match ? Number(match[1]) : 0
 }
 
+export function formatChapterId(order: number): string {
+  if (!Number.isInteger(order) || order < 1) throw new Error('Chapter order must be a positive integer')
+  return `ch${String(order).padStart(3, '0')}`
+}
+
 export function volumeOrder(volume: string): number {
   const match = /^卷(\d+)$/.exec(volume)
   return match ? Number(match[1]) : 0
 }
 
 export function compareVolumes(left: string, right: string): number {
-  return volumeOrder(left) - volumeOrder(right) || left.localeCompare(right, 'zh-CN')
+  return new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' }).compare(left, right)
 }
 
 export function compareRefs(left: ChapterRef, right: ChapterRef): number {
   return compareVolumes(left.volume, right.volume)
     || chapterOrder(left.chapterId) - chapterOrder(right.chapterId)
     || left.chapterId.localeCompare(right.chapterId)
+}
+
+/** The sole stable ordering for cross-volume chapter-flow calculations. */
+export function buildChapterSequence(chapters: ChapterMeta[]): ChapterSequence {
+  const collator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' })
+  const ordered = [...chapters].sort((left, right) => (
+    collator.compare(left.volume, right.volume)
+      || left.order - right.order
+      || left.id.localeCompare(right.id, 'zh-CN')
+  ))
+  const positionByKey = new Map<ChapterKey, number>()
+  ordered.forEach((chapter, index) => positionByKey.set(chapterRefKey(chapter), index + 1))
+  return { chapters: ordered, positionByKey, lastWrittenPosition: ordered.length }
 }
 
 export function chapterRefFromMeta(chapter: ChapterMeta): ChapterRef {
@@ -119,6 +138,7 @@ async function writeWritingChapter(
     await deleteProjectFile(projectId, `chapters/${ref.volume}`, `${ref.chapterId}.md`).catch(() => undefined)
     throw error
   }
+  await markChapterCreated(projectId, ref)
   return { id: ref.chapterId, volume: ref.volume, order: chapterOrder(ref.chapterId), title: `第${chapterOrder(ref.chapterId)}章` }
 }
 

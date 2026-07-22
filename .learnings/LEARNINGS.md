@@ -6,6 +6,37 @@ Corrections, insights, and knowledge gaps captured during development.
 
 ---
 
+## [LRN-20260722-002] correction
+
+**Logged**: 2026-07-22T00:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+Chapter-flow navigation must carry over the established volume, chapter, and segment controls instead of offering search alone.
+
+### Details
+Adding a text search to the timeline did not solve navigation in a long volume such as 300 chapters. The writing module already establishes the expected interaction contract: select a volume, jump to a chapter, and organize the list in configurable 25/50/100 chapter segments.
+
+### Suggested Action
+Reuse the project-scoped chapter segment preference in the ChapterFlow panel, group its virtual timeline into collapsible segments, and expand and scroll to the selected segment when navigating by chapter.
+
+### Metadata
+- Source: user_feedback
+- Related Files: src/components/ChapterFlowPanel.tsx, src/components/ChapterFlowPanel.css, src/components/ProjectView.tsx
+- Tags: chapter-flow, navigation, virtual-list, segment
+- Pattern-Key: frontend.chapter-flow-navigation
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T00:00:00+08:00
+- **Notes**: Reused the writing module's project-scoped segment setting, added volume and chapter jumps, and grouped the virtual timeline into collapsible 25/50/100 chapter sections.
+
+---
+
 ## [LRN-20260722-001] correction
 
 **Logged**: 2026-07-22T00:00:00+08:00

@@ -9,7 +9,7 @@
 //   2. logChapterSaved       — stats event log
 //   3. chunk + embed + index — vector store upsert
 
-import { vectorUpsertChunks, commitChapterVersion } from '../api/tauri'
+import { vectorUpsertChunks } from '../api/tauri'
 import { checkBannedWords, type CheckResult } from './bannedWords'
 import { loadReviewRules } from './reviewRules'
 import { logChapterSaved } from './stats'
@@ -17,6 +17,7 @@ import { chunkMarkdown } from './textChunker'
 import { embedChunks } from './embeddings'
 import { runAndSaveLightCheck } from './reviewLightService'
 import { runConsistencyChecks } from './consistencyCheck'
+import { saveChapterWithFlowIndex, type ChapterSaveResult } from './chapterFlowSaveCoordinator'
 
 // ─── Public types ─────────────────────────────────
 
@@ -131,11 +132,14 @@ async function maybeRunDeepReview(
 /**
  * Execute the save pipeline — persist only, no review.
  */
-export async function runSavePipeline(input: SavePipelineInput): Promise<void> {
+export async function runSavePipeline(input: SavePipelineInput): Promise<ChapterSaveResult> {
   const { projectId, volume, chapterId, chapterNumber, html } = input
 
   // 1. Commit version snapshot + persist chapter content to disk
-  await commitChapterVersion(projectId, volume, chapterId, html)
+  const saveResult = await saveChapterWithFlowIndex(projectId, { volume, chapterId }, html, 'manual')
+  if (!saveResult.flowIndexUpdated) {
+    console.warn('正文已保存，但章节脉络索引更新失败:', saveResult.indexError)
+  }
 
   const plainText = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
 
@@ -146,6 +150,7 @@ export async function runSavePipeline(input: SavePipelineInput): Promise<void> {
   if (plainText.trim().length > 100) {
     await indexChapterContent(projectId, chapterId, plainText)
   }
+  return saveResult
 }
 
 /**
@@ -173,7 +178,7 @@ export async function runReview(input: SavePipelineInput): Promise<ReviewResult>
   if (plainText.trim().length > 50) {
     try {
       const charFiles = plainText.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]{2,4}/g) ?? []
-      const result = await runConsistencyChecks(projectId, input.chapterId, charFiles, rules.consistency)
+      const result = await runConsistencyChecks(projectId, { volume: input.volume, chapterId: input.chapterId }, charFiles, rules.consistency)
       consistencyIssues = result.summary.total
     } catch (e) { console.error('Consistency check failed:', e) }
   }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, forwardRef, useImperativeHand
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
-import { saveChapterContent, getChapterContent } from '../api/tauri'
+import { getChapterContent } from '../api/tauri'
 import { buildContext } from '../contextEngine'
 import {
   buildChapterCompletionReviewMessage,
@@ -25,6 +25,7 @@ import Button from './Button'
 import { logAIGenerated, logSessionStart, logSessionEnd } from '../services/stats'
 import './Editor.css'
 import { runSavePipeline, runReview } from '../services/savePipeline'
+import { saveChapterWithFlowIndex } from '../services/chapterFlowSaveCoordinator'
 import { type RewriteMode } from '../services/rewriteService'
 import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
 import type { MaterialContextSelection } from '../types/material'
@@ -129,9 +130,12 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
       if (saveTimer.current) clearTimeout(saveTimer.current)
       saveTimer.current = setTimeout(() => {
         if (html !== lastSaved.current) {
-          lastSaved.current = html
           console.log(`[Editor] 自动保存 ${chapterId}，内容长度: ${html.length}，前100字符: ${html.slice(0, 100)}`)
-          saveChapterContent(projectId, volume, chapterId, html)
+          saveChapterWithFlowIndex(projectId, { volume, chapterId }, html, 'auto')
+            .then((result) => {
+              if (result.contentSaved) lastSaved.current = html
+              if (!result.flowIndexUpdated) console.warn('Chapter flow index update failed:', result.indexError)
+            })
             .catch((e: unknown) => { console.error('Auto-save failed:', e) })
         }
       }, AUTOSAVE_DELAY)
@@ -160,7 +164,8 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
       if (editor && editor.getHTML() !== lastSaved.current) {
         const html = editor.getHTML()
         console.log(`[Editor] 卸载保存 ${chapterId}，内容长度: ${html.length}，前100字符: ${html.slice(0, 100)}`)
-        saveChapterContent(projectId, volume, chapterId, html)
+        void saveChapterWithFlowIndex(projectId, { volume, chapterId }, html, 'unmount')
+          .then((result) => { if (!result.flowIndexUpdated) console.warn('Chapter flow index update failed:', result.indexError) })
           .catch((e: unknown) => { console.error('Final save failed:', e) })
       } else {
         console.log(`[Editor] 卸载 ${chapterId}，无需保存 (内容未变化)`)
@@ -178,13 +183,15 @@ const EditorInner = forwardRef<EditorHandle, EditorInnerProps>(({ projectId, vol
     if (saveTimer.current) clearTimeout(saveTimer.current)
     if (!editor) return
     const html = editor.getHTML()
-    lastSaved.current = html
     setSaving(true)
     setGenerationComplete(false)
     setSaveFeedback(null)
 
     runSavePipeline({ projectId, volume, chapterId, chapterNumber: chapterNumber, html })
-      .then(() => { showFeedback('✅ 已保存') })
+      .then((result) => {
+        lastSaved.current = html
+        showFeedback(result.flowIndexUpdated ? '✅ 已保存' : '正文已保存，章节脉络索引更新失败')
+      })
       .catch((e: unknown) => { console.error('Save failed:', e); showFeedback('保存失败') })
       .finally(() => { setSaving(false) })
   }, [editor, projectId, volume, chapterId, chapterNumber, showFeedback])

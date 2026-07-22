@@ -57,6 +57,7 @@ dependencies = [
  "tauri-plugin-shell",
  "url",
  "uuid",
+ "windows-sys 0.59.0",
  "zip 8.6.0",
 ]
 

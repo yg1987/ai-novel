@@ -43,7 +43,7 @@ export function chapterRefKey(chapter: ChapterRef | Pick<ChapterMeta, 'volume' |
 
 export function compareChapters(left: ChapterMeta, right: ChapterMeta): number {
   const volumeOrder = collator.compare(left.volume, right.volume)
-  return volumeOrder !== 0 ? volumeOrder : left.order - right.order
+  return volumeOrder !== 0 ? volumeOrder : left.order - right.order || left.id.localeCompare(right.id, 'zh-CN')
 }
 
 export function volumeDisplayName(volume: string, metadata: ChapterDisplayMetadata): string {

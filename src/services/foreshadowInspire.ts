@@ -106,7 +106,7 @@ export async function runForeshadowInspire(
     const store = await loadForeshadows(request.projectId)
     if (store.entries.length > 0) {
       const lines = store.entries.map((e) =>
-        `- [${e.status === 'resolved' ? '已回收' : e.status === 'abandoned' ? '已废弃' : '活跃'}] ${e.name}：${e.description}（${e.plantedChapterId}）关联角色: ${e.relatedCharacters.join(', ') || '无'}`
+        `- [${e.status === 'resolved' ? '已回收' : e.status === 'abandoned' ? '已废弃' : '活跃'}] ${e.name}：${e.description}（${e.plantedChapter.volume}·${e.plantedChapter.chapterId}）关联角色: ${e.relatedCharacters.join(', ') || '无'}`
       )
       contextParts.push(`## 已有伏笔\n${lines.join('\n')}`)
     } else {

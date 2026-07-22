@@ -17,6 +17,7 @@ import {
   sortChapters,
 } from '../services/chapterCatalog'
 import { chapterRefKey } from '../services/chapterDisplay'
+import { markChapterDeleted } from '../services/chapterFlowSaveCoordinator'
 import { archiveChapterReviews } from '../services/reviewReportStorage'
 import { buildChapterRef, getNotesForChapter, loadAllNotes, type NoteEntry } from '../services/notesStorage'
 import { copyChapterForPlatform } from '../services/exportService'
@@ -311,6 +312,7 @@ export default function ChapterManager({
       const nextVolumes = { ...volumeNames }
       if (deleteConfirm.kind === 'volume') delete nextVolumes[deleteConfirm.volume]
       await persistNames(nextVolumes, nextTitles)
+      await Promise.all(targets.map((chapter) => markChapterDeleted(projectId, { volume: chapter.volume, chapterId: chapter.id })))
       setChapterTitles(nextTitles)
       setVolumeNames(nextVolumes)
       const nextChapters = await refresh()

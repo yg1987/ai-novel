@@ -1,5 +1,5 @@
 import type { ForeshadowConfig, ForeshadowEntry } from '../../types/novel'
-import type { ChapterMeta } from '../../types/chapter'
+import type { ChapterMeta, ChapterRef } from '../../types/chapter'
 import { classifyForeshadows } from '../../services/foreshadowContext'
 import { calcForeshadowDensity, calcForeshadowHealth, getHealthLabel } from '../../services/foreshadowHealth'
 import type { ForeshadowCounts } from './foreshadowPanelUtils'
@@ -7,21 +7,21 @@ import type { ForeshadowCounts } from './foreshadowPanelUtils'
 interface Props {
   entries: ForeshadowEntry[]
   filteredEntries: ForeshadowEntry[]
-  currentChapterId: string | null
+  currentChapterRef: ChapterRef | null
   chapters: ChapterMeta[]
   config: ForeshadowConfig
   counts: ForeshadowCounts
 }
 
-export default function ForeshadowHealthCard({ entries, filteredEntries, currentChapterId, chapters, config, counts }: Props) {
+export default function ForeshadowHealthCard({ entries, filteredEntries, currentChapterRef, chapters, config, counts }: Props) {
   if (entries.length === 0) return null
 
-  const healthScore = calcForeshadowHealth(filteredEntries, currentChapterId, chapters, config)
+  const healthScore = calcForeshadowHealth(filteredEntries, currentChapterRef, chapters, config)
   const healthLabel = getHealthLabel(healthScore)
   const activeCount = counts.planted + counts.advanced
   const recoveryRate = Math.round((counts.resolved / entries.length) * 100)
-  const classified = classifyForeshadows(filteredEntries, currentChapterId, chapters, config)
-  const densityInfo = calcForeshadowDensity(filteredEntries, currentChapterId, chapters)
+  const classified = classifyForeshadows(filteredEntries, currentChapterRef, chapters, config)
+  const densityInfo = calcForeshadowDensity(filteredEntries, currentChapterRef, chapters)
   const densityStatus = densityInfo.density > config.densityWarningThreshold
     ? '⚠️ 偏高'
     : densityInfo.totalChapters > 20 && densityInfo.density < config.densityLowThreshold

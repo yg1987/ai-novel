@@ -1,7 +1,7 @@
 import Button from '../Button'
 import Pagination from '../Pagination'
 import type { ForeshadowConfig, ForeshadowEntry, ForeshadowInspiration, ForeshadowStatus, ForeshadowSuggestion } from '../../types/novel'
-import type { ChapterMeta } from '../../types/chapter'
+import type { ChapterMeta, ChapterRef } from '../../types/chapter'
 import { classifyForeshadows } from '../../services/foreshadowContext'
 import {
   CATEGORY_LABELS,
@@ -86,7 +86,7 @@ function SuggestionCard({
 interface Props {
   statusFilter: string
   inspireResult: ForeshadowInspiration | null
-  currentChapterId: string | null
+  currentChapterRef: ChapterRef | null
   chapters: ChapterMeta[]
   config: ForeshadowConfig
   filteredEntries: ForeshadowEntry[]
@@ -106,7 +106,7 @@ interface Props {
 export default function ForeshadowList({
   statusFilter,
   inspireResult,
-  currentChapterId,
+  currentChapterRef,
   chapters,
   config,
   filteredEntries,
@@ -149,15 +149,15 @@ export default function ForeshadowList({
     )
   }
 
-  const classified = classifyForeshadows(filteredEntries, currentChapterId, chapters, config)
+  const classified = classifyForeshadows(filteredEntries, currentChapterRef, chapters, config)
 
   return (
     <>
       <div className="foreshadow-list">
         {pagedEntries.map((entry) => {
           const urgency = getForeshadowUrgency(entry, classified)
-          const plantedLabel = getChapterLabel(entry.plantedChapterId, chapters)
-          const targetLabel = entry.targetChapterId ? getChapterLabel(entry.targetChapterId, chapters) : null
+          const plantedLabel = getChapterLabel(entry.plantedChapter, chapters)
+          const targetLabel = entry.plannedResolutionChapter ? getChapterLabel(entry.plannedResolutionChapter, chapters) : null
 
           return (
             <div key={entry.id} id={`foreshadow-${entry.id}`} className={`foreshadow-item urgency-${urgency}`}>
@@ -177,7 +177,7 @@ export default function ForeshadowList({
               <div className="foreshadow-desc">{entry.description}</div>
               <div className="foreshadow-meta">
                 <span>埋入: {plantedLabel}</span>
-                {entry.resolvedChapterId && <span>回收: {getChapterLabel(entry.resolvedChapterId, chapters)}</span>}
+                {entry.recordedResolutionChapter && <span>回收: {getChapterLabel(entry.recordedResolutionChapter, chapters)}</span>}
                 {targetLabel && <span>计划回收: {targetLabel}</span>}
                 {entry.resolutionPlan && <span>方式: {entry.resolutionPlan}</span>}
               </div>
@@ -196,13 +196,13 @@ export default function ForeshadowList({
                 </div>
               )}
               {entry.notes && <div className="foreshadow-notes">{entry.notes}</div>}
-              {entry.clues.length > 0 && (
+              {entry.progress.length > 0 && (
                 <div className="foreshadow-clues">
                   <div className="foreshadow-clues-title">推进轨迹</div>
-                  {entry.clues.map((clue, index) => (
+                  {entry.progress.map((progress, index) => (
                     <div key={index} className="foreshadow-clue-item">
-                      <span className="foreshadow-clue-chapter">{getChapterLabel(clue.chapterId, chapters)}</span>
-                      <span className="foreshadow-clue-desc">{clue.description}</span>
+                      <span className="foreshadow-clue-chapter">{getChapterLabel(progress.chapter, chapters)}</span>
+                      <span className="foreshadow-clue-desc">{progress.description}</span>
                     </div>
                   ))}
                 </div>

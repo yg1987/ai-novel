@@ -4,6 +4,41 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260722-006] powershell-rg-glob
+
+**Logged**: 2026-07-22T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+PowerShell passed recursive glob strings to ripgrep as invalid Windows path names.
+
+### Error
+```text
+rg: src/**/__tests__: The filename, directory name, or volume label syntax is incorrect. (os error 123)
+```
+
+### Context
+- The failed command only attempted to locate existing test mocks and made no file changes.
+
+### Suggested Fix
+Pass the confirmed parent directory to `rg` and use `-g` include patterns when filtering files.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/services/__tests__
+- Pattern-Key: shell.powershell-glob
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T00:00:00+08:00
+- **Notes**: Subsequent probes use a directory path plus ripgrep include filters.
+
+---
+
 ## [ERR-20260722-001] git-index-write
 
 **Logged**: 2026-07-22T09:55:00+08:00
@@ -1168,12 +1203,259 @@ Run Rust formatting checks after editing Tauri commands and apply the formatter'
 - Reproducible: yes
 - Related Files: src-tauri/src/lib.rs
 - Pattern-Key: build.rust-format
-- Recurrence-Count: 1
+- Recurrence-Count: 2
 - First-Seen: 2026-07-21
-- Last-Seen: 2026-07-21
+- Last-Seen: 2026-07-22
 
 ### Resolution
 - **Resolved**: 2026-07-21T00:00:00+08:00
 - **Notes**: Applied the single-line formatter output and rechecked.
+
+---
+
+## [ERR-20260722-001] powershell-heading-check
+
+**Logged**: 2026-07-22T11:36:59+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: docs
+
+### Summary
+A documentation heading verification command used an over-escaped PowerShell regex and returned no matches.
+
+### Error
+```text
+Unexpected top-level section order:
+```
+
+### Context
+- The check passed a double-backslash regex to PowerShell, causing it to look for literal backslashes instead of markdown heading numbers.
+- No project files or document content were affected.
+
+### Suggested Fix
+Use a single PowerShell regex escape in the shell command and run heading validation separately from required diff checks.
+
+### Metadata
+- Reproducible: yes
+- Related Files: doc/章节脉络模块重构实施方案.md
+- Pattern-Key: shell.powershell-regex-escaping
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T11:36:59+08:00
+- **Notes**: The command was corrected to use `'^## (\d+)\.'` as the PowerShell regex literal and will be rerun independently.
+
+---
+
+## [ERR-20260722-002] powershell-rg-quoting
+
+**Logged**: 2026-07-22T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+A PowerShell command passed a malformed regex to `rg` while checking the Cargo lockfile.
+
+### Error
+```text
+rg: regex parse error: unclosed group
+```
+
+### Context
+- The command used shell-escaped double quotes inside a regex pattern.
+- No source or project data was changed.
+
+### Suggested Fix
+Use PowerShell's `Select-String -SimpleMatch` for quoted lockfile entries.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src-tauri/Cargo.lock
+- Pattern-Key: shell.powershell-quoting
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T00:00:00+08:00
+- **Notes**: Replaced the query with `Select-String -SimpleMatch`.
+
+---
+
+## [ERR-20260722-003] optional-path-probe
+
+**Logged**: 2026-07-22T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+A required symbol search was combined with a non-existent optional directory glob.
+
+### Error
+```text
+rg: src\\components\\chapter-manager: system cannot find the path specified
+```
+
+### Context
+- The required `ChapterManager.tsx` search succeeded, but the optional folder made the combined command fail.
+
+### Suggested Fix
+Confirm optional paths separately before including them in a required read/search command.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/components/ChapterManager.tsx
+- Pattern-Key: shell.optional-path-probe
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T00:00:00+08:00
+- **Notes**: The required result was retained; future optional probes will run separately.
+
+---
+
+## [ERR-20260722-004] apply-patch-context
+
+**Logged**: 2026-07-22T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+A patch targeted an `async` function signature that did not match the current source.
+
+### Error
+```text
+apply_patch verification failed: expected function context was not found
+```
+
+### Context
+- No file was changed by the failed patch.
+
+### Suggested Fix
+Read the immediate source section and apply the smaller patch against its actual signature.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/services/chapterFlowService.ts
+- Pattern-Key: shell.apply-patch-context
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T00:00:00+08:00
+- **Notes**: The target will be re-read before retrying.
+
+---
+
+## [ERR-20260722-005] vitest-cli-option
+
+**Logged**: 2026-07-22T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A Jest-only test flag was passed to Vitest.
+
+### Error
+```text
+CACError: Unknown option `--runInBand`
+```
+
+### Context
+- The test runner exited before executing any tests.
+
+### Suggested Fix
+Run the repository's `npm test` script without Jest-specific flags.
+
+### Metadata
+- Reproducible: yes
+- Related Files: package.json
+- Pattern-Key: shell.vitest-cli-option
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T00:00:00+08:00
+- **Notes**: Retrying with the native Vitest command.
+
+---
+
+## [ERR-20260722-008] typescript-chapter-key-brand
+
+**Logged**: 2026-07-22T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+Timeline row typing widened a branded chapter key to string, which prevented use as an analysis-status map key.
+
+### Error
+```text
+TS2345: Argument of type 'string' is not assignable to parameter of type 'ChapterKey'.
+```
+
+### Context
+- `npx tsc --noEmit` after adding timeline segment rows.
+
+### Suggested Fix
+Preserve `ChapterKey` on the chapter row union member while allowing non-chapter timeline rows to use ordinary string keys.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/components/ChapterFlowPanel.tsx
+- Pattern-Key: frontend.chapter-key-brand
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T00:00:00+08:00
+- **Notes**: Restored the branded key type on chapter timeline rows.
+
+---
+
+## [ERR-20260722-007] chapter-flow-index-summary-target
+
+**Logged**: 2026-07-22T00:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+Cross-chapter finding details retained the target chapter, but the lightweight index summary omitted it.
+
+### Error
+```text
+Cross-chapter regression test could not find target: { volume: "卷1", chapterId: "ch001" } in index.json.
+```
+
+### Context
+- Detail and index summaries are intentionally separate storage models; both must carry navigation fields.
+
+### Suggested Fix
+Map `finding.target` into the index summary whenever a finding is persisted.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/services/chapterFlowAnalysis.ts
+- Pattern-Key: frontend.index-summary-field
+- Recurrence-Count: 1
+- First-Seen: 2026-07-22
+- Last-Seen: 2026-07-22
+
+### Resolution
+- **Resolved**: 2026-07-22T00:00:00+08:00
+- **Notes**: The summary writer now persists target references.
 
 ---

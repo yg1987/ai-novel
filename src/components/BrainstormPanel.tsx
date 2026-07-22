@@ -731,12 +731,15 @@ export default function BrainstormPanel({ projectId, currentChapter, currentSess
     const relatedCharacters = idea.connections
       .filter((connection) => connection.type === 'character' && connection.verified)
       .map((connection) => connection.label)
-    const locationId = idea.suggestedLocation.chapterId ?? ''
-    const locationIsUnambiguous = chapters.filter((chapter) => chapter.id === locationId).length === 1
+    const locationChapter = idea.suggestedLocation.chapterId && idea.suggestedLocation.volume
+      ? chapters.find((chapter) => chapter.id === idea.suggestedLocation.chapterId && chapter.volume === idea.suggestedLocation.volume)
+      : undefined
     onOpenForeshadowDraft({
       name: idea.title,
       description: `${idea.summary}\n\n${idea.whyItFits}`,
-      plantedChapterId: idea.suggestedLocation.verified && locationIsUnambiguous ? locationId : '',
+      plantedChapter: idea.suggestedLocation.verified && locationChapter
+        ? { volume: locationChapter.volume, chapterId: locationChapter.id }
+        : undefined,
       relatedCharacters,
       notes: `来源：灵感会话 ${session?.id ?? ''} / 建议 ${idea.id}`,
     })

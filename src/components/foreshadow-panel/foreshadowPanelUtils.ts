@@ -1,10 +1,10 @@
 import type {
   ForeshadowCategory,
-  ForeshadowClue,
   ForeshadowEntry,
+  ForeshadowProgress,
   ForeshadowStatus,
 } from '../../types/novel'
-import type { ChapterMeta } from '../../types/chapter'
+import type { ChapterMeta, ChapterRef } from '../../types/chapter'
 import type { ForeshadowUrgency } from '../../services/foreshadowContext'
 
 export const CATEGORY_LABELS: Record<ForeshadowCategory, string> = {
@@ -53,10 +53,13 @@ export interface ForeshadowFormData {
   description: string
   category: ForeshadowCategory
   importance: number
-  plantedChapterId: string
-  targetChapterId: string
+  plantedChapter: ChapterRef | null
+  plannedResolutionChapter: ChapterRef | null
+  plannedResolutionMode: 'existing' | 'future'
+  futureResolutionVolume: string
+  futureResolutionOrder: string
   relatedCharacters: string[]
-  clues: ForeshadowClue[]
+  progress: ForeshadowProgress[]
   notes: string
   resolutionPlan: string
 }
@@ -72,20 +75,23 @@ export interface ForeshadowCounts {
 export interface ForeshadowSuggestionPrefill {
   name?: string
   description?: string
-  plantedChapterId?: string
+  plantedChapter?: ChapterRef
   relatedCharacters?: string[]
 }
 
-export function emptyForeshadowForm(currentChapterId: string | null): ForeshadowFormData {
+export function emptyForeshadowForm(currentChapter: ChapterRef | null): ForeshadowFormData {
   return {
     name: '',
     description: '',
     category: 'mystery',
     importance: 0.6,
-    plantedChapterId: currentChapterId ?? '',
-    targetChapterId: '',
+    plantedChapter: currentChapter,
+    plannedResolutionChapter: null,
+    plannedResolutionMode: 'existing',
+    futureResolutionVolume: currentChapter?.volume ?? '',
+    futureResolutionOrder: '',
     relatedCharacters: [],
-    clues: [],
+    progress: [],
     notes: '',
     resolutionPlan: '',
   }
@@ -97,10 +103,13 @@ export function entryToForeshadowForm(entry: ForeshadowEntry): ForeshadowFormDat
     description: entry.description,
     category: entry.category,
     importance: entry.importance,
-    plantedChapterId: entry.plantedChapterId,
-    targetChapterId: entry.targetChapterId ?? '',
+    plantedChapter: entry.plantedChapter,
+    plannedResolutionChapter: entry.plannedResolutionChapter ?? null,
+    plannedResolutionMode: 'existing',
+    futureResolutionVolume: entry.plannedResolutionChapter?.volume ?? entry.plantedChapter.volume,
+    futureResolutionOrder: entry.plannedResolutionChapter?.chapterId.match(/^ch(\d+)$/i)?.[1] ?? '',
     relatedCharacters: entry.relatedCharacters,
-    clues: entry.clues,
+    progress: entry.progress,
     notes: entry.notes,
     resolutionPlan: entry.resolutionPlan ?? '',
   }
@@ -116,8 +125,8 @@ export function getForeshadowUrgency(
   return 'background'
 }
 
-export function getChapterLabel(chapterId: string, chapters: ChapterMeta[]): string {
-  const meta = chapters.find((chapter) => chapter.id === chapterId)
-  if (!meta) return chapterId
-  return meta.title || `第${meta.order}章`
+export function getChapterLabel(ref: ChapterRef, chapters: ChapterMeta[]): string {
+  const meta = chapters.find((chapter) => chapter.volume === ref.volume && chapter.id === ref.chapterId)
+  if (!meta) return `${ref.volume} · ${ref.chapterId}`
+  return `${meta.volume} · ${meta.title || `第${meta.order}章`}`
 }

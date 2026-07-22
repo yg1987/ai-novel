@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import Button from '../Button'
 import Modal from '../Modal'
 import type { ForeshadowCategory, ForeshadowEntry } from '../../types/novel'
-import type { ChapterMeta } from '../../types/chapter'
+import type { ChapterMeta, ChapterRef } from '../../types/chapter'
 import {
   CATEGORY_LABELS,
   IMPORTANCE_OPTIONS,
@@ -23,10 +23,11 @@ interface Props {
   showForm: boolean
   editingId: string | null
   form: ForeshadowFormData
+  formError: string | null
   showAdvanced: boolean
   showCharDropdown: boolean
   characterNames: string[]
-  renderChapterSelect: (value: string, onChange: (value: string) => void) => ReactNode
+  renderChapterSelect: (value: ChapterRef | null | undefined, onChange: (value: ChapterRef | null) => void) => ReactNode
   onFormChange: (form: ForeshadowFormData) => void
   onToggleAdvanced: () => void
   onToggleCharacter: (name: string) => void
@@ -57,6 +58,7 @@ export default function ForeshadowDialogs({
   showForm,
   editingId,
   form,
+  formError,
   showAdvanced,
   showCharDropdown,
   characterNames,
@@ -127,13 +129,13 @@ export default function ForeshadowDialogs({
             </div>
             <div className="form-group">
               <label>埋设章节</label>
-              {renderChapterSelect(form.plantedChapterId, (value) => onFormChange({ ...form, plantedChapterId: value }))}
+              {renderChapterSelect(form.plantedChapter, (value) => onFormChange({ ...form, plantedChapter: value }))}
             </div>
 
             <div className="advanced-toggle" onClick={onToggleAdvanced}>
               <span className={`arrow${showAdvanced ? ' open' : ''}`}>▶</span>
               高级设置
-              {(form.targetChapterId || form.resolutionPlan || form.relatedCharacters.length > 0 || form.notes) && (
+              {(form.plannedResolutionChapter || form.resolutionPlan || form.relatedCharacters.length > 0 || form.notes) && (
                 <span style={{ color: 'var(--accent)', marginLeft: 4 }}>（已填写）</span>
               )}
             </div>
@@ -143,7 +145,22 @@ export default function ForeshadowDialogs({
                 <div className="form-row">
                   <div className="form-group">
                     <label>计划回收章节</label>
-                    {renderChapterSelect(form.targetChapterId, (value) => onFormChange({ ...form, targetChapterId: value }))}
+                    <div className="foreshadow-plan-mode" role="group" aria-label="计划回收位置模式">
+                      <button type="button" className={form.plannedResolutionMode === 'existing' ? 'active' : ''} onClick={() => onFormChange({ ...form, plannedResolutionMode: 'existing' })}>已有章节</button>
+                      <button type="button" className={form.plannedResolutionMode === 'future' ? 'active' : ''} onClick={() => onFormChange({ ...form, plannedResolutionMode: 'future', futureResolutionVolume: form.futureResolutionVolume || form.plantedChapter?.volume || volumes[0] || '' })}>未来章节</button>
+                    </div>
+                    {form.plannedResolutionMode === 'existing' ? (
+                      renderChapterSelect(form.plannedResolutionChapter, (value) => onFormChange({ ...form, plannedResolutionChapter: value }))
+                    ) : (
+                      <div className="foreshadow-future-plan">
+                        <select value={form.futureResolutionVolume} onChange={(event) => onFormChange({ ...form, futureResolutionVolume: event.target.value })}>
+                          <option value="">选择已有卷</option>
+                          {volumes.map((volume) => <option key={volume} value={volume}>{volume}</option>)}
+                        </select>
+                        <input type="number" min={1} step={1} value={form.futureResolutionOrder} onChange={(event) => onFormChange({ ...form, futureResolutionOrder: event.target.value })} placeholder="章序号" />
+                      </div>
+                    )}
+                    {form.plannedResolutionMode === 'future' && <p className="form-hint">该章必须位于当前全书进度之后；创建正文后会自动转为逾期校验。</p>}
                   </div>
                   <div className="form-group">
                     <label>回收方式</label>
@@ -186,25 +203,26 @@ export default function ForeshadowDialogs({
                 <div className="form-group">
                   <label>📋 推进轨迹</label>
                   <div className="clues-editor">
-                    {form.clues.map((clue, index) => (
+                    {form.progress.map((progress, index) => (
                       <div key={index} className="clue-row">
-                        {renderChapterSelect(clue.chapterId, (value) => {
-                          const next = [...form.clues]
-                          next[index] = { ...next[index]!, chapterId: value }
-                          onFormChange({ ...form, clues: next })
+                        {renderChapterSelect(progress.chapter, (value) => {
+                          if (!value) return
+                          const next = [...form.progress]
+                          next[index] = { ...next[index]!, chapter: value }
+                          onFormChange({ ...form, progress: next })
                         })}
-                        <input value={clue.description} onChange={(e) => {
-                          const next = [...form.clues]
+                        <input value={progress.description} onChange={(e) => {
+                          const next = [...form.progress]
                           next[index] = { ...next[index]!, description: e.target.value }
-                          onFormChange({ ...form, clues: next })
+                          onFormChange({ ...form, progress: next })
                         }} placeholder="推进描述（如：在第5章通过对话暗示...）" />
                         <Button variant="text" size="sm" onClick={() => {
-                          onFormChange({ ...form, clues: form.clues.filter((_, clueIndex) => clueIndex !== index) })
+                          onFormChange({ ...form, progress: form.progress.filter((_, progressIndex) => progressIndex !== index) })
                         }}>删除</Button>
                       </div>
                     ))}
                     <Button variant="text" size="sm" onClick={() => {
-                      onFormChange({ ...form, clues: [...form.clues, { chapterId: '', description: '', timestamp: new Date().toISOString() }] })
+                      onFormChange({ ...form, progress: [...form.progress, { chapter: form.plantedChapter ?? { volume: '', chapterId: '' }, description: '', recordedAt: new Date().toISOString() }] })
                     }}>+ 添加推进记录</Button>
                   </div>
                 </div>
@@ -216,8 +234,9 @@ export default function ForeshadowDialogs({
             )}
           </div>
           <div className="dialog-footer">
+            {formError && <p className="form-error" role="alert">{formError}</p>}
             <Button variant="text" size="sm" onClick={onCloseForm}>取消</Button>
-            <Button variant="primary" size="md" disabled={!form.name.trim() || !form.description.trim()} onClick={() => { void onSaveForm() }}>保存</Button>
+            <Button variant="primary" size="md" disabled={!form.name.trim() || !form.description.trim() || !form.plantedChapter || (form.plannedResolutionMode === 'future' && (!form.futureResolutionVolume || !/^\d+$/.test(form.futureResolutionOrder) || Number(form.futureResolutionOrder) < 1))} onClick={() => { void onSaveForm() }}>保存</Button>
           </div>
         </Modal>
       )}
@@ -246,7 +265,7 @@ export default function ForeshadowDialogs({
           <p>
             确定删除「{deleteTarget.name}」？
             <br />
-            <small>埋设于 {getChapterLabel(deleteTarget.plantedChapterId, chapters)}</small>
+            <small>埋设于 {getChapterLabel(deleteTarget.plantedChapter, chapters)}</small>
           </p>
           <div className="dialog-footer">
             <Button variant="text" size="sm" onClick={onCloseDelete}>取消</Button>

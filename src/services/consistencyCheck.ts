@@ -1,7 +1,7 @@
 import { readProjectFile, listChapters } from '../api/tauri'
 import { loadForeshadows } from './foreshadowStorage'
 import type { ForeshadowEntry, CognitionState, TimelineEntry } from '../types/novel'
-import type { ChapterMeta } from '../types/chapter'
+import type { ChapterMeta, ChapterRef } from '../types/chapter'
 import type { ConsistencyIssue, ConsistencyCheckResult, ConsistencySeverity } from '../types/review'
 import type { ConsistencyThresholds } from './reviewRules'
 import { getDefaultReviewRules } from './reviewRules'
@@ -14,8 +14,8 @@ function nextId(): string {
   return `ci-${Date.now()}-${++_issueCounter}`
 }
 
-function getOrder(chapterId: string, chapters: ChapterMeta[]): number {
-  return chapters.find(c => c.id === chapterId)?.order ?? 0
+function getOrder(ref: ChapterRef, chapters: ChapterMeta[]): number {
+  return chapters.find((chapter) => chapter.volume === ref.volume && chapter.id === ref.chapterId)?.order ?? 0
 }
 
 // ─── Check 1: Dormant Foreshadowing ───────────────
@@ -33,9 +33,9 @@ function checkDormantForeshadow(
     if (entry.status !== 'planted' && entry.status !== 'advanced') continue
 
     // Get last activity from clues or planted chapter
-    const lastActiveOrder = entry.clues?.length
-      ? Math.max(...entry.clues.map((c) => getOrder(c.chapterId, chapters)))
-      : getOrder(entry.plantedChapterId, chapters)
+    const lastActiveOrder = entry.progress.length
+      ? Math.max(...entry.progress.map((progress) => getOrder(progress.chapter, chapters)))
+      : getOrder(entry.plantedChapter, chapters)
     const dormantFor = currentChapter - lastActiveOrder
 
     if (dormantFor >= t.dormantForeshadowWarn) {
@@ -49,9 +49,9 @@ function checkDormantForeshadow(
         type: 'dormant_foreshadow',
         severity,
         chapter: currentChapter,
-        description: `伏笔「${entry.name}」已沉寂 ${dormantFor} 章（${entry.plantedChapterId}埋设）`,
+        description: `伏笔「${entry.name}」已沉寂 ${dormantFor} 章（${entry.plantedChapter.volume}·${entry.plantedChapter.chapterId}埋设）`,
         suggestion: dormantFor >= t.dormantForeshadowCritical ? '需尽快推进或回收此伏笔' : '考虑在后续章节推进此伏笔',
-        detail: `category=${entry.category} importance=${entry.importance} last_active=${entry.plantedChapterId}`,
+        detail: `category=${entry.category} importance=${entry.importance} last_active=${entry.plantedChapter.volume}:${entry.plantedChapter.chapterId}`,
           foreshadowId: entry.id,
       })
     }
@@ -124,9 +124,9 @@ function checkOverdueForeshadow(
   const issues: ConsistencyIssue[] = []
   for (const entry of foreshadows) {
     if (entry.status !== 'planted' && entry.status !== 'advanced') continue
-    if (!entry.targetChapterId) continue
+    if (!entry.plannedResolutionChapter) continue
 
-    const targetOrder = getOrder(entry.targetChapterId, chapters)
+    const targetOrder = getOrder(entry.plannedResolutionChapter, chapters)
     const threshold = entry.importance >= 0.8 ? t.overdueHighImportance : t.overdueDefault
     const overdue = currentChapter - targetOrder
     if (overdue > threshold) {
@@ -135,7 +135,7 @@ function checkOverdueForeshadow(
         type: 'overdue_foreshadow',
         severity: 'S4',
         chapter: currentChapter,
-        description: `伏笔「${entry.name}」已超 ${overdue} 章未回收（计划第${targetOrder}章回收，埋设于${entry.plantedChapterId}）`,
+        description: `伏笔「${entry.name}」已超 ${overdue} 章未回收（计划第${targetOrder}章回收，埋设于${entry.plantedChapter.volume}·${entry.plantedChapter.chapterId}）`,
           suggestion: '考虑在接下来 1-2 章内推动或回收此伏笔',
           foreshadowId: entry.id,
       })
@@ -155,10 +155,10 @@ function checkResolutionDelay(
   const issues: ConsistencyIssue[] = []
   for (const entry of foreshadows) {
     if (entry.status !== 'resolved') continue
-    if (!entry.targetChapterId || !entry.resolvedChapterId) continue
+    if (!entry.plannedResolutionChapter || !entry.recordedResolutionChapter) continue
 
-    const targetOrder = getOrder(entry.targetChapterId, chapters)
-    const resolvedOrder = getOrder(entry.resolvedChapterId, chapters)
+    const targetOrder = getOrder(entry.plannedResolutionChapter, chapters)
+    const resolvedOrder = getOrder(entry.recordedResolutionChapter, chapters)
     const delay = resolvedOrder - targetOrder
     if (delay > 3) {
       issues.push({
@@ -217,7 +217,7 @@ function checkForeshadowDensity(
 
 export async function runConsistencyChecks(
   projectId: string,
-  currentChapterId: string,
+  currentChapter: ChapterRef,
   presentCharacterNames: string[],
   thresholds?: Partial<ConsistencyThresholds>,
 ): Promise<ConsistencyCheckResult> {
@@ -225,10 +225,10 @@ export async function runConsistencyChecks(
   _issueCounter = 0
 
   const chapters = await listChapters(projectId)
-  const currentOrder = getOrder(currentChapterId, chapters)
+  const currentOrder = getOrder(currentChapter, chapters)
 
   const [foreshadowStore, cognitionJson, timelineJson] = await Promise.all([
-    loadForeshadows(projectId).catch(() => ({ entries: [], updatedAt: '' })),
+    loadForeshadows(projectId).catch(() => ({ schemaVersion: 1 as const, entries: [], updatedAt: '' })),
     readProjectFile(projectId, 'memory', 'character-states.json').catch(() => null),
     readProjectFile(projectId, 'memory', 'timeline.json').catch(() => null),
   ])

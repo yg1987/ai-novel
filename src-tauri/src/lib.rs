@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Component, Path, PathBuf};
 use tauri::Manager;
 use uuid::Uuid;
 
@@ -544,6 +545,79 @@ fn project_subdir(
     Ok(project_dir(app_handle, project_id)?.join(subdir))
 }
 
+fn safe_relative_path(value: &str) -> Result<&Path, String> {
+    let path = Path::new(value);
+    if value.is_empty()
+        || path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err("Project file path must be a non-empty relative path".to_string());
+    }
+    Ok(path)
+}
+
+fn atomic_replace_file(path: &Path, content: &str) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Atomic write target has no parent directory".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| format!("Failed to create dir: {error}"))?;
+
+    let filename = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Atomic write target has an invalid filename".to_string())?;
+    let temporary = parent.join(format!(".{filename}.{}.tmp", Uuid::new_v4()));
+    let write_result = (|| -> Result<(), String> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|error| format!("Failed to create temporary file: {error}"))?;
+        file.write_all(content.as_bytes())
+            .map_err(|error| format!("Failed to write temporary file: {error}"))?;
+        file.sync_all()
+            .map_err(|error| format!("Failed to sync temporary file: {error}"))?;
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStrExt;
+            use windows_sys::Win32::Storage::FileSystem::{
+                MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+            };
+
+            let from: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
+            let to: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+            if unsafe {
+                MoveFileExW(
+                    from.as_ptr(),
+                    to.as_ptr(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+                )
+            } == 0
+            {
+                return Err(format!(
+                    "Failed to atomically replace file: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+        }
+        #[cfg(not(windows))]
+        fs::rename(&temporary, path)
+            .map_err(|error| format!("Failed to atomically replace file: {error}"))?;
+
+        Ok(())
+    })();
+
+    if write_result.is_err() && temporary.exists() {
+        let _ = fs::remove_file(&temporary);
+    }
+    write_result
+}
+
 #[tauri::command]
 fn list_project_files(
     app_handle: tauri::AppHandle,
@@ -598,6 +672,33 @@ fn write_project_file(
 }
 
 #[tauri::command]
+fn atomic_write_project_file(
+    app_handle: tauri::AppHandle,
+    project_id: String,
+    subdir: String,
+    filename: String,
+    content: String,
+) -> Result<(), String> {
+    let safe_project_id = safe_relative_path(&project_id)?;
+    if safe_project_id.components().count() != 1 {
+        return Err("Project id must be a single relative path component".to_string());
+    }
+    let safe_subdir = safe_relative_path(&subdir)?;
+    let safe_filename = safe_relative_path(&filename)?;
+    if safe_filename.components().count() != 1 {
+        return Err("Atomic write filename must not contain a directory".to_string());
+    }
+    let project = project_dir(
+        &app_handle,
+        safe_project_id
+            .to_str()
+            .ok_or_else(|| "Project id is not valid UTF-8".to_string())?,
+    )?;
+    let path = project.join(safe_subdir).join(safe_filename);
+    atomic_replace_file(&path, &content)
+}
+
+#[tauri::command]
 fn delete_project_file(
     app_handle: tauri::AppHandle,
     project_id: String,
@@ -636,6 +737,7 @@ pub fn run() {
             list_project_files,
             read_project_file,
             write_project_file,
+            atomic_write_project_file,
             delete_project_file,
             commands::search::search_project_files,
             commands::vectorstore::vector_upsert_chunks,
@@ -685,4 +787,34 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::atomic_replace_file;
+    use std::fs;
+    use uuid::Uuid;
+
+    #[test]
+    fn atomic_replace_keeps_complete_new_content() {
+        let dir = std::env::temp_dir().join(format!("ai-novel-atomic-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("create test directory");
+        let target = dir.join("index.json");
+        fs::write(&target, "old complete content").expect("write old file");
+
+        atomic_replace_file(&target, "new complete content").expect("replace target");
+
+        assert_eq!(
+            fs::read_to_string(&target).expect("read target"),
+            "new complete content"
+        );
+        assert!(fs::read_dir(&dir)
+            .expect("read test directory")
+            .all(|entry| !entry
+                .expect("read entry")
+                .file_name()
+                .to_string_lossy()
+                .ends_with(".tmp")));
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
 }

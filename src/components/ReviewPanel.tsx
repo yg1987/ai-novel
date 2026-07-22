@@ -126,7 +126,7 @@ export default function ReviewPanel({ projectId, segmentSize, onSegmentSizeChang
     try {
       const currentRules = await loadReviewRules(projectId)
       const tokens = html.replace(/<[^>]*>/g, '').match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]{2,4}/g) ?? []
-      setConsistencyResult(await runConsistencyChecks(projectId, activeChapter.ref.chapterId, tokens, currentRules.consistency))
+      setConsistencyResult(await runConsistencyChecks(projectId, activeChapter.ref, tokens, currentRules.consistency))
     } catch (reason) { setError(String(reason)) } finally { setRunningConsistency(false) }
   }
 

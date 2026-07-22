@@ -66,11 +66,12 @@ export const foreshadowDS: DataSource<string> = {
         }
       } catch { /* no snapshot yet */ }
 
-      const classified = classifyForeshadows(unresolved, ctx.chapterId, chapters, config)
+      const currentChapter = { volume: ctx.volume, chapterId: ctx.chapterId }
+      const classified = classifyForeshadows(unresolved, currentChapter, chapters, config)
       const text = classifiedForeshadowsToText(
         classified,
         chapters,
-        ctx.chapterId,
+        currentChapter,
         currentChars.length > 0 ? currentChars : undefined,
       )
       return text

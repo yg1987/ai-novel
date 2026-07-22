@@ -14,6 +14,12 @@ export interface ChapterMeta {
   volume: string
 }
 
+export interface ChapterSequence {
+  chapters: ChapterMeta[]
+  positionByKey: Map<ChapterKey, number>
+  lastWrittenPosition: number
+}
+
 export interface ChapterContent {
   meta: ChapterMeta
   content: string

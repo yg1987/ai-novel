@@ -124,7 +124,7 @@ export async function getForeshadowHealthMetrics(
   projectId: string,
 ): Promise<ForeshadowHealthMetrics> {
   const [store, chapters] = await Promise.all([
-    loadForeshadows(projectId).catch(() => ({ entries: [], updatedAt: '' })),
+    loadForeshadows(projectId).catch(() => ({ schemaVersion: 1 as const, entries: [], updatedAt: '' })),
     listChapters(projectId).catch(() => [] as ChapterMeta[]),
   ])
 
@@ -134,7 +134,9 @@ export async function getForeshadowHealthMetrics(
   const active = entries.filter((e) => e.status === 'planted' || e.status === 'advanced').length
 
   // Use last chapter as current for health computation
-  const lastChapter = chapters.length > 0 ? chapters[chapters.length - 1]!.id : null
+  const lastChapter = chapters.length > 0
+    ? { volume: chapters[chapters.length - 1]!.volume, chapterId: chapters[chapters.length - 1]!.id }
+    : null
 
   const healthScore = calcForeshadowHealth(entries, lastChapter, chapters, DEFAULT_FORESHADOW_CONFIG)
   const healthLabel = getHealthLabel(healthScore)

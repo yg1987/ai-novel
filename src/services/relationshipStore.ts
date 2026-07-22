@@ -327,7 +327,11 @@ export async function loadRelationshipGraph(projectId: string): Promise<Relation
       const fsId = foreshadowingNodeId(entry.id)
       const fsNode = ensureNode(nodeMap, fsId, entry.name, 'foreshadowing', entry.status)
       fsNode.tags = [entry.category, entry.status]
-      const chapterIds = [entry.plantedChapterId, ...entry.clues.map((clue) => clue.chapterId), entry.resolvedChapterId].filter(Boolean) as string[]
+      const chapterIds = [
+        entry.plantedChapter.chapterId,
+        ...entry.progress.map((progress) => progress.chapter.chapterId),
+        entry.recordedResolutionChapter?.chapterId,
+      ].filter(Boolean) as string[]
       for (const chapterId of chapterIds) {
         const chId = chapterNodeId(chapterId)
         if (nodeMap.has(chId)) mergeEdge(linkMap, nodeMap, relationLink(fsId, chId, 'ambiguous', 0, { weight: 1.4, strength: 0.3, structural: true, description: '伏笔章节关联' }))
