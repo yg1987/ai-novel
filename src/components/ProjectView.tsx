@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useRef, useState } from 'react'
 import type { ProjectMeta } from '../types/project'
 import type { ChapterRef } from '../types/chapter'
 import type { CurrentChapterRef, MaterialContextSelection } from '../types/material'
@@ -7,6 +7,8 @@ import { useChapterSegmentSize } from '../hooks/useChapterSegmentSize'
 import ExportDialog from './ExportDialog'
 import ArchiveDialog from './ArchiveDialog'
 import Button from './Button'
+import type { WorldviewPanelHandle } from './WorldviewPanel'
+import WorldviewUnsavedChangesDialog from './worldview-panel/WorldviewUnsavedChangesDialog'
 
 const ChapterManager = lazy(() => import('./ChapterManager'))
 const CharacterPanel = lazy(() => import('./CharacterPanel'))
@@ -28,6 +30,7 @@ interface Props {
 }
 
 type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats' | 'review' | 'resource' | 'brainstorm' | 'graph' | 'chapterflow'
+type PendingNavigation = { type: 'tab'; tab: Tab } | { type: 'back' }
 
 export default function ProjectView({ project, onBack }: Props) {
   const [tab, setTab] = useState<Tab>('writing')
@@ -45,6 +48,40 @@ export default function ProjectView({ project, onBack }: Props) {
   const [navigateMaterialId, setNavigateMaterialId] = useState<string | null>(null)
   const [brainstormSessionId, setBrainstormSessionId] = useState<string | null>(null)
   const [brainstormForeshadowDraft, setBrainstormForeshadowDraft] = useState<BrainstormForeshadowDraft | null>(null)
+  const [pendingNavigation, setPendingNavigation] = useState<PendingNavigation | null>(null)
+  const [savingWorldview, setSavingWorldview] = useState(false)
+  const worldviewRef = useRef<WorldviewPanelHandle>(null)
+
+  const completeNavigation = (navigation: PendingNavigation) => {
+    if (navigation.type === 'back') onBack()
+    else setTab(navigation.tab)
+  }
+
+  const requestNavigation = (navigation: PendingNavigation) => {
+    if (tab === 'worldview' && worldviewRef.current?.hasUnsavedChanges()) {
+      setPendingNavigation(navigation)
+      return
+    }
+    completeNavigation(navigation)
+  }
+
+  const handleSaveAndNavigate = async () => {
+    setSavingWorldview(true)
+    const saved = await worldviewRef.current?.saveChanges() ?? true
+    setSavingWorldview(false)
+    if (!saved || !pendingNavigation) return
+    const navigation = pendingNavigation
+    setPendingNavigation(null)
+    completeNavigation(navigation)
+  }
+
+  const handleDiscardAndNavigate = () => {
+    worldviewRef.current?.discardChanges()
+    if (!pendingNavigation) return
+    const navigation = pendingNavigation
+    setPendingNavigation(null)
+    completeNavigation(navigation)
+  }
 
   const handleNavigateToReview = (ref: ChapterRef) => {
     setReviewChapterRef(ref)
@@ -117,7 +154,7 @@ export default function ProjectView({ project, onBack }: Props) {
       case 'characters':
         return <CharacterPanel projectId={project.id} initialCharacter={navigateCharacter} />
       case 'worldview':
-        return <WorldviewPanel projectId={project.id} />
+        return <WorldviewPanel ref={worldviewRef} projectId={project.id} />
       case 'outline':
         return <OutlinePanel projectId={project.id} segmentSize={chapterSegmentSize} onSegmentSizeChange={setChapterSegmentSize} onNavigateToWriting={(ref) => { setNavigateChapterRef(ref); setTab('writing') }} />
       case 'notes':
@@ -151,7 +188,7 @@ export default function ProjectView({ project, onBack }: Props) {
   return (
     <div className="project-view">
       <div className="project-view-header">
-        <Button variant="text" size="sm" onClick={() => { onBack() }}>← 返回书架</Button>
+        <Button variant="text" size="sm" onClick={() => { requestNavigation({ type: 'back' }) }}>← 返回书架</Button>
         <h2>{project.name}</h2>
         <span className="project-status-badge">{project.status}</span>
         <Button variant="text" size="sm" onClick={() => setShowExport(true)}>📤 导出</Button>
@@ -181,19 +218,19 @@ export default function ProjectView({ project, onBack }: Props) {
       )}
 
       <div className="project-tabs">
-        <button className={`tab-btn${tab === 'writing' ? ' active' : ''}`} onClick={() => { setTab('writing') }}>✍ 写作</button>
-        <button className={`tab-btn${tab === 'characters' ? ' active' : ''}`} onClick={() => { setTab('characters') }}>👤 角色</button>
-        <button className={`tab-btn${tab === 'worldview' ? ' active' : ''}`} onClick={() => { setTab('worldview') }}>🌍 世界观</button>
-        <button className={`tab-btn${tab === 'outline' ? ' active' : ''}`} onClick={() => { setTab('outline') }}>📋 大纲</button>
-        <button className={`tab-btn${tab === 'notes' ? ' active' : ''}`} onClick={() => { setTab('notes') }}>📝 备注</button>
-        <button className={`tab-btn${tab === 'foreshadow' ? ' active' : ''}`} onClick={() => { setTab('foreshadow') }}>🔍 伏笔</button>
-        <button className={`tab-btn${tab === 'search' ? ' active' : ''}`} onClick={() => { setTab('search') }}>🔎 搜索</button>
-        <button className={`tab-btn${tab === 'stats' ? ' active' : ''}`} onClick={() => { setTab('stats') }}>📊 统计</button>
-        <button className={`tab-btn${tab === 'review' ? ' active' : ''}`} onClick={() => { setTab('review') }}>🔍 审查</button>
-        <button className={`tab-btn${tab === 'resource' ? ' active' : ''}`} onClick={() => { setTab('resource') }}>📦 素材</button>
-        <button className={`tab-btn${tab === 'brainstorm' ? ' active' : ''}`} onClick={() => { setTab('brainstorm') }}>💡 灵感</button>
-        <button className={`tab-btn${tab === 'graph' ? ' active' : ''}`} onClick={() => { setTab('graph') }}>🕸 关系图</button>
-        <button className={`tab-btn${tab === 'chapterflow' ? ' active' : ''}`} onClick={() => { setTab('chapterflow') }}>📈 章节脉络</button>
+        <button className={`tab-btn${tab === 'writing' ? ' active' : ''}`} onClick={() => { requestNavigation({ type: 'tab', tab: 'writing' }) }}>✍ 写作</button>
+        <button className={`tab-btn${tab === 'characters' ? ' active' : ''}`} onClick={() => { requestNavigation({ type: 'tab', tab: 'characters' }) }}>👤 角色</button>
+        <button className={`tab-btn${tab === 'worldview' ? ' active' : ''}`} onClick={() => { requestNavigation({ type: 'tab', tab: 'worldview' }) }}>🌍 世界观</button>
+        <button className={`tab-btn${tab === 'outline' ? ' active' : ''}`} onClick={() => { requestNavigation({ type: 'tab', tab: 'outline' }) }}>📋 大纲</button>
+        <button className={`tab-btn${tab === 'notes' ? ' active' : ''}`} onClick={() => { requestNavigation({ type: 'tab', tab: 'notes' }) }}>📝 备注</button>
+        <button className={`tab-btn${tab === 'foreshadow' ? ' active' : ''}`} onClick={() => { requestNavigation({ type: 'tab', tab: 'foreshadow' }) }}>🔍 伏笔</button>
+        <button className={`tab-btn${tab === 'search' ? ' active' : ''}`} onClick={() => { requestNavigation({ type: 'tab', tab: 'search' }) }}>🔎 搜索</button>
+        <button className={`tab-btn${tab === 'stats' ? ' active' : ''}`} onClick={() => { requestNavigation({ type: 'tab', tab: 'stats' }) }}>📊 统计</button>
+        <button className={`tab-btn${tab === 'review' ? ' active' : ''}`} onClick={() => { requestNavigation({ type: 'tab', tab: 'review' }) }}>🔍 审查</button>
+        <button className={`tab-btn${tab === 'resource' ? ' active' : ''}`} onClick={() => { requestNavigation({ type: 'tab', tab: 'resource' }) }}>📦 素材</button>
+        <button className={`tab-btn${tab === 'brainstorm' ? ' active' : ''}`} onClick={() => { requestNavigation({ type: 'tab', tab: 'brainstorm' }) }}>💡 灵感</button>
+        <button className={`tab-btn${tab === 'graph' ? ' active' : ''}`} onClick={() => { requestNavigation({ type: 'tab', tab: 'graph' }) }}>🕸 关系图</button>
+        <button className={`tab-btn${tab === 'chapterflow' ? ' active' : ''}`} onClick={() => { requestNavigation({ type: 'tab', tab: 'chapterflow' }) }}>📈 章节脉络</button>
       </div>
 
       <div className="project-tab-content">
@@ -201,6 +238,14 @@ export default function ProjectView({ project, onBack }: Props) {
           {renderTabContent()}
         </Suspense>
       </div>
+      {pendingNavigation && (
+        <WorldviewUnsavedChangesDialog
+          saving={savingWorldview}
+          onSave={() => { void handleSaveAndNavigate() }}
+          onDiscard={handleDiscardAndNavigate}
+          onCancel={() => setPendingNavigation(null)}
+        />
+      )}
     </div>
   )
 }

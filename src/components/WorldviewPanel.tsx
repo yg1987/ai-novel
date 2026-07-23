@@ -1,10 +1,17 @@
-import { useState, useEffect, useCallback, useRef, type KeyboardEvent, type MouseEvent } from 'react'
+import { forwardRef, useState, useEffect, useCallback, useImperativeHandle, useRef, type KeyboardEvent, type MouseEvent } from 'react'
 import { readProjectFile, writeProjectFile, loadProviderConfig } from '../api/tauri'
 import { buildAIContext } from '../services/aiContext'
 import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
 import type { TextareaSelection } from '../services/rewriteUtils'
 import { getTextareaSelection, applyTextareaRewrite } from '../services/rewriteUtils'
 import { type RewriteMode } from '../services/rewriteService'
+import {
+  contentHash,
+  deleteWorldviewDraft,
+  loadWorldviewDraft,
+  saveWorldviewDraft,
+  type WorldviewDraft,
+} from '../services/worldviewDrafts'
 import type { ContextMenuAction } from './SelectionContextMenu'
 import {
   type SectionDef,
@@ -18,6 +25,8 @@ import WorldviewBanner from './worldview-panel/WorldviewBanner'
 import WorldviewSidebar from './worldview-panel/WorldviewSidebar'
 import WorldviewEditor from './worldview-panel/WorldviewEditor'
 import WorldviewDialogs from './worldview-panel/WorldviewDialogs'
+import WorldviewDraftRecoveryDialog from './worldview-panel/WorldviewDraftRecoveryDialog'
+import WorldviewUnsavedChangesDialog from './worldview-panel/WorldviewUnsavedChangesDialog'
 import {
   buildWorldviewContent,
   getWorldviewDefaultPrompt,
@@ -28,7 +37,13 @@ interface Props {
   projectId: string
 }
 
-export default function WorldviewPanel({ projectId }: Props) {
+export interface WorldviewPanelHandle {
+  hasUnsavedChanges: () => boolean
+  saveChanges: () => Promise<boolean>
+  discardChanges: () => void
+}
+
+const WorldviewPanel = forwardRef<WorldviewPanelHandle, Props>(({ projectId }, ref) => {
   const [sections, setSections] = useState<SectionDef[]>([])
   const [activeSection, setActiveSection] = useState<SectionDef | null>(null)
   const [content, setContent] = useState('')
@@ -61,10 +76,16 @@ export default function WorldviewPanel({ projectId }: Props) {
   const [configLoaded, setConfigLoaded] = useState(false)
   const [generatingAi, setGeneratingAi] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [baseContentHash, setBaseContentHash] = useState('')
+  const [pendingSection, setPendingSection] = useState<SectionDef | null>(null)
+  const [showUnsavedChanges, setShowUnsavedChanges] = useState(false)
+  const [savingChanges, setSavingChanges] = useState(false)
+  const [draftToRecover, setDraftToRecover] = useState<WorldviewDraft | null>(null)
 
   const rewriteTextareaRef = useRef<HTMLTextAreaElement>(null)
   const subFieldEndRef = useRef<HTMLDivElement>(null)
   const sectionsRef = useRef(sections)
+  const draftPayloadRef = useRef<WorldviewDraft | null>(null)
 
   useEffect(() => {
     sectionsRef.current = sections
@@ -137,25 +158,100 @@ export default function WorldviewPanel({ projectId }: Props) {
 
   useEffect(() => {
     if (!activeSection) return
-    readProjectFile(projectId, 'worldview', activeSection.file)
-      .then((nextContent) => {
+    let cancelled = false
+    const loadContent = async () => {
+      try {
+        const nextContent = await readProjectFile(projectId, 'worldview', activeSection.file)
+        const [nextHash, draft] = await Promise.all([
+          contentHash(nextContent),
+          loadWorldviewDraft(projectId, activeSection.file),
+        ])
+        if (cancelled) return
         setContent(nextContent)
         setSubValues(parseWorldviewSubs(nextContent, activeSection.subs.map((s) => s.key)))
+        setBaseContentHash(nextHash)
         setDirty(false)
-      })
-      .catch(console.error)
+        setDraftToRecover(draft)
+      } catch (error) {
+        if (!cancelled) console.error(error)
+      }
+    }
+    void loadContent()
+    return () => { cancelled = true }
   }, [projectId, activeSection])
 
-  const handleSave = async () => {
-    if (!activeSection) return
-    if (hasSubs) {
-      await writeProjectFile(projectId, 'worldview', activeSection.file, buildWorldviewContent(activeSection.label, subValues))
-    } else {
-      await writeProjectFile(projectId, 'worldview', activeSection.file, content)
+  const saveCurrentChanges = useCallback(async (): Promise<boolean> => {
+    if (!activeSection) return false
+    try {
+      const nextContent = hasSubs
+        ? buildWorldviewContent(activeSection.label, subValues)
+        : content
+      await writeProjectFile(projectId, 'worldview', activeSection.file, nextContent)
+      draftPayloadRef.current = null
+      await deleteWorldviewDraft(projectId, activeSection.file)
+      setBaseContentHash(await contentHash(nextContent))
+      setDraftToRecover(null)
+      setEditing(false)
+      setDirty(false)
+      return true
+    } catch (error) {
+      console.error('保存世界观内容失败：', error)
+      return false
     }
-    setEditing(false)
-    setDirty(false)
-  }
+  }, [activeSection, content, hasSubs, projectId, subValues])
+
+  const handleSave = () => { void saveCurrentChanges() }
+
+  useImperativeHandle(ref, () => ({
+    hasUnsavedChanges: () => dirty,
+    saveChanges: saveCurrentChanges,
+    discardChanges: () => {
+      draftPayloadRef.current = null
+      if (activeSection) void deleteWorldviewDraft(projectId, activeSection.file)
+      setDraftToRecover(null)
+      setDirty(false)
+      setEditing(false)
+    },
+  }), [activeSection, dirty, projectId, saveCurrentChanges])
+
+  useEffect(() => {
+    if (!activeSection || !dirty) {
+      draftPayloadRef.current = null
+      return
+    }
+    draftPayloadRef.current = {
+      schemaVersion: 1,
+      sectionFile: activeSection.file,
+      savedAt: new Date().toISOString(),
+      baseContentHash,
+      content,
+      subValues,
+    }
+  }, [activeSection, baseContentHash, content, dirty, subValues])
+
+  useEffect(() => {
+    const draft = draftPayloadRef.current
+    if (!draft) return
+    const timeout = window.setTimeout(() => {
+      saveWorldviewDraft(projectId, draft).catch((error: unknown) => console.error('保存世界观草稿失败：', error))
+    }, 1_500)
+    return () => window.clearTimeout(timeout)
+  }, [projectId, activeSection, baseContentHash, content, dirty, subValues])
+
+  useEffect(() => () => {
+    const draft = draftPayloadRef.current
+    if (draft) saveWorldviewDraft(projectId, draft).catch((error: unknown) => console.error('保存世界观草稿失败：', error))
+  }, [projectId])
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirty) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [dirty])
 
   const handleStartEdit = () => {
     if (!activeSection) return
@@ -168,9 +264,56 @@ export default function WorldviewPanel({ projectId }: Props) {
     setDirty(true)
   }
 
-  const handleSelectSection = (section: SectionDef) => {
+  const selectSection = (section: SectionDef) => {
     setActiveSection(section)
     setEditing(false)
+  }
+
+  const handleSelectSection = (section: SectionDef) => {
+    if (section.key === activeSection?.key) return
+    if (dirty) {
+      setPendingSection(section)
+      setShowUnsavedChanges(true)
+      return
+    }
+    selectSection(section)
+  }
+
+  const handleSaveAndSwitch = async () => {
+    setSavingChanges(true)
+    const saved = await saveCurrentChanges()
+    setSavingChanges(false)
+    if (!saved) return
+    const target = pendingSection
+    setPendingSection(null)
+    setShowUnsavedChanges(false)
+    if (target) selectSection(target)
+  }
+
+  const handleDiscardAndSwitch = () => {
+    draftPayloadRef.current = null
+    if (activeSection) void deleteWorldviewDraft(projectId, activeSection.file)
+    const target = pendingSection
+    setDraftToRecover(null)
+    setDirty(false)
+    setEditing(false)
+    setPendingSection(null)
+    setShowUnsavedChanges(false)
+    if (target) selectSection(target)
+  }
+
+  const handleRestoreDraft = () => {
+    if (!draftToRecover || draftToRecover.sectionFile !== activeSection?.file) return
+    setContent(draftToRecover.content)
+    setSubValues(draftToRecover.subValues)
+    setDirty(true)
+    setEditing(true)
+    setDraftToRecover(null)
+  }
+
+  const handleDiscardDraft = () => {
+    if (draftToRecover) void deleteWorldviewDraft(projectId, draftToRecover.sectionFile)
+    setDraftToRecover(null)
   }
 
   const handleStartRenameSection = (section: SectionDef) => {
@@ -508,7 +651,7 @@ export default function WorldviewPanel({ projectId }: Props) {
           editingSubKey={editingSubKey}
           editingSubLabel={editingSubLabel}
           onStartEdit={handleStartEdit}
-          onSave={() => { void handleSave() }}
+          onSave={handleSave}
           onGenerateAi={() => { void generateWithAI() }}
           onTogglePrompt={handleTogglePrompt}
           onPromptChange={setEditingPrompt}
@@ -549,6 +692,30 @@ export default function WorldviewPanel({ projectId }: Props) {
         onConfirmDelete={handleDeleteSection}
         onCancelDelete={() => setDeletingSectionId(null)}
       />
+      {showUnsavedChanges && (
+        <WorldviewUnsavedChangesDialog
+          saving={savingChanges}
+          onSave={() => { void handleSaveAndSwitch() }}
+          onDiscard={handleDiscardAndSwitch}
+          onCancel={() => {
+            setPendingSection(null)
+            setShowUnsavedChanges(false)
+          }}
+        />
+      )}
+      {draftToRecover && (
+        <WorldviewDraftRecoveryDialog
+          draft={draftToRecover}
+          officialContent={content}
+          baseContentChanged={Boolean(baseContentHash && draftToRecover.baseContentHash !== baseContentHash)}
+          onRestore={handleRestoreDraft}
+          onDiscard={handleDiscardDraft}
+        />
+      )}
     </div>
   )
-}
+})
+
+WorldviewPanel.displayName = 'WorldviewPanel'
+
+export default WorldviewPanel

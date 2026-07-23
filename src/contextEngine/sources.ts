@@ -6,6 +6,7 @@ import { loadForeshadows, loadForeshadowConfig } from '../services/foreshadowSto
 import { loadAllNotes, buildChapterRef } from '../services/notesStorage'
 import type { NoteEntry } from '../services/notesStorage'
 import { classifyForeshadows, classifiedForeshadowsToText } from '../services/foreshadowContext'
+import { buildWorldviewContext } from '../services/worldviewContext'
 import { asString, asStringArray, isRecord } from '../utils/unknown'
 
 const SNAPSHOT_DIR = 'memory/snapshots'
@@ -75,6 +76,16 @@ export const foreshadowDS: DataSource<string> = {
         currentChars.length > 0 ? currentChars : undefined,
       )
       return text
+    } catch { return '' }
+  },
+}
+
+export const worldviewDS: DataSource<string> = {
+  name: '世界观设定',
+  priority: 4,
+  async load(ctx: ContextLoadContext): Promise<string> {
+    try {
+      return await buildWorldviewContext(ctx.projectId)
     } catch { return '' }
   },
 }

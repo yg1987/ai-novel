@@ -32,9 +32,20 @@
 
 编辑文件后必须对本次改动路径运行 `git diff --check -- <paths>`。Markdown 不得用行尾双空格制造换行，应改用空行或显式 `<br>`，避免合法排版写法触发尾随空白门禁。
 
+### 整体验证仅由用户触发
+
+任何开发阶段（包括分阶段完成、功能完成、交付前检查）都不得自主启动整体验证。只有用户明确要求进行整体验证时，才允许执行。
+
+整体验证包括但不限于：
+- `npm run check`、`npm run build` 等全项目检查或构建；
+- `cargo build`、`cargo test`、`tauri build` 等覆盖整个 Rust/Tauri 项目的构建、测试或打包；
+- 对整个项目执行的全量测试、类型检查、集成验证或发布验证。
+
+开发过程中应只验证当前改动范围，可按需运行相关文件的定向测试、范围静态检查及本项目规定的风险门禁。不得因“某阶段结束”“功能已完成”“准备交付”而自行扩大为整体验证，也不得把整体验证设为阶段任务的默认收尾步骤。
+
 ### 高风险 ESLint 门禁
 
-修改任何 `src/**/*.ts` 或 `src/**/*.tsx` 后，交付前必须运行 `npm run lint:risk`；涉及构建行为时运行 `npm run check`。门禁要求 `any` / `unsafe`、Promise 和 React Hooks 关键规则保持零错误，并将已审查的 `react-hooks/set-state-in-effect` warning 上限固定为 16。
+修改任何 `src/**/*.ts` 或 `src/**/*.tsx` 后，交付前必须运行 `npm run lint:risk`。只有用户明确要求整体验证时，才可运行 `npm run check`。门禁要求 `any` / `unsafe`、Promise 和 React Hooks 关键规则保持零错误，并将已审查的 `react-hooks/set-state-in-effect` warning 上限固定为 16。
 
 严禁通过提高 `--max-warnings`、关闭风险规则、扩大文件忽略范围或新增无理由的 `eslint-disable` 来让门禁通过。若确需调整现有 16 条 warning 基线，必须先修复或逐条审查对应代码，并在方案说明中明确记录原因。
 

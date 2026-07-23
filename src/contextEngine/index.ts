@@ -1,6 +1,6 @@
 import { getChapterOutline, getChapterContent, readProjectFile, listChapters } from '../api/tauri'
 import { DataSourceRegistry } from './dataSource'
-import { cognitionDS, foreshadowDS, styleDS, recentSummaryDS, notesDS, materialDS } from './sources'
+import { cognitionDS, foreshadowDS, styleDS, recentSummaryDS, notesDS, materialDS, worldviewDS } from './sources'
 import { applyChapterPromptTemplate, estimateTokens, truncateToBudget, getDefaultSystemPrompt } from './budget'
 import type { ContextLoadContext } from './dataSource'
 import type { MaterialContextSelection } from '../types/material'
@@ -82,7 +82,7 @@ export async function buildContext(
 
   // 2. Load context sources via DataSourceRegistry
   const registry = new DataSourceRegistry()
-  registry.registerAll([recentSummaryDS, cognitionDS, foreshadowDS, materialDS, notesDS, styleDS])
+  registry.registerAll([worldviewDS, recentSummaryDS, cognitionDS, foreshadowDS, materialDS, notesDS, styleDS])
   const loaded = await registry.loadAll(ctx)
   const assembled = registry.assemble(loaded)
 
@@ -105,7 +105,7 @@ export async function buildContext(
     systemPrompt: sections.join('\n'),
     wordBudget: targetWords,
     maxTokens: Math.ceil(targetWords * 1.5),
-    sources: assembled.map((s) => s.name),
+    sources: fitted.map((s) => s.name),
     outlineContent: chapterGuide,
     previousEnding,
     materialSelections: fittedMaterials,
