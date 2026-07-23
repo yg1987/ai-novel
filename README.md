@@ -136,6 +136,16 @@ npm run tauri:dev
 npm run tauri:build
 ```
 
+### 发布版本
+
+发布新安装包前，使用以下命令同步项目的版本号；版本号不带 `v` 前缀：
+
+```bash
+npm run version:sync -- 0.3.0
+```
+
+该命令会同步 `package.json`、`package-lock.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 和 `src-tauri/Cargo.lock`。提交并推送这些改动后，在 GitHub Actions 的 **Publish Release** 工作流中填写相同的版本号（如 `0.3.0`）；工作流会创建 `v0.3.0` 标签并上传安装包。
+
 首次启动后，点击右上角的 **AI 配置**：新建一个配置档，填写服务地址和 API Key，再按用途选择写作、分析、审查、向量模型即可。未配置对应模型的 AI 功能不会自动使用任何第三方服务。
 
 常用检查命令：
