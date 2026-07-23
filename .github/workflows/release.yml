@@ -30,7 +30,7 @@ jobs:
   publish-windows:
     name: Build and publish Windows installers
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
 
     steps:
       - name: Checkout
