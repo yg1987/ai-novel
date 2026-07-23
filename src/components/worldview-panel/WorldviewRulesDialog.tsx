@@ -67,7 +67,7 @@ export default function WorldviewRulesDialog({ rules, sections, loading, saving,
       <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 'min(760px, 84vh)' }}>
         <div style={{ padding: '20px 24px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           <h2 style={{ margin: 0, fontSize: '1.1rem' }}>关键规则卡片</h2>
-          <p style={{ margin: '8px 0 0', color: 'var(--text-secondary)', lineHeight: 1.6 }}>规则卡片是 Markdown 的可选增强，用于标记必须遵守的设定；未创建规则时不会影响现有工作流。</p>
+          <p style={{ margin: '8px 0 0', color: 'var(--text-secondary)', lineHeight: 1.6 }}>把必须遵守的重要设定单独整理成规则卡片，方便后续查找和核对；不创建也不影响你现有的世界观记录。</p>
         </div>
 
         <div style={{ overflowY: 'auto', padding: '16px 24px', minHeight: 0 }}>
@@ -110,7 +110,7 @@ export default function WorldviewRulesDialog({ rules, sections, loading, saving,
               </div>
             ))}
           </div>}
-          {loading ? <p style={{ color: 'var(--text-muted)' }}>加载规则中…</p> : rules.length === 0 ? <p style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>尚无规则卡片。你仍可继续使用 Markdown 记录世界观。</p> : rules.map((rule) => (
+          {loading ? <p style={{ color: 'var(--text-muted)' }}>加载规则中…</p> : rules.length === 0 ? <p style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>尚无规则卡片。你可以继续像平时一样记录世界观。</p> : rules.map((rule) => (
             <div key={rule.id} style={{ padding: '14px 0', borderBottom: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <strong style={{ flex: 1 }}>{rule.name}</strong>

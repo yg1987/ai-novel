@@ -83,8 +83,8 @@ function parseFinding(value: unknown, index: number, allowedSources: WorldviewAu
 export function parseWorldviewAuditResponse(raw: string, allowedSources: WorldviewAuditSource[], contextText: string): WorldviewAuditParseResult {
   const parsed = extractJson(raw)
   if (!isRecord(parsed) || parsed.schemaVersion !== 1) throw new Error('AI 审查结果版本不受支持')
-  const summary = text(parsed.summary)
-  if (summary === null || !Array.isArray(parsed.findings)) throw new Error('AI 审查结果字段不完整')
+  const summary = text(parsed.summary) || 'AI 已完成一致性审查。'
+  if (!Array.isArray(parsed.findings)) throw new Error('AI 未返回问题列表，请重新检查')
   const ignored: string[] = []
   const findings: WorldviewAuditFinding[] = []
   parsed.findings.forEach((item, index) => {
@@ -103,9 +103,10 @@ export function parseWorldviewAuditResponse(raw: string, allowedSources: Worldvi
 export function worldviewAuditPrompt(allowedSources: WorldviewAuditSource[]): string {
   const sourceList = allowedSources.map((source) => `- ${source.type}/${source.id}：${source.label}`).join('\n') || '（无可用来源）'
   return [
-    '你是小说世界观一致性审查助手。只返回一个合法 JSON 对象，不要 Markdown 代码围栏或额外说明。',
+    '你是小说世界观一致性审查助手。只返回一个合法 JSON 对象，不要代码围栏或额外说明。',
     '审查术语、硬规则、时间线、角色状态与未定义名词；不要直接改写任何项目内容。',
-    'schemaVersion 必须为 1。每个 findings 项必须含 severity（blocker/warning/info）、title、risk、suggestedRevision、evidence。',
+    '顶层必须包含 schemaVersion、summary、findings：schemaVersion 必须为 1；summary 是本次审查的简短总结；findings 是问题列表。',
+    '每个 findings 项必须含 severity（blocker/warning/info）、title、risk、suggestedRevision、evidence。',
     'evidence 中每项必须含 sourceType、sourceId、excerpt；只能引用下列来源，excerpt 必须逐字来自提供的上下文。',
     '没有有效证据时，severity 只能为 info。blocker 必须同时有至少两项证据，且应包含一条规则与一条冲突内容证据。',
     '如果没有问题，返回 findings 空数组。',

@@ -1,6 +1,6 @@
 [package]
 name = "ai-novel"
-version = "0.1.0"
+version = "0.2.0"
 description = "AI-powered desktop writing tool for web novels."
 authors = ["yg1987"]
 license = "MIT"

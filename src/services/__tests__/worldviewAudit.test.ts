@@ -44,4 +44,13 @@ describe('parseWorldviewAuditResponse', () => {
     expect(result.response.findings[0]?.severity).toBe('info')
     expect(result.ignored).toHaveLength(1)
   })
+
+  it('uses a default summary when the AI omits it', () => {
+    const result = parseWorldviewAuditResponse(JSON.stringify({
+      schemaVersion: 1,
+      findings: [],
+    }), sources, context)
+
+    expect(result.response.summary).toBe('AI 已完成一致性审查。')
+  })
 })

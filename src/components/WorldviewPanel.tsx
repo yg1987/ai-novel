@@ -57,7 +57,7 @@ import {
 } from '../services/worldviewRules'
 import { checkWorldviewRules, type WorldviewRuleCheckFinding } from '../services/worldviewRuleChecks'
 import { parseWorldviewAuditResponse, worldviewAuditPrompt, type WorldviewAuditParseResult, type WorldviewAuditSource } from '../services/worldviewAudit'
-import { loadWorldviewIssueStates, saveWorldviewAuditSnapshot, updateWorldviewIssueStatus, type WorldviewIssueState, type WorldviewIssueStatus } from '../services/worldviewAuditState'
+import { loadWorldviewAuditResult, loadWorldviewIssueStates, saveWorldviewAuditResult, updateWorldviewIssueStatus, type WorldviewIssueState, type WorldviewIssueStatus } from '../services/worldviewAuditState'
 import { findWorldviewRuleReferences, type WorldviewRuleReference } from '../services/worldviewRuleReferences'
 import { extractAssistantText } from '../services/chatCompletion'
 import {
@@ -982,7 +982,7 @@ const WorldviewPanel = forwardRef<WorldviewPanelHandle, Props>(({ projectId }, r
       })
       if (!response.ok) throw new Error(`API ${response.status}`)
       const parsedAudit = parseWorldviewAuditResponse(extractAssistantText(await response.json() as unknown), allowedSources, auditContext)
-      await saveWorldviewAuditSnapshot(projectId, parsedAudit)
+      await saveWorldviewAuditResult(projectId, parsedAudit)
       setAuditIssueStates(await loadWorldviewIssueStates(projectId))
       setAuditResult(parsedAudit)
     } catch (auditFailure) {
@@ -1112,9 +1112,13 @@ const WorldviewPanel = forwardRef<WorldviewPanelHandle, Props>(({ projectId }, r
           onOpenRules={() => { void handleOpenRules() }}
           onOpenAudit={() => {
             setAuditError(null)
-            setAuditResult(null)
             setShowAudit(true)
-            void loadWorldviewIssueStates(projectId).then(setAuditIssueStates).catch((stateError: unknown) => { setAuditError(stateError instanceof Error ? stateError.message : String(stateError)) })
+            void Promise.all([loadWorldviewAuditResult(projectId), loadWorldviewIssueStates(projectId)])
+              .then(([result, states]) => {
+                setAuditResult(result)
+                setAuditIssueStates(states)
+              })
+              .catch((stateError: unknown) => { setAuditError(stateError instanceof Error ? stateError.message : String(stateError)) })
           }}
           onOpenResetConfirm={() => setShowResetConfirm(true)}
         />
