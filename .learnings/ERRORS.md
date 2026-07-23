@@ -4,6 +4,294 @@ Command failures and integration errors.
 
 ---
 
+## [ERR-20260723-008] deterministic-rule-check-lint
+
+**Logged**: 2026-07-23T13:03:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The new deterministic rule-check test used a matcher shape that inferred an unsafe value under ESLint.
+
+### Error
+```
+src/services/__tests__/worldviewRuleChecks.test.ts:42:87
+Unsafe assignment of an `any` value  @typescript-eslint/no-unsafe-assignment
+```
+
+### Context
+- Command: `npx eslint` on the new rule-check service, its test, and the related UI files.
+- The same command also surfaced pre-existing full-rule lint errors in `WorldviewPanel.tsx`; the project risk lint is the required gate for this change.
+
+### Suggested Fix
+Assert the result through explicit typed fields rather than nesting `expect.stringContaining` in an object matcher.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/services/__tests__/worldviewRuleChecks.test.ts, src/components/WorldviewPanel.tsx
+- Pattern-Key: tests.unsafe-assignment
+- First-Seen: 2026-07-23
+- Last-Seen: 2026-07-23
+
+### Resolution
+- **Resolved**: 2026-07-23T13:04:00+08:00
+- **Notes**: Replaced the nested matcher with explicit typed field assertions; targeted ESLint and tests pass.
+
+---
+
+## [ERR-20260723-007] rules-json-array-validation
+
+**Logged**: 2026-07-23T13:01:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Strict ESLint rejected alias parsing because `Array.isArray()` leaves values inferred as unsafe JSON entries.
+
+### Error
+```text
+Unsafe return/call/member access on aliases parsed from unknown JSON.
+```
+
+### Context
+- New world-rule storage validates aliases from `_worldview_rules.json`.
+
+### Suggested Fix
+Copy the array as `unknown[]` and validate each entry as a string before trimming or returning it.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/services/worldviewRules.ts
+- Pattern-Key: config.unsafe-json-array
+- Recurrence-Count: 1
+- First-Seen: 2026-07-23
+- Last-Seen: 2026-07-23
+
+### Resolution
+- **Resolved**: 2026-07-23T13:01:00+08:00
+- **Notes**: Alias parsing now validates each unknown value before normalization.
+
+---
+
+## [ERR-20260723-006] template-service-lint
+
+**Logged**: 2026-07-23T12:29:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The initial template service did not pass the strict targeted ESLint profile.
+
+### Error
+```text
+worldviewTemplates.ts: unused emptyStore helper; Date.now() used directly in a template literal.
+```
+
+### Context
+- Command: targeted ESLint for the new template service and dialog.
+
+### Suggested Fix
+Remove unused helpers and explicitly convert numeric IDs to strings under the strict lint profile.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/services/worldviewTemplates.ts
+- Pattern-Key: tests.strict-lint-new-service
+- Recurrence-Count: 1
+- First-Seen: 2026-07-23
+- Last-Seen: 2026-07-23
+
+### Resolution
+- **Resolved**: 2026-07-23T12:29:00+08:00
+- **Notes**: Removed the unused helper and converted the timestamp explicitly.
+
+---
+
+## [ERR-20260723-005] template-delete-test-assertion
+
+**Logged**: 2026-07-23T12:28:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A template deletion test asserted a partial object equality even though persistence correctly retains the remaining template's full structure.
+
+### Error
+```text
+Expected [{ id: 'two' }] but received the complete surviving template object.
+```
+
+### Context
+- The implementation filters by template ID and serializes all remaining template data.
+
+### Suggested Fix
+Assert the retained template IDs or use partial object matching when the test only verifies deletion selection.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/services/__tests__/worldviewTemplates.test.ts
+- Pattern-Key: tests.overly-strict-object-assertion
+- Recurrence-Count: 1
+- First-Seen: 2026-07-23
+- Last-Seen: 2026-07-23
+
+### Resolution
+- **Resolved**: 2026-07-23T12:28:00+08:00
+- **Notes**: The assertion now checks the resulting ID list.
+
+---
+
+## [ERR-20260723-004] targeted-typescript-css-import
+
+**Logged**: 2026-07-23T11:43:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The explicit TypeScript check reached the imported Modal component but could not resolve its CSS side-effect import without the application bundler.
+
+### Error
+```text
+src/components/Modal.tsx(4,8): error TS2882: Cannot find module or type declarations for side-effect import of './Modal.css'.
+```
+
+### Context
+- Command: `npx tsc --noEmit --ignoreConfig ... src/services/worldviewProposal.ts src/components/worldview-panel/WorldviewProposalDialog.tsx`
+
+### Suggested Fix
+Use the repository bundler/build for CSS-aware type validation, or add a project-wide CSS module declaration if standalone TypeScript checks become a supported workflow.
+
+### Metadata
+- Reproducible: yes
+- Related Files: src/components/Modal.tsx, src/components/Modal.css
+- Pattern-Key: build.css-side-effect-types
+- Recurrence-Count: 1
+- First-Seen: 2026-07-23
+- Last-Seen: 2026-07-23
+
+### Resolution
+- **Resolved**: 2026-07-23T11:43:00+08:00
+- **Notes**: The changed service/parser tests remain independently verifiable; required lint risk gate is the delivery check.
+
+---
+
+## [ERR-20260723-003] targeted-typescript-config-mode
+
+**Logged**: 2026-07-23T11:42:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The first targeted TypeScript command was rejected because TypeScript 6 does not load a tsconfig when source files are passed explicitly.
+
+### Error
+```text
+TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline.
+```
+
+### Context
+- Command used explicit files with `npx tsc --noEmit ... src/services/worldviewProposal.ts ...`.
+
+### Suggested Fix
+Add `--ignoreConfig` when invoking TypeScript with an explicit file list, or use a dedicated project config.
+
+### Metadata
+- Reproducible: yes
+- Related Files: tsconfig.json
+- Pattern-Key: build.targeted-tsconfig-mode
+- Recurrence-Count: 1
+- First-Seen: 2026-07-23
+- Last-Seen: 2026-07-23
+
+### Resolution
+- **Resolved**: 2026-07-23T11:42:00+08:00
+- **Notes**: Re-running with `--ignoreConfig` keeps the check scoped to the changed files.
+
+---
+
+## [ERR-20260723-002] targeted-eslint-config-mismatch
+
+**Logged**: 2026-07-23T11:40:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: config
+
+### Summary
+Running the default ESLint config on targeted worldview files produced errors that are outside the project's required risk lint profile.
+
+### Error
+```text
+WorldviewPanel.tsx: 24 default-profile errors, including pre-existing no-confusing-void-expression and no-dynamic-delete findings.
+WorldviewProposalDialog.tsx/worldviewProposal.ts: 4 formatting findings in newly added code.
+```
+
+### Context
+- Command: `npx eslint src/services/worldviewProposal.ts src/services/__tests__/worldviewProposal.test.ts src/components/WorldviewPanel.tsx src/components/worldview-panel/WorldviewProposalDialog.tsx`
+- The required `npm run lint:risk` profile passed with zero errors and 11 existing warnings.
+
+### Suggested Fix
+Use the required risk profile as the project gate; when running the stricter default profile, distinguish pre-existing findings from errors introduced by the current change.
+
+### Metadata
+- Reproducible: yes
+- Related Files: eslint.config.js, eslint.risk.config.js, src/components/WorldviewPanel.tsx
+- Pattern-Key: config.eslint-profile-mismatch
+- Recurrence-Count: 3
+- First-Seen: 2026-07-23
+- Last-Seen: 2026-07-23
+
+### Resolution
+- **Resolved**: 2026-07-23T11:40:00+08:00
+- **Notes**: Fixed the findings in the newly added files and retained the mandated risk profile as the delivery gate.
+
+### Recurrence Update
+- 2026-07-23：新增向导的两处回调已按默认规则修正；`WorldviewSidebar.tsx` 仍存在 7 条既有同类问题，因此继续以 `lint:risk` 作为项目门禁。
+- 2026-07-23：新增一致性审查入口后复测，侧栏仍仅报告这 7 条既有回调写法问题；新增审查服务、测试和弹窗文件无默认规则错误。
+
+---
+
+## [ERR-20260723-001] trailing-whitespace-probe-timeout
+
+**Logged**: 2026-07-23T10:35:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A PowerShell `Select-String` probe for trailing whitespace on the newly added files did not complete promptly and was terminated.
+
+### Error
+```text
+Command exceeded the expected short probe window; process terminated without output.
+```
+
+### Context
+- The probe was optional and ran after `git diff --check` had already completed successfully for tracked files.
+- The files were small; the command shape was unnecessarily broad for this verification.
+
+### Suggested Fix
+Prefer `git diff --check` for tracked edits and inspect untracked files with a bounded, file-by-file check rather than a long-running PowerShell regex probe.
+
+### Metadata
+- Reproducible: unknown
+- Related Files: src/services/worldviewContext.ts, src/services/worldviewDrafts.ts
+- Pattern-Key: shell.timeout
+- Recurrence-Count: 1
+- First-Seen: 2026-07-23
+- Last-Seen: 2026-07-23
+
+### Resolution
+- **Resolved**: 2026-07-23T10:35:00+08:00
+- **Notes**: Terminated the probe; tracked-file `git diff --check` passed and targeted tests/build passed.
+
+---
+
 ## [ERR-20260722-004] shell_command
 
 **Logged**: 2026-07-22T17:28:26+08:00
@@ -966,6 +1254,9 @@ rg: src/components/*.css: 文件名、目录名或卷标语法不正确。 (os e
 - A later batch combined the required working-tree whitespace check with `git diff --cached --check`; the staged new-file snapshot intentionally lagged behind the revised working tree and failed on old metadata spaces. Inspect staged and unstaged states separately, and never restage user state just to satisfy a review check.
 - While reviewing the version-check implementation plan, optional dependency/schema searches were placed in a parallel batch. One expected no-match exit code caused the full batch to fail. Keep fallible probes as independent commands, even after an earlier successful required path check.
 - While unifying the product name, an expected no-match branding scan was batched with `git diff --check` and a diff summary. Its exit code 1 again invalidated the required verification batch; branding residue scans must be run independently before pass/fail gates.
+- While preparing the README refresh, `codegraph explore` was invoked with an unsupported `--compact` option. Check the command help before adding output-format flags to CodeGraph CLI calls.
+- The same README pass then used `--max-results` with `codegraph query`; this CLI names the option `--limit`. Consult each subcommand's help instead of transferring option names between tools.
+- A later README audit passed a shell-sensitive composite regular expression to `rg`; PowerShell altered the expression and `rg` reported an unclosed group. Use separate fixed-string checks when validating a small set of known implementation details.
 
 ### Suggested Fix
 Use `rg --glob "*.css" <pattern> src` on Windows, and run optional no-match searches separately from required reads.
@@ -974,7 +1265,7 @@ Use `rg --glob "*.css" <pattern> src` on Windows, and run optional no-match sear
 - Reproducible: yes
 - Related Files: none
 - Pattern-Key: shell.nonzero-exit
-- Recurrence-Count: 17
+- Recurrence-Count: 20
 - First-Seen: 2026-07-17
 - Last-Seen: 2026-07-22
 - Promoted: AGENTS.md
@@ -1052,9 +1343,13 @@ Keep the scoped TypeScript check directly after each patch that adds non-trivial
 - Reproducible: yes
 - Related Files: src/services/foreshadowStorage.ts
 - Pattern-Key: build.type-error
-- Recurrence-Count: 4
+- Recurrence-Count: 5
 - First-Seen: 2026-07-17
-- Last-Seen: 2026-07-17
+- Last-Seen: 2026-07-23
+
+### Recurrence Update
+- 2026-07-23：世界观第一阶段的 `saveCurrentChanges(): Promise<boolean>` 在无活动栏目时返回了 `undefined`，被 `npm run check` 的 TypeScript 编译捕获。
+- 修复要求：显式返回 `false`，并在每次新增带布尔承诺的异步分支后立即运行范围检查。
 
 ### Resolution
 - **Resolved**: 2026-07-17T00:00:00+08:00

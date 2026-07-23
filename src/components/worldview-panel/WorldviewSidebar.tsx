@@ -17,6 +17,10 @@ interface Props {
   onNewSectionNameChange: (value: string) => void
   onAddSection: () => void
   onToggleAddSection: (show: boolean) => void
+  onOpenBootstrap: () => void
+  onOpenTemplates: () => void
+  onOpenRules: () => void
+  onOpenAudit: () => void
   onOpenResetConfirm: () => void
 }
 
@@ -36,6 +40,10 @@ export default function WorldviewSidebar({
   onNewSectionNameChange,
   onAddSection,
   onToggleAddSection,
+  onOpenBootstrap,
+  onOpenTemplates,
+  onOpenRules,
+  onOpenAudit,
   onOpenResetConfirm,
 }: Props) {
   return (
@@ -110,6 +118,18 @@ export default function WorldviewSidebar({
         )}
         <Button variant="text" size="sm" style={{ width: '100%', marginTop: 8, borderTop: '1px solid var(--border)' }} onClick={onOpenResetConfirm}>
           重置为品类默认
+        </Button>
+        <Button variant="text" size="sm" style={{ width: '100%', marginTop: 4 }} onClick={onOpenBootstrap}>
+          ✨ 生成世界观草案
+        </Button>
+        <Button variant="text" size="sm" style={{ width: '100%', marginTop: 4 }} onClick={onOpenTemplates}>
+          ▤ 管理模板
+        </Button>
+        <Button variant="text" size="sm" style={{ width: '100%', marginTop: 4 }} onClick={onOpenRules}>
+          ⚑ 关键规则
+        </Button>
+        <Button variant="text" size="sm" style={{ width: '100%', marginTop: 4 }} onClick={onOpenAudit}>
+          ✓ 一致性审查
         </Button>
       </div>
     </div>

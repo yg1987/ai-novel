@@ -1,6 +1,8 @@
 import { forwardRef, useState, useEffect, useCallback, useImperativeHandle, useRef, type KeyboardEvent, type MouseEvent } from 'react'
 import { readProjectFile, writeProjectFile, loadProviderConfig } from '../api/tauri'
 import { buildAIContext } from '../services/aiContext'
+import { buildBrainstormContext, type BrainstormAllowedEntity } from '../services/brainstormContext'
+import type { BrainstormContextSource } from '../types/brainstorm'
 import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
 import type { TextareaSelection } from '../services/rewriteUtils'
 import { getTextareaSelection, applyTextareaRewrite } from '../services/rewriteUtils'
@@ -27,6 +29,37 @@ import WorldviewEditor from './worldview-panel/WorldviewEditor'
 import WorldviewDialogs from './worldview-panel/WorldviewDialogs'
 import WorldviewDraftRecoveryDialog from './worldview-panel/WorldviewDraftRecoveryDialog'
 import WorldviewUnsavedChangesDialog from './worldview-panel/WorldviewUnsavedChangesDialog'
+import WorldviewProposalDialog from './worldview-panel/WorldviewProposalDialog'
+import WorldviewBootstrapDialog, { type WorldviewBootstrapSource } from './worldview-panel/WorldviewBootstrapDialog'
+import WorldviewTemplateDialog from './worldview-panel/WorldviewTemplateDialog'
+import WorldviewRulesDialog from './worldview-panel/WorldviewRulesDialog'
+import WorldviewAuditDialog from './worldview-panel/WorldviewAuditDialog'
+import WorldviewRuleReferencesDialog from './worldview-panel/WorldviewRuleReferencesDialog'
+import {
+  parseWorldviewProposalResponse,
+  worldviewProposalPrompt,
+  type WorldviewProposal,
+  type WorldviewProposalParseResult,
+} from '../services/worldviewProposal'
+import {
+  createWorldviewTemplate,
+  deleteWorldviewTemplate,
+  loadWorldviewTemplates,
+  type WorldviewTemplate,
+} from '../services/worldviewTemplates'
+import {
+  createWorldviewRule,
+  deleteWorldviewRule,
+  loadWorldviewRules,
+  updateWorldviewRule,
+  type WorldviewRule,
+  type WorldviewRuleInput,
+} from '../services/worldviewRules'
+import { checkWorldviewRules, type WorldviewRuleCheckFinding } from '../services/worldviewRuleChecks'
+import { parseWorldviewAuditResponse, worldviewAuditPrompt, type WorldviewAuditParseResult, type WorldviewAuditSource } from '../services/worldviewAudit'
+import { loadWorldviewIssueStates, saveWorldviewAuditSnapshot, updateWorldviewIssueStatus, type WorldviewIssueState, type WorldviewIssueStatus } from '../services/worldviewAuditState'
+import { findWorldviewRuleReferences, type WorldviewRuleReference } from '../services/worldviewRuleReferences'
+import { extractAssistantText } from '../services/chatCompletion'
 import {
   buildWorldviewContent,
   getWorldviewDefaultPrompt,
@@ -35,6 +68,16 @@ import {
 
 interface Props {
   projectId: string
+}
+
+interface ProposalReviewState extends WorldviewProposalParseResult {
+  section: SectionDef
+  baseContent: string
+}
+
+interface BootstrapProposalReview extends WorldviewProposalParseResult {
+  baseContents: Record<string, string>
+  sourceLabels: string[]
 }
 
 export interface WorldviewPanelHandle {
@@ -81,6 +124,32 @@ const WorldviewPanel = forwardRef<WorldviewPanelHandle, Props>(({ projectId }, r
   const [showUnsavedChanges, setShowUnsavedChanges] = useState(false)
   const [savingChanges, setSavingChanges] = useState(false)
   const [draftToRecover, setDraftToRecover] = useState<WorldviewDraft | null>(null)
+  const [proposalReview, setProposalReview] = useState<ProposalReviewState | null>(null)
+  const [showBootstrap, setShowBootstrap] = useState(false)
+  const [generatingBootstrap, setGeneratingBootstrap] = useState(false)
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null)
+  const [bootstrapReview, setBootstrapReview] = useState<BootstrapProposalReview | null>(null)
+  const [showBootstrapReview, setShowBootstrapReview] = useState(false)
+  const [showTemplates, setShowTemplates] = useState(false)
+  const [templates, setTemplates] = useState<WorldviewTemplate[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [templatesSaving, setTemplatesSaving] = useState(false)
+  const [templateError, setTemplateError] = useState<string | null>(null)
+  const [showRules, setShowRules] = useState(false)
+  const [rules, setRules] = useState<WorldviewRule[]>([])
+  const [rulesLoading, setRulesLoading] = useState(false)
+  const [rulesSaving, setRulesSaving] = useState(false)
+  const [rulesError, setRulesError] = useState<string | null>(null)
+  const [showAudit, setShowAudit] = useState(false)
+  const [generatingAudit, setGeneratingAudit] = useState(false)
+  const [auditError, setAuditError] = useState<string | null>(null)
+  const [auditResult, setAuditResult] = useState<WorldviewAuditParseResult | null>(null)
+  const [auditIssueStates, setAuditIssueStates] = useState<Record<string, WorldviewIssueState>>({})
+  const [savingAuditStatus, setSavingAuditStatus] = useState(false)
+  const [referenceRule, setReferenceRule] = useState<WorldviewRule | null>(null)
+  const [ruleReferences, setRuleReferences] = useState<WorldviewRuleReference[]>([])
+  const [referencesLoading, setReferencesLoading] = useState(false)
+  const [referencesError, setReferencesError] = useState<string | null>(null)
 
   const rewriteTextareaRef = useRef<HTMLTextAreaElement>(null)
   const subFieldEndRef = useRef<HTMLDivElement>(null)
@@ -478,7 +547,21 @@ const WorldviewPanel = forwardRef<WorldviewPanelHandle, Props>(({ projectId }, r
 
       const context = await buildAIContext(projectId)
       const base = provider.base_url.replace(/\/+$/, '')
-      const systemPrompt = editingPrompt.trim() || getWorldviewDefaultPrompt(activeSection, hasSubs)
+      const allowedTargets = hasSubs
+        ? activeSection.subs.map((sub) => ({ sectionKey: activeSection.key, fieldKey: sub.key }))
+        : [{ sectionKey: activeSection.key }]
+      const proposalBaseContent = hasSubs
+        ? buildWorldviewContent(activeSection.label, subValues)
+        : content
+      const systemPrompt = [
+        editingPrompt.trim() || getWorldviewDefaultPrompt(activeSection, hasSubs),
+        worldviewProposalPrompt(allowedTargets),
+      ].join('\n\n')
+      const userMessage = [
+        context,
+        `【当前栏目：${activeSection.label}】`,
+        proposalBaseContent || '（当前栏目为空）',
+      ].filter(Boolean).join('\n\n')
       const res = await fetch(`${base}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -489,44 +572,446 @@ const WorldviewPanel = forwardRef<WorldviewPanelHandle, Props>(({ projectId }, r
           model: provider.models.analysis,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: context || `请为${activeSection.label}生成内容` },
+            { role: 'user', content: userMessage },
           ],
           temperature: 0.8,
           max_tokens: 2048,
         }),
       })
       if (!res.ok) throw new Error(`API ${res.status}`)
-      const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-      const raw = data.choices?.[0]?.message?.content ?? ''
-
-      if (hasSubs) {
-        const parsed = parseWorldviewSubs(raw, activeSection.subs.map((s) => s.key))
-        setSubValues((prev) => {
-          const merged = { ...prev }
-          let changed = false
-          for (const [key, val] of Object.entries(parsed)) {
-            if (val.trim() && !prev[key]?.trim()) {
-              merged[key] = val.trim()
-              changed = true
-            }
-          }
-          if (!changed) {
-            for (const [key, val] of Object.entries(parsed)) {
-              if (val.trim()) merged[key] = val.trim()
-            }
-          }
-          return merged
-        })
-        setDirty(true)
-      } else if (raw.trim()) {
-        setContent(raw.trim())
-        setDirty(true)
-      }
+      const raw = extractAssistantText(await res.json() as unknown)
+      setProposalReview({
+        ...parseWorldviewProposalResponse(raw, allowedTargets),
+        section: activeSection,
+        baseContent: proposalBaseContent,
+      })
     } catch (error) {
       setAiError(error instanceof Error ? error.message : String(error))
     } finally {
       setGeneratingAi(false)
     }
+  }
+
+  const applyProposal = (existing: string, proposal: WorldviewProposal): string => {
+    if (proposal.action === 'fill_empty') return existing.trim() ? existing : proposal.content
+    if (proposal.action === 'suggest_append') return existing.trim() ? `${existing.trimEnd()}\n\n${proposal.content}` : proposal.content
+    return proposal.content
+  }
+
+  const handleAcceptProposals = (proposals: WorldviewProposal[]) => {
+    if (!activeSection || !proposalReview || proposals.length === 0) return
+    const currentContent = hasSubs
+      ? buildWorldviewContent(activeSection.label, subValues)
+      : content
+    if (proposalReview.section.key !== activeSection.key || proposalReview.baseContent !== currentContent) {
+      setProposalReview(null)
+      setAiError('生成期间栏目或内容已被修改；为避免覆盖，请重新生成或手工合并')
+      return
+    }
+    if (hasSubs) {
+      setSubValues((previous) => {
+        const next = { ...previous }
+        for (const proposal of proposals) {
+          const fieldKey = proposal.target.fieldKey
+          if (!fieldKey || proposal.target.sectionKey !== activeSection.key) continue
+          next[fieldKey] = applyProposal(next[fieldKey] ?? '', proposal)
+        }
+        return next
+      })
+    } else {
+      const proposal = proposals.find((item) => item.target.sectionKey === activeSection.key && !item.target.fieldKey)
+      if (proposal) setContent((previous) => applyProposal(previous, proposal))
+    }
+    setEditing(true)
+    setDirty(true)
+    setProposalReview(null)
+  }
+
+  const handleOpenBootstrap = () => {
+    if (dirty) {
+      setAiError('请先保存或放弃当前栏目的修改，再生成整份世界观草案')
+      return
+    }
+    if (bootstrapReview) {
+      setShowBootstrapReview(true)
+      return
+    }
+    setBootstrapError(null)
+    setShowBootstrap(true)
+  }
+
+  const generateBootstrap = async (sources: WorldviewBootstrapSource[], direction: string) => {
+    setGeneratingBootstrap(true)
+    setBootstrapError(null)
+    try {
+      const config = await loadProviderConfig()
+      const provider = config.providers.find((item) => item.name === config.active_profile)
+      if (!provider) throw new Error('未配置 AI Provider')
+      if (!provider.models.analysis) throw new Error('未配置分析模型，请在 AI 配置中设置')
+
+      const baseContents = Object.fromEntries(await Promise.all(sections.map(async (section) => {
+        try {
+          return [section.key, await readProjectFile(projectId, 'worldview', section.file)] as const
+        } catch {
+          return [section.key, ''] as const
+        }
+      })))
+      const enabledContextSources: BrainstormContextSource[] = ['project_meta', ...sources]
+      const context = await buildBrainstormContext({
+        projectId,
+        mode: 'world_expand',
+        problem: '为本项目建立可编辑的首版世界观设定。',
+        scope: { type: 'whole_project' },
+        relatedCharacters: [],
+        creativityLevel: 'balanced',
+        desiredTone: '',
+        mustKeep: [],
+        avoid: [],
+        resultCount: 3,
+        enabledContextSources,
+      }, 1_500)
+      const allowedTargets = sections.flatMap((section) => section.subs.length > 0
+        ? section.subs.map((sub) => ({ sectionKey: section.key, fieldKey: sub.key }))
+        : [{ sectionKey: section.key }])
+      if (allowedTargets.length === 0) throw new Error('当前没有可生成的世界观栏目')
+
+      const sectionSnapshot = sections.map((section) => {
+        const existing = baseContents[section.key] ?? ''
+        return `【${section.label}】\n${existing || '（当前为空）'}`
+      }).join('\n\n')
+      const systemPrompt = [
+        '你是小说世界观助手。请优先补全空白栏目，并让规则、势力、地点和时间线相互一致。已有内容是作者资产；除非确有明确冲突，否则使用 suggest_append 或 fill_empty，不要建议直接覆盖。',
+        worldviewProposalPrompt(allowedTargets, 'bootstrap'),
+      ].join('\n\n')
+      const userMessage = [
+        context.text || '未找到可用项目资料，请根据项目类型和用户方向建立基础设定。',
+        direction.trim() ? `【本次创作方向】\n${direction.trim()}` : '',
+        `【现有世界观栏目】\n${sectionSnapshot}`,
+      ].filter(Boolean).join('\n\n')
+      const base = provider.base_url.replace(/\/+$/, '')
+      const response = await fetch(`${base}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${provider.api_key}`,
+        },
+        body: JSON.stringify({
+          model: provider.models.analysis,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+          ],
+          temperature: 0.8,
+          max_tokens: 4_096,
+        }),
+      })
+      if (!response.ok) throw new Error(`API ${response.status}`)
+      const raw = extractAssistantText(await response.json() as unknown)
+      const labelsBySource: Partial<Record<WorldviewBootstrapSource, string>> = {
+        outline: '大纲',
+        characters: '主要角色',
+        foreshadows: '未回收伏笔',
+        worldview: '已有世界观',
+      }
+      const usedSources = new Set(context.manifest.map((entry) => entry.source))
+      const truncatedSources = new Set(context.manifest.filter((entry) => entry.truncated).map((entry) => entry.source))
+      const sourceLabel = (source: BrainstormContextSource, label: string): string => {
+        return truncatedSources.has(source) ? `${label}（已按预算截断）` : label
+      }
+      const sourceLabels = [
+        usedSources.has('project_meta') ? sourceLabel('project_meta', '项目资料') : '',
+        ...sources.map((source) => usedSources.has(source) ? sourceLabel(source, labelsBySource[source] ?? source) : ''),
+      ].filter((label): label is string => Boolean(label))
+      setBootstrapReview({
+        ...parseWorldviewProposalResponse(raw, allowedTargets),
+        baseContents,
+        sourceLabels,
+      })
+      setShowBootstrapReview(true)
+      setShowBootstrap(false)
+    } catch (error) {
+      setBootstrapError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setGeneratingBootstrap(false)
+    }
+  }
+
+  const handleAcceptBootstrap = async (proposals: WorldviewProposal[]) => {
+    if (!bootstrapReview || proposals.length === 0) return
+    const affectedSections = [...new Set(proposals.map((proposal) => proposal.target.sectionKey))]
+    const currentContents = Object.fromEntries(await Promise.all(affectedSections.map(async (sectionKey) => {
+      const section = sections.find((item) => item.key === sectionKey)
+      if (!section) return [sectionKey, ''] as const
+      try {
+        return [sectionKey, await readProjectFile(projectId, 'worldview', section.file)] as const
+      } catch {
+        return [sectionKey, ''] as const
+      }
+    })))
+    if (affectedSections.some((sectionKey) => currentContents[sectionKey] !== bootstrapReview.baseContents[sectionKey])) {
+      setBootstrapReview(null)
+      setShowBootstrapReview(false)
+      setAiError('生成期间有世界观内容被修改；为避免覆盖，请重新生成或手工合并')
+      return
+    }
+
+    const nextContents: Record<string, string> = {}
+    for (const sectionKey of affectedSections) {
+      const section = sections.find((item) => item.key === sectionKey)
+      if (!section) continue
+      const sectionProposals = proposals.filter((proposal) => proposal.target.sectionKey === sectionKey)
+      const existing = currentContents[sectionKey] ?? ''
+      if (section.subs.length === 0) {
+        nextContents[sectionKey] = sectionProposals.reduce((value, proposal) => applyProposal(value, proposal), existing)
+        continue
+      }
+      const values = parseWorldviewSubs(existing, section.subs.map((sub) => sub.key))
+      for (const proposal of sectionProposals) {
+        const fieldKey = proposal.target.fieldKey
+        if (fieldKey) values[fieldKey] = applyProposal(values[fieldKey] ?? '', proposal)
+      }
+      nextContents[sectionKey] = buildWorldviewContent(section.label, values)
+    }
+
+    try {
+      await Promise.all(affectedSections
+        .filter((sectionKey) => nextContents[sectionKey] !== currentContents[sectionKey])
+        .map(async (sectionKey) => {
+          const section = sections.find((item) => item.key === sectionKey)
+          if (section) await writeProjectFile(projectId, 'worldview', section.file, nextContents[sectionKey] ?? '')
+        }))
+      if (activeSection && activeSection.key in nextContents) {
+        const nextContent = nextContents[activeSection.key] ?? ''
+        setContent(nextContent)
+        setSubValues(parseWorldviewSubs(nextContent, activeSection.subs.map((sub) => sub.key)))
+        setBaseContentHash(await contentHash(nextContent))
+        setDirty(false)
+        setEditing(false)
+      }
+      setBootstrapReview(null)
+    } catch (error) {
+      setAiError(`采纳世界观草案失败：${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  const handleOpenTemplates = async () => {
+    setShowTemplates(true)
+    setTemplatesLoading(true)
+    setTemplateError(null)
+    try {
+      setTemplates(await loadWorldviewTemplates(projectId))
+    } catch (error) {
+      setTemplateError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }
+
+  const handleCreateTemplate = async (name: string) => {
+    setTemplatesSaving(true)
+    setTemplateError(null)
+    try {
+      const template = await createWorldviewTemplate(projectId, name, sections)
+      setTemplates((previous) => [...previous, template])
+    } catch (error) {
+      setTemplateError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setTemplatesSaving(false)
+    }
+  }
+
+  const handleApplyTemplate = async (template: WorldviewTemplate) => {
+    if (dirty) {
+      setTemplateError('请先保存或放弃当前栏目的修改，再应用模板')
+      return
+    }
+    setTemplatesSaving(true)
+    setTemplateError(null)
+    try {
+      await saveSections(projectId, template.sections, genre)
+      setSections(template.sections)
+      setSavedGenre(genre)
+      setGenreMismatchDismissed(false)
+      if (template.sections.length > 0) setActiveSection(template.sections[0]!)
+      setEditing(false)
+      setDirty(false)
+      setShowTemplates(false)
+    } catch (error) {
+      setTemplateError(`应用模板失败：${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setTemplatesSaving(false)
+    }
+  }
+
+  const handleDeleteTemplate = async (templateId: string) => {
+    setTemplatesSaving(true)
+    setTemplateError(null)
+    try {
+      await deleteWorldviewTemplate(projectId, templateId)
+      setTemplates((previous) => previous.filter((template) => template.id !== templateId))
+    } catch (error) {
+      setTemplateError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setTemplatesSaving(false)
+    }
+  }
+
+  const handleOpenRules = async () => {
+    setShowRules(true)
+    setRulesLoading(true)
+    setRulesError(null)
+    try {
+      setRules(await loadWorldviewRules(projectId))
+    } catch (error) {
+      setRulesError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setRulesLoading(false)
+    }
+  }
+
+  const handleCreateRule = async (input: WorldviewRuleInput) => {
+    setRulesSaving(true)
+    setRulesError(null)
+    try {
+      const rule = await createWorldviewRule(projectId, input)
+      setRules((previous) => [...previous, rule])
+    } catch (error) {
+      setRulesError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setRulesSaving(false)
+    }
+  }
+
+  const handleUpdateRule = async (ruleId: string, input: WorldviewRuleInput) => {
+    setRulesSaving(true)
+    setRulesError(null)
+    try {
+      const rule = await updateWorldviewRule(projectId, ruleId, input)
+      setRules((previous) => previous.map((item) => item.id === ruleId ? rule : item))
+    } catch (error) {
+      setRulesError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setRulesSaving(false)
+    }
+  }
+
+  const handleDeleteRule = async (ruleId: string) => {
+    setRulesSaving(true)
+    setRulesError(null)
+    try {
+      await deleteWorldviewRule(projectId, ruleId)
+      setRules((previous) => previous.filter((rule) => rule.id !== ruleId))
+    } catch (error) {
+      setRulesError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setRulesSaving(false)
+    }
+  }
+
+  const handleCheckRules = async (): Promise<WorldviewRuleCheckFinding[]> => {
+    const sources = await Promise.all(sections.map(async (section) => {
+      if (section.key === activeSection?.key && dirty) {
+        return {
+          sectionKey: section.key,
+          label: section.label,
+          content: section.subs.length > 0 ? buildWorldviewContent(section.label, subValues) : content,
+        }
+      }
+      try {
+        return { sectionKey: section.key, label: section.label, content: await readProjectFile(projectId, 'worldview', section.file) }
+      } catch {
+        return { sectionKey: section.key, label: section.label, content: '' }
+      }
+    }))
+    return checkWorldviewRules({ rules, sections, sources })
+  }
+
+  const auditSourceTypeForEntity = (entity: BrainstormAllowedEntity): WorldviewAuditSource['type'] | null => {
+    if (entity.type === 'character') return 'character'
+    if (entity.type === 'worldview') return 'worldview'
+    if (entity.type === 'outline') return 'outline'
+    if (entity.type === 'foreshadow') return 'foreshadow'
+    if (entity.type === 'chapter') return 'chapter'
+    return null
+  }
+
+  const handleRunAudit = async () => {
+    setGeneratingAudit(true)
+    setAuditError(null)
+    try {
+      const config = await loadProviderConfig()
+      const provider = config.providers.find((item) => item.name === config.active_profile)
+      if (!provider) throw new Error('未配置 AI Provider')
+      if (!provider.models.analysis) throw new Error('未配置分析模型，请在 AI 配置中设置')
+      const context = await buildBrainstormContext({
+        projectId,
+        mode: 'world_expand',
+        problem: '检查世界观设定是否与角色、大纲、伏笔和近期章节一致。',
+        scope: { type: 'whole_project' },
+        relatedCharacters: [],
+        creativityLevel: 'safe',
+        desiredTone: '',
+        mustKeep: [],
+        avoid: [],
+        resultCount: 3,
+        enabledContextSources: ['project_meta', 'chapter_content', 'outline', 'characters', 'worldview', 'foreshadows'],
+      }, 1_800)
+      const loadedRules = await loadWorldviewRules(projectId)
+      const visibleRules = loadedRules.filter((rule) => rule.status !== 'secret')
+      const entitySources = context.allowedEntities.flatMap((entity) => {
+        const type = auditSourceTypeForEntity(entity)
+        return type ? [{ type, id: entity.entityId, label: entity.label } satisfies WorldviewAuditSource] : []
+      })
+      const ruleSources: WorldviewAuditSource[] = visibleRules.map((rule) => ({ type: 'rule', id: rule.id, label: rule.name }))
+      const allowedSources = [...entitySources, ...ruleSources]
+      const rulesText = visibleRules.length > 0
+        ? `【关键规则卡片】\n${visibleRules.map((rule) => `【${rule.name}】${rule.statement}`).join('\n')}`
+        : ''
+      const auditContext = [context.text, rulesText].filter(Boolean).join('\n\n')
+      if (!auditContext.trim()) throw new Error('没有可用于审查的项目资料')
+      const base = provider.base_url.replace(/\/+$/, '')
+      const response = await fetch(`${base}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.api_key}` },
+        body: JSON.stringify({
+          model: provider.models.analysis,
+          messages: [{ role: 'system', content: worldviewAuditPrompt(allowedSources) }, { role: 'user', content: auditContext }],
+          temperature: 0.2,
+          max_tokens: 2_500,
+        }),
+      })
+      if (!response.ok) throw new Error(`API ${response.status}`)
+      const parsedAudit = parseWorldviewAuditResponse(extractAssistantText(await response.json() as unknown), allowedSources, auditContext)
+      await saveWorldviewAuditSnapshot(projectId, parsedAudit)
+      setAuditIssueStates(await loadWorldviewIssueStates(projectId))
+      setAuditResult(parsedAudit)
+    } catch (auditFailure) {
+      setAuditError(auditFailure instanceof Error ? auditFailure.message : String(auditFailure))
+    } finally {
+      setGeneratingAudit(false)
+    }
+  }
+
+  const handleUpdateAuditStatus = async (fingerprint: string, status: WorldviewIssueStatus) => {
+    setSavingAuditStatus(true)
+    try {
+      const next = await updateWorldviewIssueStatus(projectId, fingerprint, status)
+      setAuditIssueStates((previous) => ({ ...previous, [fingerprint]: next }))
+    } catch (statusError) {
+      setAuditError(statusError instanceof Error ? statusError.message : String(statusError))
+    } finally {
+      setSavingAuditStatus(false)
+    }
+  }
+
+  const handleOpenRuleReferences = async (rule: WorldviewRule) => {
+    setReferenceRule(rule)
+    setRuleReferences([])
+    setReferencesError(null)
+    setReferencesLoading(true)
+    try { setRuleReferences(await findWorldviewRuleReferences(projectId, rule)) }
+    catch (referenceError) { setReferencesError(referenceError instanceof Error ? referenceError.message : String(referenceError)) }
+    finally { setReferencesLoading(false) }
   }
 
   const handleTogglePrompt = () => {
@@ -622,6 +1107,15 @@ const WorldviewPanel = forwardRef<WorldviewPanelHandle, Props>(({ projectId }, r
           onNewSectionNameChange={setNewSectionName}
           onAddSection={handleAddSection}
           onToggleAddSection={handleToggleAddSection}
+          onOpenBootstrap={handleOpenBootstrap}
+          onOpenTemplates={() => { void handleOpenTemplates() }}
+          onOpenRules={() => { void handleOpenRules() }}
+          onOpenAudit={() => {
+            setAuditError(null)
+            setAuditResult(null)
+            setShowAudit(true)
+            void loadWorldviewIssueStates(projectId).then(setAuditIssueStates).catch((stateError: unknown) => { setAuditError(stateError instanceof Error ? stateError.message : String(stateError)) })
+          }}
           onOpenResetConfirm={() => setShowResetConfirm(true)}
         />
         <WorldviewEditor
@@ -712,6 +1206,90 @@ const WorldviewPanel = forwardRef<WorldviewPanelHandle, Props>(({ projectId }, r
           onDiscard={handleDiscardDraft}
         />
       )}
+      {proposalReview && (
+        <WorldviewProposalDialog
+          sections={[proposalReview.section]}
+          response={proposalReview.response}
+          ignoredCount={proposalReview.ignored.length}
+          onAccept={handleAcceptProposals}
+          onClose={() => setProposalReview(null)}
+        />
+      )}
+      {showBootstrap && (
+        <WorldviewBootstrapDialog
+          generating={generatingBootstrap}
+          error={bootstrapError}
+          onGenerate={(sources, direction) => { void generateBootstrap(sources, direction) }}
+          onClose={() => {
+            setShowBootstrap(false)
+            setBootstrapError(null)
+          }}
+        />
+      )}
+      {bootstrapReview && showBootstrapReview && (
+        <WorldviewProposalDialog
+          sections={sections}
+          response={bootstrapReview.response}
+          ignoredCount={bootstrapReview.ignored.length}
+          sourceLabels={bootstrapReview.sourceLabels}
+          onAccept={(proposals) => { void handleAcceptBootstrap(proposals) }}
+          onRegenerate={() => {
+            setShowBootstrapReview(false)
+            setBootstrapError(null)
+            setShowBootstrap(true)
+          }}
+          onClose={() => setShowBootstrapReview(false)}
+        />
+      )}
+      {showTemplates && (
+        <WorldviewTemplateDialog
+          templates={templates}
+          loading={templatesLoading}
+          saving={templatesSaving}
+          error={templateError}
+          onCreate={(name) => { void handleCreateTemplate(name) }}
+          onApply={(template) => { void handleApplyTemplate(template) }}
+          onDelete={(templateId) => { void handleDeleteTemplate(templateId) }}
+          onClose={() => {
+            setShowTemplates(false)
+            setTemplateError(null)
+          }}
+        />
+      )}
+      {showRules && (
+        <WorldviewRulesDialog
+          rules={rules}
+          sections={sections}
+          loading={rulesLoading}
+          saving={rulesSaving}
+          error={rulesError}
+          onCreate={(input) => { void handleCreateRule(input) }}
+          onUpdate={(ruleId, input) => { void handleUpdateRule(ruleId, input) }}
+          onDelete={(ruleId) => { void handleDeleteRule(ruleId) }}
+          onReferences={(rule) => { void handleOpenRuleReferences(rule) }}
+          onCheck={handleCheckRules}
+          onClose={() => {
+            setShowRules(false)
+            setRulesError(null)
+          }}
+        />
+      )}
+      {showAudit && (
+        <WorldviewAuditDialog
+          generating={generatingAudit}
+          error={auditError}
+          result={auditResult}
+          issueStates={auditIssueStates}
+          savingStatus={savingAuditStatus}
+          onRun={() => { void handleRunAudit() }}
+          onUpdateStatus={(fingerprint, status) => { void handleUpdateAuditStatus(fingerprint, status) }}
+          onClose={() => {
+            setShowAudit(false)
+            setAuditError(null)
+          }}
+        />
+      )}
+      {referenceRule && <WorldviewRuleReferencesDialog ruleName={referenceRule.name} loading={referencesLoading} references={ruleReferences} error={referencesError} onClose={() => setReferenceRule(null)} />}
     </div>
   )
 })

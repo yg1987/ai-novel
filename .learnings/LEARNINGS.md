@@ -6,6 +6,37 @@ Corrections, insights, and knowledge gaps captured during development.
 
 ---
 
+## [LRN-20260723-002] correction
+
+**Logged**: 2026-07-23T00:00:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+AI 世界观草案弹窗的长内容不能挤掉底部操作栏。
+
+### Details
+用户反馈草案生成后看不到“采纳”等操作。原因是弹窗内容区未占用受控的 flex 高度，长文本会把 footer 推到可视区域外。
+
+### Suggested Action
+弹窗使用受控高度；正文设为可滚动的 flex 区域，footer 保持非收缩，从而持续显示保留、重新生成和采纳操作。
+
+### Metadata
+- Source: user_feedback
+- Related Files: src/components/worldview-panel/WorldviewProposalDialog.tsx
+- Tags: modal, flex-layout, footer, worldview
+- Pattern-Key: frontend.modal-footer-clipping
+- Recurrence-Count: 1
+- First-Seen: 2026-07-23
+- Last-Seen: 2026-07-23
+
+### Resolution
+- **Resolved**: 2026-07-23T00:00:00+08:00
+- **Notes**: 内容区改为 flex 滚动区域，底部操作栏固定在弹窗内。
+
+---
+
 ## [LRN-20260722-002] correction
 
 **Logged**: 2026-07-22T00:00:00+08:00
@@ -477,5 +508,33 @@ Use a target-to-+300 preferred range, permit up to +600 only when necessary for 
 ### Resolution
 - **Resolved**: 2026-07-21T00:00:00+08:00
 - **Notes**: Implemented the shared prompt and completion pass with non-numbered-outline handling.
+
+---
+
+## [LRN-20260723-001] correction
+
+**Logged**: 2026-07-23T00:00:00+08:00
+**Priority**: high
+**Status**: promoted
+**Area**: config
+
+### Summary
+Full-project verification must run only when the user explicitly requests it, never as an automatic phase or delivery step.
+
+### Details
+Running `npm run check`, full builds, all-project tests, or integration verification after each implementation phase is unnecessarily slow and exceeds the project's desired verification scope. Development should use only checks and targeted tests that match the current changes.
+
+### Suggested Action
+Keep full-project build, check, test, packaging, and integration commands behind an explicit user request. Do not infer permission from phase completion, feature completion, or final delivery.
+
+### Metadata
+- Source: user_feedback
+- Related Files: AGENTS.md
+- Tags: verification, build, workflow, scope
+- Pattern-Key: build.full-verification-scope
+- Recurrence-Count: 1
+- First-Seen: 2026-07-23
+- Last-Seen: 2026-07-23
+- Promoted: AGENTS.md
 
 ---
