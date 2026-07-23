@@ -35,7 +35,11 @@ fn projects_index_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String>
 }
 
 fn project_dir(app_handle: &tauri::AppHandle, id: &str) -> Result<PathBuf, String> {
-    Ok(workspace_dir(app_handle)?.join("projects").join(id))
+    let safe_id = safe_relative_path(id)?;
+    if safe_id.components().count() != 1 {
+        return Err("Project id must be a single relative path component".to_string());
+    }
+    Ok(workspace_dir(app_handle)?.join("projects").join(safe_id))
 }
 
 fn timestamp() -> String {
@@ -542,7 +546,11 @@ fn project_subdir(
     project_id: &str,
     subdir: &str,
 ) -> Result<PathBuf, String> {
-    Ok(project_dir(app_handle, project_id)?.join(subdir))
+    let project = project_dir(app_handle, project_id)?;
+    if subdir.is_empty() {
+        return Ok(project);
+    }
+    Ok(project.join(safe_relative_path(subdir)?))
 }
 
 fn safe_relative_path(value: &str) -> Result<&Path, String> {
@@ -558,6 +566,19 @@ fn safe_relative_path(value: &str) -> Result<&Path, String> {
         return Err("Project file path must be a non-empty relative path".to_string());
     }
     Ok(path)
+}
+
+fn project_file_path(
+    app_handle: &tauri::AppHandle,
+    project_id: &str,
+    subdir: &str,
+    filename: &str,
+) -> Result<PathBuf, String> {
+    let safe_filename = safe_relative_path(filename)?;
+    if safe_filename.components().count() != 1 {
+        return Err("Project filename must be a single relative path component".to_string());
+    }
+    Ok(project_subdir(app_handle, project_id, subdir)?.join(safe_filename))
 }
 
 fn atomic_replace_file(path: &Path, content: &str) -> Result<(), String> {
@@ -649,7 +670,7 @@ fn read_project_file(
     subdir: String,
     filename: String,
 ) -> Result<String, String> {
-    let path = project_subdir(&app_handle, &project_id, &subdir)?.join(&filename);
+    let path = project_file_path(&app_handle, &project_id, &subdir, &filename)?;
     if !path.exists() {
         return Ok(String::new());
     }
@@ -664,9 +685,11 @@ fn write_project_file(
     filename: String,
     content: String,
 ) -> Result<(), String> {
-    let dir = project_subdir(&app_handle, &project_id, &subdir)?;
-    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create dir: {e}"))?;
-    let path = dir.join(&filename);
+    let path = project_file_path(&app_handle, &project_id, &subdir, &filename)?;
+    let dir = path
+        .parent()
+        .ok_or_else(|| "Project file target has no parent directory".to_string())?;
+    fs::create_dir_all(dir).map_err(|e| format!("Failed to create dir: {e}"))?;
     fs::write(&path, &content).map_err(|e| format!("Failed to write file: {e}"))?;
     Ok(())
 }
@@ -705,11 +728,30 @@ fn delete_project_file(
     subdir: String,
     filename: String,
 ) -> Result<(), String> {
-    let path = project_subdir(&app_handle, &project_id, &subdir)?.join(&filename);
+    let path = project_file_path(&app_handle, &project_id, &subdir, &filename)?;
     if path.exists() {
         fs::remove_file(&path).map_err(|e| format!("Failed to delete file: {e}"))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod project_file_path_tests {
+    use super::safe_relative_path;
+
+    #[test]
+    fn safe_relative_path_rejects_traversal_and_absolute_paths() {
+        assert!(safe_relative_path("../escape.md").is_err());
+        assert!(safe_relative_path("/escape.md").is_err());
+        assert!(safe_relative_path("").is_err());
+    }
+
+    #[test]
+    fn safe_relative_path_accepts_normal_relative_paths() {
+        assert!(safe_relative_path("characters").is_ok());
+        assert!(safe_relative_path("memory/snapshots").is_ok());
+        assert!(safe_relative_path("role.md").is_ok());
+    }
 }
 
 // ─── App entry ────────────────────────────────────────────

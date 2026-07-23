@@ -7,7 +7,9 @@ import { useChapterSegmentSize } from '../hooks/useChapterSegmentSize'
 import ExportDialog from './ExportDialog'
 import ArchiveDialog from './ArchiveDialog'
 import Button from './Button'
+import type { CharacterPanelHandle } from './CharacterPanel'
 import type { WorldviewPanelHandle } from './WorldviewPanel'
+import CharacterUnsavedChangesDialog from './character-panel/CharacterUnsavedChangesDialog'
 import WorldviewUnsavedChangesDialog from './worldview-panel/WorldviewUnsavedChangesDialog'
 
 const ChapterManager = lazy(() => import('./ChapterManager'))
@@ -31,6 +33,7 @@ interface Props {
 
 type Tab = 'writing' | 'characters' | 'worldview' | 'outline' | 'notes' | 'foreshadow' | 'search' | 'stats' | 'review' | 'resource' | 'brainstorm' | 'graph' | 'chapterflow'
 type PendingNavigation = { type: 'tab'; tab: Tab } | { type: 'back' }
+type UnsavedPanel = 'characters' | 'worldview'
 
 export default function ProjectView({ project, onBack }: Props) {
   const [tab, setTab] = useState<Tab>('writing')
@@ -49,7 +52,9 @@ export default function ProjectView({ project, onBack }: Props) {
   const [brainstormSessionId, setBrainstormSessionId] = useState<string | null>(null)
   const [brainstormForeshadowDraft, setBrainstormForeshadowDraft] = useState<BrainstormForeshadowDraft | null>(null)
   const [pendingNavigation, setPendingNavigation] = useState<PendingNavigation | null>(null)
-  const [savingWorldview, setSavingWorldview] = useState(false)
+  const [savingNavigation, setSavingNavigation] = useState(false)
+  const [pendingUnsavedPanel, setPendingUnsavedPanel] = useState<UnsavedPanel | null>(null)
+  const characterRef = useRef<CharacterPanelHandle>(null)
   const worldviewRef = useRef<WorldviewPanelHandle>(null)
 
   const completeNavigation = (navigation: PendingNavigation) => {
@@ -58,28 +63,39 @@ export default function ProjectView({ project, onBack }: Props) {
   }
 
   const requestNavigation = (navigation: PendingNavigation) => {
-    if (tab === 'worldview' && worldviewRef.current?.hasUnsavedChanges()) {
+    const unsavedPanel: UnsavedPanel | null = tab === 'worldview' && worldviewRef.current?.hasUnsavedChanges()
+      ? 'worldview'
+      : tab === 'characters' && characterRef.current?.hasUnsavedChanges()
+        ? 'characters'
+        : null
+    if (unsavedPanel) {
       setPendingNavigation(navigation)
+      setPendingUnsavedPanel(unsavedPanel)
       return
     }
     completeNavigation(navigation)
   }
 
   const handleSaveAndNavigate = async () => {
-    setSavingWorldview(true)
-    const saved = await worldviewRef.current?.saveChanges() ?? true
-    setSavingWorldview(false)
+    setSavingNavigation(true)
+    const saved = pendingUnsavedPanel === 'characters'
+      ? await characterRef.current?.saveChanges() ?? true
+      : await worldviewRef.current?.saveChanges() ?? true
+    setSavingNavigation(false)
     if (!saved || !pendingNavigation) return
     const navigation = pendingNavigation
     setPendingNavigation(null)
+    setPendingUnsavedPanel(null)
     completeNavigation(navigation)
   }
 
   const handleDiscardAndNavigate = () => {
-    worldviewRef.current?.discardChanges()
+    if (pendingUnsavedPanel === 'characters') characterRef.current?.discardChanges()
+    else worldviewRef.current?.discardChanges()
     if (!pendingNavigation) return
     const navigation = pendingNavigation
     setPendingNavigation(null)
+    setPendingUnsavedPanel(null)
     completeNavigation(navigation)
   }
 
@@ -152,7 +168,7 @@ export default function ProjectView({ project, onBack }: Props) {
       case 'writing':
         return <ChapterManager projectId={project.id} projectName={project.name} segmentSize={chapterSegmentSize} onSegmentSizeChange={setChapterSegmentSize} onNavigateToReview={handleNavigateToReview} onNavigateToNotes={handleNavigateToNotes} initialChapterRef={navigateChapterRef} onChapterSelect={handleChapterSelect} currentChapter={currentChapter} materialContextSelections={materialContextSelections} onMaterialContextChange={setMaterialContextSelections} onOpenMaterial={(materialId) => { setNavigateMaterialId(materialId); setTab('resource') }} />
       case 'characters':
-        return <CharacterPanel projectId={project.id} initialCharacter={navigateCharacter} />
+        return <CharacterPanel ref={characterRef} projectId={project.id} initialCharacter={navigateCharacter} />
       case 'worldview':
         return <WorldviewPanel ref={worldviewRef} projectId={project.id} />
       case 'outline':
@@ -238,12 +254,20 @@ export default function ProjectView({ project, onBack }: Props) {
           {renderTabContent()}
         </Suspense>
       </div>
-      {pendingNavigation && (
+      {pendingNavigation && pendingUnsavedPanel === 'worldview' && (
         <WorldviewUnsavedChangesDialog
-          saving={savingWorldview}
+          saving={savingNavigation}
           onSave={() => { void handleSaveAndNavigate() }}
           onDiscard={handleDiscardAndNavigate}
-          onCancel={() => setPendingNavigation(null)}
+          onCancel={() => { setPendingNavigation(null); setPendingUnsavedPanel(null) }}
+        />
+      )}
+      {pendingNavigation && pendingUnsavedPanel === 'characters' && (
+        <CharacterUnsavedChangesDialog
+          saving={savingNavigation}
+          onSave={() => { void handleSaveAndNavigate() }}
+          onDiscard={handleDiscardAndNavigate}
+          onCancel={() => { setPendingNavigation(null); setPendingUnsavedPanel(null) }}
         />
       )}
     </div>

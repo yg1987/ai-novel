@@ -1,4 +1,4 @@
-import { computeProjectStats, computeChapterWordCounts, listProjectFiles, listMaterials, listChapters } from '../api/tauri'
+import { computeProjectStats, computeChapterWordCounts, listProjectFiles, listMaterials, listChapters, readProjectFile } from '../api/tauri'
 import type { ProjectStats, ChapterWordCount, DailyStats } from '../api/tauri'
 import { loadForeshadows } from './foreshadowStorage'
 import { loadAllNotes } from './notesStorage'
@@ -6,6 +6,7 @@ import { calcForeshadowHealth, calcForeshadowDensity, getHealthLabel } from './f
 import type { ChapterMeta } from '../types/chapter'
 import { DEFAULT_FORESHADOW_CONFIG } from '../types/novel'
 import { loadChapterReviews } from './reviewReportStorage'
+import { parseCharacterGender, type CharacterGender } from './characterProfiles'
 
 /**
  * Pure-function wrapper around stats Tauri commands.
@@ -77,6 +78,18 @@ export interface ProjectScale {
   outline: number
   notes: number
   resources: number
+}
+
+export type CharacterGenderStats = Record<CharacterGender, number>
+
+export async function getCharacterGenderStats(projectId: string): Promise<CharacterGenderStats> {
+  const files = await listProjectFiles(projectId, 'characters').catch(() => [])
+  const names = files.filter((file) => file.name.endsWith('.md')).map((file) => file.name)
+  const cards = await Promise.all(names.map((name) => readProjectFile(projectId, 'characters', name).catch(() => '')))
+  return cards.reduce<CharacterGenderStats>((counts, card) => {
+    counts[parseCharacterGender(card)]++
+    return counts
+  }, { 男: 0, 女: 0, 未知: 0 })
 }
 
 export async function getProjectScale(projectId: string): Promise<ProjectScale> {

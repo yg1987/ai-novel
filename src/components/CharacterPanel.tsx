@@ -1,14 +1,19 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { forwardRef, useState, useEffect, useCallback, useImperativeHandle, useRef } from 'react'
 import { listProjectFiles, readProjectFile, writeProjectFile, deleteProjectFile, loadProviderConfig } from '../api/tauri'
 import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
 import { buildAIContext } from '../services/aiContext'
+import { hasDuplicateCharacterName, normalizeCharacterName, validateCharacterName } from '../services/characterNames'
+import { parseCharacterGender, randomCharacterName, setCharacterGender, type CharacterGender } from '../services/characterProfiles'
 import type { TextareaSelection } from '../services/rewriteUtils'
 import { getTextareaSelection, applyTextareaRewrite } from '../services/rewriteUtils'
 import { type RewriteMode } from '../services/rewriteService'
+import Button from './Button'
+import Modal from './Modal'
 import RewritePreview from './RewritePreview'
 import SelectionContextMenu, { type ContextMenuAction } from './SelectionContextMenu'
 import CharacterSidebar from './character-panel/CharacterSidebar'
 import CharacterEditor from './character-panel/CharacterEditor'
+import CharacterUnsavedChangesDialog from './character-panel/CharacterUnsavedChangesDialog'
 import './CharacterPanel.css'
 
 interface Props {
@@ -16,10 +21,17 @@ interface Props {
   initialCharacter?: string | null
 }
 
+export interface CharacterPanelHandle {
+  hasUnsavedChanges: () => boolean
+  saveChanges: () => Promise<boolean>
+  discardChanges: () => void
+}
+
 const CHARACTER_SUBDIR = 'characters'
 const ORDER_FILE = 'order.json'
 
 const CHAR_EXAMPLE = `角色：林烬
+性别：男
 身份/职业：玄天宗外门弟子，后觉醒太古剑魂
 外貌特征：黑发黑瞳，身形清瘦，左眉有一道细疤
 性格特点：沉默寡言但重情义，遇强则强，不畏权势
@@ -27,36 +39,6 @@ const CHAR_EXAMPLE = `角色：林烬
 动机目标：寻找父母死因真相，最终成为剑道至尊
 说话风格：话少，常用短句。愤怒时语气冰冷
 标签：["剑修", "孤儿", "逆袭", "天选之子"]`
-
-// ─── Random name pools ──────────────────────────────
-
-const SURNAMES = [
-  '陆', '谢', '江', '裴', '沈', '顾', '楚', '叶', '祁', '温',
-  '莫', '独孤', '钟离', '云', '殷', '宋', '萧', '花', '柳',
-  '苏', '容', '朝', '南', '白', '秋', '扶', '步', '知', '未',
-]
-
-const GIVEN_MALE = [
-  '沉舟', '云归', '望舒', '惊蛰', '千寻', '夜白', '寒秋',
-  '连', '如玉', '听雨', '长歌', '信', '煜', '铮', '无邪',
-  '时归', '墨', '舟', '长刃', '远', '修', '岚', '朔', '川',
-  '陵', '镜', '阙', '涯', '笙', '渡',
-]
-
-const GIVEN_FEMALE = [
-  '浅月', '清漪', '暮雪', '折枝', '浸月', '朝音', '与',
-  '歌', '枝', '辞', '露', '夕', '酒', '摇', '更', '欢',
-  '歌', '央', '秋', '晚', '笙', '鸢', '瑶', '霜', '绮',
-  '瑟', '柔', '阑', '吟', '筝',
-]
-
-function randomName(): string {
-  const surname = SURNAMES[Math.floor(Math.random() * SURNAMES.length)]!
-  const isMale = Math.random() > 0.5
-  const pool = isMale ? GIVEN_MALE : GIVEN_FEMALE
-  const given = pool[Math.floor(Math.random() * pool.length)]!
-  return surname + given
-}
 
 // ─── AI prompt ───────────────────────────────────────
 
@@ -75,6 +57,7 @@ ${nameLine}
 请严格按以下格式输出，不要加额外说明：
 
 角色：[名字]
+性别：[男/女]
 身份/职业：
 外貌特征：
 性格特点：
@@ -92,41 +75,91 @@ ${nameLine}
   }
 }
 
+function buildAICompletionPrompt(name: string, content: string, projectInfo: string): { system: string; user: string } {
+  return {
+    system: `你是一个网文角色设定助手。请在不改变角色核心身份和已有有效设定的前提下，补全并优化角色卡。
+
+请严格按以下格式输出完整角色卡，不要加额外说明：
+
+角色：${name}
+身份/职业：
+外貌特征：
+性格特点：
+背景经历：
+动机目标：
+说话风格：
+标签：[标签1, 标签2, ...]
+
+要求：
+- 保留已有的具体设定，缺失字段才补全
+- 角色要符合小说类型，性格有优点也有缺点
+- 不要替换角色名或凭空推翻已有内容`,
+    user: `${projectInfo ? `项目信息：\n${projectInfo}\n\n` : ''}当前角色：${name}\n\n现有角色卡：\n${content || '（尚未填写，请从头生成）'}`,
+  }
+}
+
 // ─── Component ───────────────────────────────────────
 
-export default function CharacterPanel({ projectId, initialCharacter }: Props) {
+type PromptMode = 'create' | 'complete'
+type PendingAction = { type: 'select'; name: string } | { type: 'delete'; name: string }
+type AIDraft = { mode: PromptMode; name: string; content: string }
+
+const promptKeys: Record<PromptMode, string> = {
+  create: 'character_create',
+  complete: 'character_complete',
+}
+
+const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, initialCharacter }, ref) => {
   const [files, setFiles] = useState<string[]>([])
   const [order, setOrder] = useState<string[]>([])
   const orderRef = useRef<string[]>([])
-  // Keep ref in sync so mouse event closures use latest order
   useEffect(() => { orderRef.current = order }, [order])
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [content, setContent] = useState('')
+  const [savedContent, setSavedContent] = useState('')
   const [editing, setEditing] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newGender, setNewGender] = useState<CharacterGender>('未知')
+  const [genderFilter, setGenderFilter] = useState<CharacterGender | '全部'>('全部')
+  const [genderByFile, setGenderByFile] = useState<Record<string, CharacterGender>>({})
   const [showExample, setShowExample] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [deletingName, setDeletingName] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
-  const [aiError, setAiError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [showPrompt, setShowPrompt] = useState(false)
-  const [editingPrompt, setEditingPrompt] = useState('')
+  const [promptMode, setPromptMode] = useState<PromptMode>('complete')
+  const [prompts, setPrompts] = useState<Record<PromptMode, string>>({ create: '', complete: '' })
   const [savingPrompt, setSavingPrompt] = useState(false)
   const [rewriteState, setRewriteState] = useState<(TextareaSelection & { mode: RewriteMode }) | null>(null)
   const [hasSelection, setHasSelection] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
+  const [showUnsavedChanges, setShowUnsavedChanges] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [aiDraft, setAiDraft] = useState<AIDraft | null>(null)
   const rewriteTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const loadRequestRef = useRef(0)
+  const editAfterLoadRef = useRef<string | null>(null)
   const checkSelection = useCallback(() => {
     const ta = rewriteTextareaRef.current
     if (ta) setHasSelection(ta.selectionStart !== ta.selectionEnd)
   }, [])
 
-  const promptKey = 'character_create'
+  const dirty = content !== savedContent
+  const editingPrompt = prompts[promptMode]
 
   useEffect(() => {
-    loadPrompt(projectId, promptKey).then((saved) => {
-      setEditingPrompt(saved ?? '')
-      setShowPrompt(false)
-    }).catch(() => {})
-  }, [projectId, promptKey])
+    void Promise.all([loadPrompt(projectId, promptKeys.create), loadPrompt(projectId, promptKeys.complete)])
+      .then(([create, complete]) => {
+        setPrompts({ create: create ?? '', complete: complete ?? '' })
+        setShowPrompt(false)
+      })
+      .catch(() => {})
+  }, [projectId])
 
   const saveOrder = useCallback(async (names: string[]) => {
     await writeProjectFile(projectId, CHARACTER_SUBDIR, ORDER_FILE, JSON.stringify(names, null, 2))
@@ -134,10 +167,14 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
 
   const refresh = useCallback(async () => {
     const entries = await listProjectFiles(projectId, CHARACTER_SUBDIR)
-    // Only .md files are character files; order.json is not a character
     const charNames = entries
       .filter((e) => e.name.endsWith('.md'))
       .map((e) => e.name.replace(/\.md$/i, ''))
+    const genders = await Promise.all(charNames.map(async (name) => {
+      const card = await readProjectFile(projectId, CHARACTER_SUBDIR, `${name}.md`).catch(() => '')
+      return [name, parseCharacterGender(card)] as const
+    }))
+    setGenderByFile(Object.fromEntries(genders))
 
     let currentOrder: string[] = []
     try {
@@ -150,8 +187,13 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
       }
     } catch { /* order.json missing or malformed */ }
 
-    // Merge: keep order entries that still exist, append new ones at end
-    const validOrder = currentOrder.filter((n) => charNames.includes(n))
+    const seen = new Set<string>()
+    const validOrder = currentOrder.filter((name) => {
+      const key = name.toLocaleLowerCase()
+      if (!charNames.includes(name) || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
     const newChars = charNames.filter((n) => !currentOrder.includes(n))
     const mergedOrder = [...validOrder, ...newChars]
 
@@ -168,140 +210,287 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
   }, [initialCharacter, projectId])
 
   useEffect(() => {
-    refresh().catch((e: unknown) => { console.error(e) })
+    refresh().catch((e: unknown) => { setError(e instanceof Error ? e.message : String(e)) })
   }, [refresh])
 
   useEffect(() => {
     if (!activeFile) return
-    readProjectFile(projectId, CHARACTER_SUBDIR, `${activeFile}.md`)
-      .then(setContent)
-      .catch((e: unknown) => { console.error(e) })
+    const requestId = ++loadRequestRef.current
+    setLoading(true)
+    void readProjectFile(projectId, CHARACTER_SUBDIR, `${activeFile}.md`)
+      .then((nextContent) => {
+        if (requestId !== loadRequestRef.current) return
+        const shouldEdit = editAfterLoadRef.current === activeFile
+        if (shouldEdit) editAfterLoadRef.current = null
+        const normalizedContent = setCharacterGender(nextContent, parseCharacterGender(nextContent))
+        setContent(normalizedContent)
+        setSavedContent(normalizedContent)
+        setEditing(shouldEdit)
+      })
+      .catch((e: unknown) => {
+        if (requestId === loadRequestRef.current) setError(e instanceof Error ? e.message : String(e))
+      })
+      .finally(() => {
+        if (requestId === loadRequestRef.current) setLoading(false)
+      })
   }, [projectId, activeFile])
 
-  const handleSave = () => {
-    if (!activeFile) return
-    writeProjectFile(projectId, CHARACTER_SUBDIR, `${activeFile}.md`, content)
-      .then(() => { setEditing(false) })
-      .catch((e: unknown) => { console.error(e) })
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirty) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [dirty])
+
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    if (!activeFile) return false
+    setSaving(true)
+    setError(null)
+    try {
+      await writeProjectFile(projectId, CHARACTER_SUBDIR, `${activeFile}.md`, content)
+      setSavedContent(content)
+      setEditing(false)
+      setNotice('角色卡已保存')
+      return true
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }, [activeFile, content, projectId])
+
+  const discardChanges = useCallback(() => {
+    setContent(savedContent)
+    setEditing(false)
+    setHasSelection(false)
+  }, [savedContent])
+
+  useImperativeHandle(ref, () => ({
+    hasUnsavedChanges: () => dirty,
+    saveChanges: handleSave,
+    discardChanges,
+  }), [dirty, handleSave, discardChanges])
+
+  const selectFile = (name: string) => {
+    setActiveFile(name)
+    setEditing(false)
+    setShowExample(false)
+    setError(null)
+    setNotice(null)
   }
 
-  const handleCreate = () => {
-    if (!newName.trim()) return
-    const name = newName.trim()
-    if (files.includes(name)) return
-    writeProjectFile(projectId, CHARACTER_SUBDIR, `${name}.md`, '')
-      .then(() => {
-        setNewName('')
-        return refresh()
-      })
-      .then(async () => {
-        // Append new char to end of order
-        const updatedOrder = [...order, name]
-        await saveOrder(updatedOrder)
-        setOrder(updatedOrder)
-        setFiles(updatedOrder)
-        setActiveFile(name)
+  const requestSelect = (name: string) => {
+    if (name === activeFile) return
+    if (dirty) {
+      setPendingAction({ type: 'select', name })
+      setShowUnsavedChanges(true)
+      return
+    }
+    selectFile(name)
+  }
+
+  const continuePendingAction = () => {
+    const action = pendingAction
+    setPendingAction(null)
+    setShowUnsavedChanges(false)
+    if (!action) return
+    if (action.type === 'select') selectFile(action.name)
+    else setDeleteTarget(action.name)
+  }
+
+  const handleCreate = async () => {
+    const name = normalizeCharacterName(newName)
+    const validationError = validateCharacterName(name)
+    if (validationError) { setError(validationError); return }
+    if (hasDuplicateCharacterName(files, name)) { setError('该角色名已存在'); return }
+    setCreating(true)
+    setError(null)
+    try {
+      const initialContent = `角色：${name}\n性别：${newGender}\n`
+      await writeProjectFile(projectId, CHARACTER_SUBDIR, `${name}.md`, initialContent)
+      await refresh()
+      setNewName('')
+      editAfterLoadRef.current = name
+      setActiveFile(name)
+      setContent(initialContent)
+      setSavedContent(initialContent)
+      setEditing(true)
+      setNotice(`已创建角色「${name}」`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const requestDelete = (name: string) => {
+    if (name === activeFile && dirty) {
+      setPendingAction({ type: 'delete', name })
+      setShowUnsavedChanges(true)
+      return
+    }
+    setDeleteTarget(name)
+  }
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    const name = deleteTarget
+    setDeletingName(name)
+    setError(null)
+    try {
+      await deleteProjectFile(projectId, CHARACTER_SUBDIR, `${name}.md`)
+      if (activeFile === name) {
+        setActiveFile(null)
         setContent('')
-        setEditing(true)
-      })
-      .catch((e: unknown) => { console.error(e) })
-  }
-
-  const handleDelete = (name: string) => {
-    deleteProjectFile(projectId, CHARACTER_SUBDIR, `${name}.md`)
-      .then(() => {
-        if (activeFile === name) { setActiveFile(null); setContent('') }
-        return refresh()
-      })
-      .then(async () => {
-        const updatedOrder = order.filter((n) => n !== name)
-        await saveOrder(updatedOrder)
-        setOrder(updatedOrder)
-        setFiles(updatedOrder)
-      })
-      .catch((e: unknown) => { console.error(e) })
+        setSavedContent('')
+        setEditing(false)
+      }
+      await refresh()
+      setNotice(`已删除角色「${name}」`)
+      setDeleteTarget(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDeletingName(null)
+    }
   }
 
   const handleRandomName = () => {
-    let name = randomName()
-    // Avoid duplicates
+    let generated = randomCharacterName()
     let tries = 0
-    while (files.includes(name) && tries < 20) {
-      name = randomName()
+    while (hasDuplicateCharacterName(files, generated.name) && tries < 100) {
+      generated = randomCharacterName()
       tries++
     }
-    setNewName(name)
+    setNewName(generated.name)
+    setNewGender(generated.gender)
+  }
+
+  const requestAI = async (system: string, user: string): Promise<string> => {
+    const config = await loadProviderConfig()
+    const provider = config.providers.find(p => p.name === config.active_profile)
+    if (!provider) throw new Error('未配置 AI Provider')
+    if (!provider.models.analysis) throw new Error('未配置分析模型，请在 AI 配置中设置')
+
+    const base = provider.base_url.replace(/\/+$/, '')
+    const res = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${provider.api_key}`,
+      },
+      body: JSON.stringify({
+        model: provider.models.analysis,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        temperature: 0.8,
+        max_tokens: 2048,
+      }),
+    })
+    if (!res.ok) throw new Error(`API ${res.status}`)
+    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+    const raw = data.choices?.[0]?.message?.content ?? ''
+    if (!raw.trim()) throw new Error('AI 返回内容为空')
+    return raw.trim()
   }
 
   const handleAICreate = async () => {
+    const requestedName = normalizeCharacterName(newName)
+    const validationError = requestedName ? validateCharacterName(requestedName) : null
+    if (validationError) { setError(validationError); return }
+    if (requestedName && hasDuplicateCharacterName(files, requestedName)) { setError('该角色名已存在'); return }
     setGenerating(true)
-    setAiError(null)
+    setError(null)
     try {
-      const config = await loadProviderConfig()
-      const provider = config.providers.find(p => p.name === config.active_profile)
-      if (!provider) throw new Error('未配置 AI Provider')
-      if (!provider.models.analysis) throw new Error('未配置分析模型，请在 AI 配置中设置')
-
-      // Read project info + worldview context
-      let projectInfo = await buildAIContext(projectId)
-
-      const defaultPromptObj = buildAIPrompt(newName, projectInfo)
-      const system = editingPrompt.trim() || defaultPromptObj.system
-      const user = editingPrompt.trim() ? projectInfo || '请生成角色卡' : defaultPromptObj.user
-
-      const base = provider.base_url.replace(/\/+$/, '')
-      const res = await fetch(`${base}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${provider.api_key}`,
-        },
-        body: JSON.stringify({
-          model: provider.models.analysis,
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: user },
-          ],
-          temperature: 0.8,
-          max_tokens: 2048,
-        }),
-      })
-      if (!res.ok) throw new Error(`API ${res.status}`)
-      const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-      const raw = data.choices?.[0]?.message?.content ?? ''
-      if (!raw.trim()) throw new Error('AI 返回内容为空')
-
-      // Extract character name from AI response
+      const projectInfo = await buildAIContext(projectId)
+      const defaultPrompt = buildAIPrompt(requestedName, projectInfo)
+      const raw = await requestAI(
+        prompts.create.trim() || defaultPrompt.system,
+        prompts.create.trim() ? `${projectInfo}\n\n${requestedName ? `角色名：${requestedName}` : '请为角色起一个合适的名字'}` : defaultPrompt.user,
+      )
       const nameMatch = raw.match(/^角色[：:]\s*(.+)/m)
-      const charName = nameMatch?.[1]?.trim() || newName.trim()
+      const charName = normalizeCharacterName(nameMatch?.[1] ?? requestedName)
       if (!charName) throw new Error('未能确定角色名')
-
-      // Check for duplicate
-      if (files.includes(charName)) throw new Error(`角色「${charName}」已存在`)
-
-      // Save directly
-      await writeProjectFile(projectId, CHARACTER_SUBDIR, `${charName}.md`, raw.trim())
-      setNewName('')
-      await refresh()
-      setActiveFile(charName)
-      setContent(raw.trim())
-      setEditing(true)
+      const generatedNameError = validateCharacterName(charName)
+      if (generatedNameError) throw new Error(generatedNameError)
+      if (hasDuplicateCharacterName(files, charName)) throw new Error(`角色「${charName}」已存在`)
+      setAiDraft({ mode: 'create', name: charName, content: raw })
     } catch (e) {
-      setAiError(e instanceof Error ? e.message : String(e))
+      setError(e instanceof Error ? e.message : String(e))
     } finally {
       setGenerating(false)
     }
   }
 
-  const isNameDuplicate = newName.trim().length > 0 && files.includes(newName.trim())
+  const handleAIComplete = async () => {
+    if (!activeFile) return
+    setGenerating(true)
+    setError(null)
+    try {
+      const projectInfo = await buildAIContext(projectId)
+      const defaultPrompt = buildAICompletionPrompt(activeFile, content, projectInfo)
+      const raw = await requestAI(
+        prompts.complete.trim() || defaultPrompt.system,
+        prompts.complete.trim() ? `${projectInfo}\n\n当前角色：${activeFile}\n\n现有角色卡：\n${content || '（尚未填写，请从头生成）'}` : defaultPrompt.user,
+      )
+      setAiDraft({ mode: 'complete', name: activeFile, content: raw })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setGenerating(false)
+    }
+  }
 
-  // ─── Drag-and-drop reorder (mouse events) ─────
+  const acceptAIDraft = async () => {
+    if (!aiDraft) return
+    if (aiDraft.mode === 'complete') {
+      setContent(aiDraft.content)
+      setEditing(true)
+      setAiDraft(null)
+      setNotice('已将 AI 补全内容放入编辑器，请确认后保存')
+      return
+    }
+
+    if (hasDuplicateCharacterName(files, aiDraft.name)) {
+      setError(`角色「${aiDraft.name}」已存在`)
+      return
+    }
+    setCreating(true)
+    setError(null)
+    try {
+      await writeProjectFile(projectId, CHARACTER_SUBDIR, `${aiDraft.name}.md`, aiDraft.content)
+      await refresh()
+      setNewName('')
+      setActiveFile(aiDraft.name)
+      setContent(aiDraft.content)
+      setSavedContent(aiDraft.content)
+      setEditing(false)
+      setAiDraft(null)
+      setNotice(`已创建角色「${aiDraft.name}」`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const isNameDuplicate = newName.trim().length > 0 && hasDuplicateCharacterName(files, newName)
+  const visibleFiles = genderFilter === '全部' ? files : files.filter((name) => genderByFile[name] === genderFilter)
+  const genderCounts = files.reduce<Record<CharacterGender, number>>((counts, name) => {
+    counts[genderByFile[name] ?? '未知']++
+    return counts
+  }, { 男: 0, 女: 0, 未知: 0 })
 
   const dragItemRef = useRef<{ index: number; startY: number; currentY: number } | null>(null)
   const [dragPreview, setDragPreview] = useState<{ index: number; offset: number } | null>(null)
 
   const handleMouseDown = (e: React.MouseEvent, index: number) => {
-    // Only drag from the grip icon (⠿)
     if (!(e.target as HTMLElement).closest('[data-drag-handle]')) return
     e.preventDefault()
     
@@ -319,13 +508,11 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
       const offset = ev.clientY - dragItemRef.current.startY
       setDragPreview({ index: dragItemRef.current.index, offset })
 
-      // Calculate target position
       const itemHeight = rect.height
       const moveStep = Math.round(offset / itemHeight)
       const targetIndex = Math.max(0, Math.min(files.length - 1, dragItemRef.current.index + moveStep))
       
       if (targetIndex !== dragItemRef.current.index) {
-        // Apply reorder using latest order from ref
         const newOrder = [...orderRef.current]
         const [moved] = newOrder.splice(dragItemRef.current.index, 1)
         if (moved) newOrder.splice(targetIndex, 0, moved)
@@ -340,7 +527,12 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
 
     const handleUp = () => {
       if (dragItemRef.current) {
-        saveOrder(orderRef.current).catch((e: unknown) => { console.error(e) })
+        void saveOrder(orderRef.current)
+          .then(() => setNotice('角色排序已保存'))
+          .catch((e: unknown) => {
+            setError(e instanceof Error ? e.message : String(e))
+            void refresh().catch((refreshError: unknown) => setError(refreshError instanceof Error ? refreshError.message : String(refreshError)))
+          })
       }
       dragItemRef.current = null
       setDragPreview(null)
@@ -351,8 +543,6 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
     window.addEventListener('mousemove', handleMove)
     window.addEventListener('mouseup', handleUp)
   }
-
-  // ─── Rewrite handlers ──────────────────────────
 
   const handleRewriteMode = (mode: RewriteMode) => {
     const sel = getTextareaSelection(rewriteTextareaRef.current, content)
@@ -375,67 +565,71 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
   return (
     <div className="panel-layout">
       <CharacterSidebar
-        files={files}
+        files={visibleFiles}
+        genderByFile={genderByFile}
+        genderCounts={genderCounts}
+        genderFilter={genderFilter}
+        onGenderFilterChange={setGenderFilter}
         activeFile={activeFile}
         newName={newName}
+        creating={creating}
         generating={generating}
-        aiError={aiError}
+        deletingName={deletingName}
+        error={error}
+        notice={notice}
         isNameDuplicate={isNameDuplicate}
         dragPreview={dragPreview}
         onNewNameChange={setNewName}
-        onCreate={handleCreate}
+        onCreate={() => { void handleCreate() }}
         onRandomName={handleRandomName}
         onAICreate={() => { void handleAICreate() }}
-        onSelect={(name) => { setActiveFile(name); setEditing(false) }}
-        onDelete={handleDelete}
-        onDragStart={handleMouseDown}
+        onSelect={requestSelect}
+        onDelete={requestDelete}
+        onDragStart={(event, index) => { if (genderFilter === '全部') handleMouseDown(event, index) }}
       />
       <CharacterEditor
         activeFile={activeFile}
         content={content}
+        gender={parseCharacterGender(content)}
         editing={editing}
+        loading={loading}
+        saving={saving}
         generating={generating}
         hasSelection={hasSelection}
         rewriteLoading={rewriteState !== null}
         showPrompt={showPrompt}
+        promptMode={promptMode}
         editingPrompt={editingPrompt}
         savingPrompt={savingPrompt}
         showExample={showExample}
         example={CHAR_EXAMPLE}
         textareaRef={rewriteTextareaRef}
         onContentChange={setContent}
+        onGenderChange={(gender) => setContent((previous) => setCharacterGender(previous, gender))}
         onEdit={() => { setEditing(true) }}
-        onSave={handleSave}
-        onAICreate={() => { void handleAICreate() }}
+        onSave={() => { void handleSave() }}
+        onAIComplete={() => { void handleAIComplete() }}
         onRewrite={() => handleRewriteMode('rewrite')}
         onExpand={() => handleRewriteMode('expand')}
         onPolish={() => handleRewriteMode('polish')}
-        onTogglePrompt={() => {
-          if (!showPrompt && !editingPrompt.trim()) {
-            void buildAIContext(projectId)
-              .then((info) => {
-                const def = buildAIPrompt(newName, info)
-                setEditingPrompt(def.system + '\n\n---\n\n' + def.user)
-              })
-              .catch((error: unknown) => { console.error(error) })
-          }
-          setShowPrompt(!showPrompt)
-        }}
-        onPromptChange={setEditingPrompt}
+        onTogglePrompt={() => setShowPrompt(!showPrompt)}
+        onPromptModeChange={setPromptMode}
+        onPromptChange={(value) => setPrompts((prev) => ({ ...prev, [promptMode]: value }))}
         onResetPrompt={() => {
           setSavingPrompt(true)
-          void resetPrompt(projectId, promptKey)
+          void resetPrompt(projectId, promptKeys[promptMode])
             .then(() => {
-              setEditingPrompt('')
-              setShowPrompt(false)
+              setPrompts((prev) => ({ ...prev, [promptMode]: '' }))
+              setNotice('已恢复默认提示词')
             })
-            .catch((error: unknown) => { console.error(error) })
+            .catch((promptError: unknown) => setError(promptError instanceof Error ? promptError.message : String(promptError)))
             .finally(() => setSavingPrompt(false))
         }}
         onSavePrompt={() => {
           setSavingPrompt(true)
-          void savePrompt(projectId, promptKey, editingPrompt)
-            .catch((error: unknown) => { console.error(error) })
+          void savePrompt(projectId, promptKeys[promptMode], editingPrompt)
+            .then(() => setNotice('提示词已保存'))
+            .catch((promptError: unknown) => setError(promptError instanceof Error ? promptError.message : String(promptError)))
             .finally(() => setSavingPrompt(false))
         }}
         onToggleExample={() => { setShowExample(!showExample) }}
@@ -468,6 +662,43 @@ export default function CharacterPanel({ projectId, initialCharacter }: Props) {
           onClose={() => setContextMenu(null)}
         />
       )}
+      {showUnsavedChanges && (
+        <CharacterUnsavedChangesDialog
+          saving={saving}
+          onSave={() => { void handleSave().then((saved) => { if (saved) continuePendingAction() }) }}
+          onDiscard={() => { discardChanges(); continuePendingAction() }}
+          onCancel={() => { setPendingAction(null); setShowUnsavedChanges(false) }}
+        />
+      )}
+      {deleteTarget && (
+        <Modal className="confirm-dialog" onRequestClose={deletingName ? undefined : () => setDeleteTarget(null)}>
+          <h2>删除角色</h2>
+          <p style={{ margin: '12px 0', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
+            确定删除角色「{deleteTarget}」吗？角色卡将从当前项目中移除，无法恢复。
+          </p>
+          <div className="dialog-footer">
+            <Button variant="secondary" size="md" disabled={deletingName !== null} onClick={() => setDeleteTarget(null)}>取消</Button>
+            <Button variant="danger" size="md" loading={deletingName !== null} disabled={deletingName !== null} onClick={() => { void handleDelete() }}>删除角色</Button>
+          </div>
+        </Modal>
+      )}
+      {aiDraft && (
+        <Modal className="confirm-dialog" onRequestClose={creating ? undefined : () => setAiDraft(null)}>
+          <h2>{aiDraft.mode === 'create' ? `创建角色「${aiDraft.name}」` : `AI 补全「${aiDraft.name}」`}</h2>
+          <p style={{ margin: '12px 0', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
+            {aiDraft.mode === 'create' ? '请确认生成内容。确认后才会创建角色卡。' : '请确认生成内容。确认后会替换编辑器内容，但不会自动保存。'}
+          </p>
+          <textarea className="prompt-editor-textarea" readOnly value={aiDraft.content} style={{ minHeight: 280 }} />
+          <div className="dialog-footer" style={{ marginTop: 14 }}>
+            <Button variant="secondary" size="md" disabled={creating} onClick={() => setAiDraft(null)}>取消</Button>
+            <Button variant="primary" size="md" loading={creating} disabled={creating} onClick={() => { void acceptAIDraft() }}>
+              {aiDraft.mode === 'create' ? '创建角色' : '应用到编辑器'}
+            </Button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
-}
+})
+
+export default CharacterPanel

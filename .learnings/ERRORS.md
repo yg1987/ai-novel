@@ -1256,6 +1256,9 @@ rg: src/components/*.css: 文件名、目录名或卷标语法不正确。 (os e
 - While unifying the product name, an expected no-match branding scan was batched with `git diff --check` and a diff summary. Its exit code 1 again invalidated the required verification batch; branding residue scans must be run independently before pass/fail gates.
 - While preparing the README refresh, `codegraph explore` was invoked with an unsupported `--compact` option. Check the command help before adding output-format flags to CodeGraph CLI calls.
 - The same README pass then used `--max-results` with `codegraph query`; this CLI names the option `--limit`. Consult each subcommand's help instead of transferring option names between tools.
+- During the Character Tab review, `codegraph explore` was invoked with unsupported `--depth`; inspect the subcommand help before adding traversal-depth flags.
+- During the same review, an isolated optional `rg` search for a CSS class returned no matches (exit code 1); preserve the isolated-probe pattern and treat the result as an absence finding rather than a batch failure.
+- During the Character Tab implementation, an `apply_patch` attempt used a stale end-of-file context and failed verification without changing the Rust file. Re-read the exact local anchor before retrying a narrow patch.
 - A later README audit passed a shell-sensitive composite regular expression to `rg`; PowerShell altered the expression and `rg` reported an unclosed group. Use separate fixed-string checks when validating a small set of known implementation details.
 
 ### Suggested Fix
@@ -1265,9 +1268,9 @@ Use `rg --glob "*.css" <pattern> src` on Windows, and run optional no-match sear
 - Reproducible: yes
 - Related Files: none
 - Pattern-Key: shell.nonzero-exit
-- Recurrence-Count: 20
+- Recurrence-Count: 23
 - First-Seen: 2026-07-17
-- Last-Seen: 2026-07-22
+- Last-Seen: 2026-07-23
 - Promoted: AGENTS.md
 
 ### Resolution

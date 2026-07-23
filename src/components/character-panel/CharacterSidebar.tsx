@@ -1,15 +1,23 @@
 import type { MouseEvent } from 'react'
 import Button from '../Button'
+import type { CharacterGender } from '../../services/characterProfiles'
 
 interface Props {
   files: string[]
+  genderByFile: Record<string, CharacterGender>
+  genderCounts: Record<CharacterGender, number>
+  genderFilter: CharacterGender | '全部'
   activeFile: string | null
   newName: string
+  creating: boolean
   generating: boolean
-  aiError: string | null
+  deletingName: string | null
+  error: string | null
+  notice: string | null
   isNameDuplicate: boolean
   dragPreview: { index: number; offset: number } | null
   onNewNameChange: (name: string) => void
+  onGenderFilterChange: (filter: CharacterGender | '全部') => void
   onCreate: () => void
   onRandomName: () => void
   onAICreate: () => void
@@ -20,13 +28,20 @@ interface Props {
 
 export default function CharacterSidebar({
   files,
+  genderByFile,
+  genderCounts,
+  genderFilter,
   activeFile,
   newName,
+  creating,
   generating,
-  aiError,
+  deletingName,
+  error,
+  notice,
   isNameDuplicate,
   dragPreview,
   onNewNameChange,
+  onGenderFilterChange,
   onCreate,
   onRandomName,
   onAICreate,
@@ -44,21 +59,29 @@ export default function CharacterSidebar({
           value={newName}
           onChange={(e) => { onNewNameChange(e.target.value) }}
           placeholder="角色名"
-          onKeyDown={(e) => { if (e.key === 'Enter' && !generating) { onCreate() } }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !generating && !creating) { onCreate() } }}
         />
-        <Button variant="primary" size="xs" onClick={onCreate} disabled={!newName.trim() || isNameDuplicate} title="创建空白角色卡">+</Button>
+        <Button variant="primary" size="xs" onClick={onCreate} loading={creating} disabled={!newName.trim() || isNameDuplicate || generating || creating} title="创建空白角色卡">+</Button>
       </div>
       <div className="panel-new-actions">
-        <Button variant="secondary" size="xs" onClick={onRandomName} title="随机起名">🎲 起名</Button>
-        <Button variant="primary" size="xs" onClick={onAICreate} disabled={generating || (newName.trim().length > 0 && isNameDuplicate)} title="AI 生成完整角色卡" loading={generating}>
+        <Button variant="secondary" size="xs" onClick={onRandomName} disabled={generating || creating} title="随机起名">🎲 起名</Button>
+        <Button variant="primary" size="xs" onClick={onAICreate} disabled={generating || creating || (newName.trim().length > 0 && isNameDuplicate)} title="AI 生成完整角色卡" loading={generating}>
           {generating ? '生成中' : '✨ AI 创建'}
         </Button>
       </div>
-      {aiError && (
+      <div className="panel-new-actions" style={{ flexWrap: 'wrap' }}>
+        {(['全部', '男', '女', '未知'] as const).map((filter) => (
+          <Button key={filter} variant={genderFilter === filter ? 'secondary' : 'text'} size="xs" onClick={() => onGenderFilterChange(filter)}>
+            {filter}{filter === '全部' ? '' : ` ${genderCounts[filter]}`}
+          </Button>
+        ))}
+      </div>
+      {error && (
         <div style={{ padding: '4px 8px', fontSize: '0.78rem', color: 'var(--danger)', background: 'var(--bg)' }}>
-          {aiError}
+          {error}
         </div>
       )}
+      {notice && <div style={{ padding: '4px 8px', fontSize: '0.78rem', color: 'var(--success)', background: 'var(--bg)' }}>{notice}</div>}
       {isNameDuplicate && (
         <div style={{ padding: '4px 8px', fontSize: '0.78rem', color: 'var(--text-muted)', background: 'var(--bg)' }}>
           该角色名已存在
@@ -75,8 +98,8 @@ export default function CharacterSidebar({
               data-drag-handle
               style={{ cursor: 'grab', userSelect: 'none' }}
               onMouseDown={(e) => onDragStart(e, idx)}
-            >⠿ {f}</span>
-            <Button variant="danger" size="xs" onClick={(e) => { e.stopPropagation(); onDelete(f) }} title="删除角色">✕</Button>
+            >⠿ {f} <small style={{ color: 'var(--text-muted)' }}>{genderByFile[f]}</small></span>
+            <Button variant="danger" size="xs" onClick={(e) => { e.stopPropagation(); onDelete(f) }} loading={deletingName === f} disabled={deletingName !== null} title="删除角色">✕</Button>
           </div>
         ))}
         {files.length === 0 && <p className="panel-empty">暂无角色</p>}
