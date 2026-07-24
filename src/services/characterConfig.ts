@@ -34,7 +34,7 @@ function isOption(value: unknown): value is OptionDefinition {
 }
 
 function isRelationshipType(value: unknown): value is RelationshipTypeDefinition {
-  return isOption(value) && (value.tier === 1 || value.tier === 2 || value.tier === 3)
+  return isRecord(value) && isOption(value) && (value.tier === 1 || value.tier === 2 || value.tier === 3)
     && typeof value.weight === 'number' && typeof value.color === 'string'
     && (value.defaultDirection === 'undirected' || value.defaultDirection === 'a-to-b')
 }

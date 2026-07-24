@@ -14,7 +14,7 @@ function entry(patch: Partial<ForeshadowEntry> = {}): ForeshadowEntry {
   return {
     id: 'f1', name: '身世', description: '身份线', status: 'planted', category: 'identity', importance: 0.8,
     plantedChapter: { volume: '卷2', chapterId: 'ch001' },
-    progress: [], relatedCharacters: [], notes: '', createdAt: '', updatedAt: '', ...patch,
+    progress: [], relatedCharacters: [], relatedCharacterIds: [], notes: '', createdAt: '', updatedAt: '', ...patch,
   }
 }
 
