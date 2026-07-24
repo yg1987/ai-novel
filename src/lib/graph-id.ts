@@ -1,4 +1,5 @@
 import type { GraphNodeType } from '../types/novel'
+import type { ChapterRef } from '../types/chapter'
 
 export type GraphNodeId =
   | `character:${string}`
@@ -39,8 +40,18 @@ export function organizationNodeId(name: string): GraphNodeId {
   return `organization:${normalizeRawId(name)}`
 }
 
-export function chapterNodeId(chapterId: string): GraphNodeId {
-  return `chapter:${normalizeRawId(chapterId)}`
+export function chapterNodeId(reference: ChapterRef): GraphNodeId {
+  return `chapter:${encodeURIComponent(reference.volume)}/${encodeURIComponent(reference.chapterId)}`
+}
+
+export function parseChapterNodeRaw(raw: string): ChapterRef | null {
+  const separator = raw.indexOf('/')
+  if (separator <= 0 || separator === raw.length - 1) return null
+  try {
+    return { volume: decodeURIComponent(raw.slice(0, separator)), chapterId: decodeURIComponent(raw.slice(separator + 1)) }
+  } catch {
+    return null
+  }
 }
 
 export function eventNodeId(chapterId: string, index: number): GraphNodeId {

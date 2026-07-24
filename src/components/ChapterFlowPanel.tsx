@@ -19,14 +19,14 @@ import { scanChapterContentChanges } from '../services/chapterFlowSaveCoordinato
 import { recoverChapterFlowIndex, type ChapterAnalysisStatus } from '../services/chapterFlowIndexStorage'
 import { runChapterFlowAnalysis, type ChapterFlowAnalysisProgress, type ChapterFlowAnalysisResult } from '../services/chapterFlowAnalysis'
 import type { ChapterSegmentSize } from '../hooks/useChapterSegmentSize'
-import type { ChapterKey } from '../types/chapter'
+import type { ChapterKey, ChapterRef } from '../types/chapter'
 import './ChapterFlowPanel.css'
 
 interface Props {
   projectId: string
   segmentSize: ChapterSegmentSize
   onSegmentSizeChange: (value: ChapterSegmentSize) => void
-  onNavigateToChapter: (ref: string) => void
+  onNavigateToChapter: (ref: ChapterRef) => void
   onNavigateToForeshadow: (id: string) => void
 }
 
@@ -323,8 +323,8 @@ export default function ChapterFlowPanel({ projectId, segmentSize, onSegmentSize
                 <div className="chapter-flow-message">{check.message}</div>
                 <div className="chapter-flow-actions">
                   <Button variant="text" size="sm" onClick={() => onNavigateToForeshadow(entry.id)}>打开伏笔</Button>
-                  <Button variant="text" size="sm" onClick={() => onNavigateToChapter(chapterRefKey(entry.plantedChapter))}>打开埋设章</Button>
-                  {entry.recordedResolutionChapter && <Button variant="text" size="sm" onClick={() => onNavigateToChapter(chapterRefKey(entry.recordedResolutionChapter!))}>打开回收章</Button>}
+                  <Button variant="text" size="sm" onClick={() => onNavigateToChapter(entry.plantedChapter)}>打开埋设章</Button>
+                  {entry.recordedResolutionChapter && <Button variant="text" size="sm" onClick={() => onNavigateToChapter(entry.recordedResolutionChapter!)}>打开回收章</Button>}
                 </div>
               </article>
             ))}

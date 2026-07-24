@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -639,6 +640,231 @@ fn atomic_replace_file(path: &Path, content: &str) -> Result<(), String> {
     write_result
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct CharacterTransactionFile {
+    filename: String,
+    previous: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CharacterTransactionJournal {
+    files: Vec<CharacterTransactionFile>,
+}
+
+fn character_transaction_path(project: &Path) -> PathBuf {
+    project
+        .join("characters")
+        .join(".character-transaction.json")
+}
+
+fn restore_character_transaction(project: &Path) -> Result<(), String> {
+    let journal_path = character_transaction_path(project);
+    if !journal_path.exists() {
+        return Ok(());
+    }
+    let raw = fs::read_to_string(&journal_path)
+        .map_err(|error| format!("Failed to read character transaction journal: {error}"))?;
+    let journal: CharacterTransactionJournal = serde_json::from_str(&raw)
+        .map_err(|error| format!("Failed to parse character transaction journal: {error}"))?;
+    for file in journal.files {
+        let path = project
+            .join("characters")
+            .join(safe_relative_path(&file.filename)?);
+        if let Some(content) = file.previous {
+            atomic_replace_file(&path, &content)?;
+        } else if path.exists() {
+            fs::remove_file(&path)
+                .map_err(|error| format!("Failed to roll back character transaction: {error}"))?;
+        }
+    }
+    fs::remove_file(&journal_path)
+        .map_err(|error| format!("Failed to remove character transaction journal: {error}"))?;
+    Ok(())
+}
+
+fn content_hash(content: &str) -> String {
+    format!("{:x}", Sha256::digest(content.as_bytes()))
+}
+
+fn commit_character_transaction(
+    project: &Path,
+    changes: Vec<(String, Option<String>)>,
+) -> Result<(), String> {
+    restore_character_transaction(project)?;
+    let mut files = Vec::with_capacity(changes.len());
+    for (filename, _) in &changes {
+        let safe = safe_relative_path(filename)?;
+        if safe.components().count() != 1 {
+            return Err(
+                "Character transaction filenames must be single path components".to_string(),
+            );
+        }
+        let path = project.join("characters").join(safe);
+        files.push(CharacterTransactionFile {
+            filename: filename.clone(),
+            previous: if path.exists() {
+                Some(
+                    fs::read_to_string(&path)
+                        .map_err(|error| format!("Failed to read transaction file: {error}"))?,
+                )
+            } else {
+                None
+            },
+        });
+    }
+    let journal_path = character_transaction_path(project);
+    atomic_replace_file(
+        &journal_path,
+        &serde_json::to_string(&CharacterTransactionJournal { files })
+            .map_err(|error| format!("Failed to serialize transaction journal: {error}"))?,
+    )?;
+    let result = (|| -> Result<(), String> {
+        for (filename, content) in changes {
+            let path = project
+                .join("characters")
+                .join(safe_relative_path(&filename)?);
+            if let Some(content) = content {
+                atomic_replace_file(&path, &content)?;
+            } else if path.exists() {
+                fs::remove_file(&path)
+                    .map_err(|error| format!("Failed to remove character file: {error}"))?;
+            }
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let _ = restore_character_transaction(project);
+        return Err(error);
+    }
+    fs::remove_file(&journal_path)
+        .map_err(|error| format!("Failed to finalize character transaction: {error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn save_character_bundle(
+    app_handle: tauri::AppHandle,
+    project_id: String,
+    filename: String,
+    content: String,
+    catalog_content: String,
+    expected_content_hash: String,
+) -> Result<(), String> {
+    let project = project_dir(&app_handle, &project_id)?;
+    let safe_filename = safe_relative_path(&filename)?;
+    if safe_filename.components().count() != 1 {
+        return Err("Character filename must be a single relative path component".to_string());
+    }
+    let character_path = project.join("characters").join(&safe_filename);
+    let current_content = if character_path.exists() {
+        fs::read_to_string(&character_path)
+            .map_err(|error| format!("Failed to read character file: {error}"))?
+    } else {
+        String::new()
+    };
+    if content_hash(&current_content) != expected_content_hash {
+        return Err("角色卡已在其他页面修改，请刷新后再保存。".to_string());
+    }
+    commit_character_transaction(
+        &project,
+        vec![
+            (filename, Some(content)),
+            ("catalog.json".to_string(), Some(catalog_content)),
+        ],
+    )
+}
+
+#[tauri::command]
+fn delete_character(
+    app_handle: tauri::AppHandle,
+    project_id: String,
+    filename: String,
+    catalog_content: String,
+    relationships_content: String,
+    order_content: String,
+    expected_content_hash: String,
+) -> Result<(), String> {
+    let project = project_dir(&app_handle, &project_id)?;
+    let path = project
+        .join("characters")
+        .join(safe_relative_path(&filename)?);
+    let current = if path.exists() {
+        fs::read_to_string(&path)
+            .map_err(|error| format!("Failed to read character file: {error}"))?
+    } else {
+        String::new()
+    };
+    if content_hash(&current) != expected_content_hash {
+        return Err("角色卡已在其他页面修改，请刷新后再删除。".to_string());
+    }
+    commit_character_transaction(
+        &project,
+        vec![
+            (filename, None),
+            ("catalog.json".to_string(), Some(catalog_content)),
+            (
+                "relationships.json".to_string(),
+                Some(relationships_content),
+            ),
+            ("order.json".to_string(), Some(order_content)),
+        ],
+    )
+}
+
+#[tauri::command]
+fn rename_character(
+    app_handle: tauri::AppHandle,
+    project_id: String,
+    old_filename: String,
+    new_filename: String,
+    content: String,
+    catalog_content: String,
+    relationships_content: String,
+    order_content: String,
+    expected_content_hash: String,
+) -> Result<(), String> {
+    let project = project_dir(&app_handle, &project_id)?;
+    let old_path = project
+        .join("characters")
+        .join(safe_relative_path(&old_filename)?);
+    let new_path = project
+        .join("characters")
+        .join(safe_relative_path(&new_filename)?);
+    let current = if old_path.exists() {
+        fs::read_to_string(&old_path)
+            .map_err(|error| format!("Failed to read character file: {error}"))?
+    } else {
+        String::new()
+    };
+    if content_hash(&current) != expected_content_hash {
+        return Err("角色卡已在其他页面修改，请刷新后再重命名。".to_string());
+    }
+    if new_filename.to_lowercase() != old_filename.to_lowercase() && new_path.exists() {
+        return Err("目标角色文件已存在。".to_string());
+    }
+    let is_same_filename = new_filename == old_filename;
+    commit_character_transaction(
+        &project,
+        vec![
+            (
+                old_filename,
+                if is_same_filename {
+                    Some(content.clone())
+                } else {
+                    None
+                },
+            ),
+            (new_filename, Some(content)),
+            ("catalog.json".to_string(), Some(catalog_content)),
+            (
+                "relationships.json".to_string(),
+                Some(relationships_content),
+            ),
+            ("order.json".to_string(), Some(order_content)),
+        ],
+    )
+}
+
 #[tauri::command]
 fn list_project_files(
     app_handle: tauri::AppHandle,
@@ -781,6 +1007,9 @@ pub fn run() {
             write_project_file,
             atomic_write_project_file,
             delete_project_file,
+            save_character_bundle,
+            delete_character,
+            rename_character,
             commands::search::search_project_files,
             commands::vectorstore::vector_upsert_chunks,
             commands::vectorstore::vector_search_chunks,

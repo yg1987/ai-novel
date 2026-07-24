@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { listChapters } from '../api/tauri'
-import type { ChapterMeta } from '../types/chapter'
+import type { ChapterMeta, ChapterRef } from '../types/chapter'
 import {
   loadAllNotes,
   saveNote,
@@ -24,7 +24,7 @@ type ViewMode = 'timeline' | 'grouped'
 
 interface Props {
   projectId: string
-  onNavigateToChapter?: (chapterRef: string) => void
+  onNavigateToChapter?: (chapterRef: ChapterRef) => void
   initialChapterRef?: string | null
   initialFilter?: string | null
   onHighlightComplete?: () => void

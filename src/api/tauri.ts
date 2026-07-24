@@ -104,6 +104,19 @@ export async function atomicWriteProjectFile(projectId: string, subdir: string, 
   await invoke('atomic_write_project_file', { projectId, subdir, filename, content })
 }
 
+/** Atomically commits a character Markdown card and its catalog projection with optimistic content-hash checking. */
+export async function saveCharacterBundle(projectId: string, filename: string, content: string, catalogContent: string, expectedContentHash: string): Promise<void> {
+  await invoke('save_character_bundle', { projectId, filename, content, catalogContent, expectedContentHash })
+}
+
+export async function deleteCharacter(projectId: string, filename: string, catalogContent: string, relationshipsContent: string, orderContent: string, expectedContentHash: string): Promise<void> {
+  await invoke('delete_character', { projectId, filename, catalogContent, relationshipsContent, orderContent, expectedContentHash })
+}
+
+export async function renameCharacter(projectId: string, oldFilename: string, newFilename: string, content: string, catalogContent: string, relationshipsContent: string, orderContent: string, expectedContentHash: string): Promise<void> {
+  await invoke('rename_character', { projectId, oldFilename, newFilename, content, catalogContent, relationshipsContent, orderContent, expectedContentHash })
+}
+
 export async function deleteProjectFile(projectId: string, subdir: string, filename: string): Promise<null> {
   return invoke<null>('delete_project_file', { projectId, subdir, filename })
 }

@@ -1,9 +1,19 @@
 import { forwardRef, useState, useEffect, useCallback, useImperativeHandle, useRef } from 'react'
-import { listProjectFiles, readProjectFile, writeProjectFile, deleteProjectFile, loadProviderConfig } from '../api/tauri'
+import { listChapters, listProjectFiles, readProjectFile, loadProviderConfig, saveCharacterBundle, deleteCharacter, renameCharacter } from '../api/tauri'
 import { loadPrompt, savePrompt, resetPrompt } from '../services/aiPrompts'
 import { buildAIContext } from '../services/aiContext'
 import { hasDuplicateCharacterName, normalizeCharacterName, validateCharacterName } from '../services/characterNames'
 import { parseCharacterGender, randomCharacterName, setCharacterGender, type CharacterGender } from '../services/characterProfiles'
+import { hashText, loadCharacterCatalog, loadCharacterOrder, saveCharacterOrder, syncCharacterCatalogRecord } from '../services/characterCatalog'
+import { defaultCharacterModuleConfig, loadCharacterModuleConfig } from '../services/characterConfig'
+import { loadCharacterRelationships } from '../services/characterRelations'
+import { diagnoseCharacterMarkdown, parseCharacterMarkdown, updateCharacterMarkdownField } from '../services/characterMarkdown'
+import { loadForeshadows } from '../services/foreshadowStorage'
+import { loadOrganizations, saveOrganizations } from '../services/organizationStore'
+import { cloneAffiliations, validateCharacterAffiliations } from '../services/characterAffiliations'
+import { buildChapterSequence } from '../services/chapterCatalog'
+import type { ChapterMeta, ChapterRef } from '../types/chapter'
+import type { CharacterAffiliation, CharacterModuleConfig, CharacterRecord, OrganizationRecord } from '../types/character'
 import type { TextareaSelection } from '../services/rewriteUtils'
 import { getTextareaSelection, applyTextareaRewrite } from '../services/rewriteUtils'
 import { type RewriteMode } from '../services/rewriteService'
@@ -14,11 +24,17 @@ import SelectionContextMenu, { type ContextMenuAction } from './SelectionContext
 import CharacterSidebar from './character-panel/CharacterSidebar'
 import CharacterEditor from './character-panel/CharacterEditor'
 import CharacterUnsavedChangesDialog from './character-panel/CharacterUnsavedChangesDialog'
+import CharacterConfigDialog from './character-panel/CharacterConfigDialog'
 import './CharacterPanel.css'
 
 interface Props {
   projectId: string
   initialCharacter?: string | null
+  onInitialCharacterConsumed?: () => void
+  onNavigateToCharacter?: (characterId: string) => void
+  onNavigateToOrganization?: (organizationId: string) => void
+  onNavigateToChapter?: (reference: ChapterRef) => void
+  onNavigateToForeshadow?: (id: string) => void
 }
 
 export interface CharacterPanelHandle {
@@ -28,7 +44,6 @@ export interface CharacterPanelHandle {
 }
 
 const CHARACTER_SUBDIR = 'characters'
-const ORDER_FILE = 'order.json'
 
 const CHAR_EXAMPLE = `角色：林烬
 性别：男
@@ -101,15 +116,16 @@ function buildAICompletionPrompt(name: string, content: string, projectInfo: str
 // ─── Component ───────────────────────────────────────
 
 type PromptMode = 'create' | 'complete'
-type PendingAction = { type: 'select'; name: string } | { type: 'delete'; name: string }
+type PendingAction = { type: 'select' | 'delete' | 'rename'; name: string }
 type AIDraft = { mode: PromptMode; name: string; content: string }
+type RenameTarget = { name: string; nextName: string; relationshipCount: number; affiliationCount: number; foreshadowCount: number }
 
 const promptKeys: Record<PromptMode, string> = {
   create: 'character_create',
   complete: 'character_complete',
 }
 
-const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, initialCharacter }, ref) => {
+const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, initialCharacter, onInitialCharacterConsumed, onNavigateToCharacter, onNavigateToOrganization, onNavigateToChapter, onNavigateToForeshadow }, ref) => {
   const [files, setFiles] = useState<string[]>([])
   const [order, setOrder] = useState<string[]>([])
   const orderRef = useRef<string[]>([])
@@ -120,7 +136,17 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
   const [editing, setEditing] = useState(false)
   const [newName, setNewName] = useState('')
   const [newGender, setNewGender] = useState<CharacterGender>('未知')
+  const [moduleConfig, setModuleConfig] = useState<CharacterModuleConfig>(() => defaultCharacterModuleConfig())
+  const [organizations, setOrganizations] = useState<OrganizationRecord[]>([])
+  const [chapters, setChapters] = useState<ChapterMeta[]>([])
+  const [affiliations, setAffiliations] = useState<CharacterAffiliation[]>([])
+  const [savedAffiliations, setSavedAffiliations] = useState<CharacterAffiliation[]>([])
+  const [characterRecords, setCharacterRecords] = useState<CharacterRecord[]>([])
   const [genderFilter, setGenderFilter] = useState<CharacterGender | '全部'>('全部')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [stanceFilter, setStanceFilter] = useState('')
+  const [tagFilters, setTagFilters] = useState<string[]>([])
+  const [organizationFilter, setOrganizationFilter] = useState('')
   const [genderByFile, setGenderByFile] = useState<Record<string, CharacterGender>>({})
   const [showExample, setShowExample] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -140,7 +166,13 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
   const [showUnsavedChanges, setShowUnsavedChanges] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null)
+  const [renaming, setRenaming] = useState(false)
   const [aiDraft, setAiDraft] = useState<AIDraft | null>(null)
+  const [showConfig, setShowConfig] = useState(false)
+  const [organizationCandidates, setOrganizationCandidates] = useState<string[]>([])
+  const [selectedOrganizationCandidates, setSelectedOrganizationCandidates] = useState<string[]>([])
+  const [savingOrganizationCandidates, setSavingOrganizationCandidates] = useState(false)
   const rewriteTextareaRef = useRef<HTMLTextAreaElement>(null)
   const loadRequestRef = useRef(0)
   const editAfterLoadRef = useRef<string | null>(null)
@@ -149,7 +181,7 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
     if (ta) setHasSelection(ta.selectionStart !== ta.selectionEnd)
   }, [])
 
-  const dirty = content !== savedContent
+  const dirty = content !== savedContent || JSON.stringify(affiliations) !== JSON.stringify(savedAffiliations)
   const editingPrompt = prompts[promptMode]
 
   useEffect(() => {
@@ -162,10 +194,25 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
   }, [projectId])
 
   const saveOrder = useCallback(async (names: string[]) => {
-    await writeProjectFile(projectId, CHARACTER_SUBDIR, ORDER_FILE, JSON.stringify(names, null, 2))
+    const config = await loadCharacterModuleConfig(projectId)
+    const { catalog } = await loadCharacterCatalog(projectId, config)
+    const ids = names.flatMap((name) => catalog.records.find((record) => record.fileName === `${name}.md`)?.id ?? [])
+    await saveCharacterOrder(projectId, { schemaVersion: 2, characterIds: ids })
   }, [projectId])
 
   const refresh = useCallback(async () => {
+    const config = await loadCharacterModuleConfig(projectId)
+    const [organizationStore, chapterList] = await Promise.all([loadOrganizations(projectId), listChapters(projectId)])
+    setModuleConfig(config)
+    setOrganizations(organizationStore.organizations)
+    setChapters(chapterList)
+    const catalogResult = await loadCharacterCatalog(projectId, config)
+    const { catalog } = catalogResult
+    const confirmedNames = new Set(organizationStore.organizations.flatMap((organization) => [organization.name, ...organization.aliases]).map((name) => name.normalize('NFC').toLocaleLowerCase()))
+    const candidates = catalogResult.organizationCandidates.filter((name) => !confirmedNames.has(name.normalize('NFC').toLocaleLowerCase()))
+    setOrganizationCandidates(candidates)
+    setSelectedOrganizationCandidates(candidates)
+    setCharacterRecords(catalog.records)
     const entries = await listProjectFiles(projectId, CHARACTER_SUBDIR)
     const charNames = entries
       .filter((e) => e.name.endsWith('.md'))
@@ -176,38 +223,29 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
     }))
     setGenderByFile(Object.fromEntries(genders))
 
-    let currentOrder: string[] = []
-    try {
-      const raw = await readProjectFile(projectId, CHARACTER_SUBDIR, ORDER_FILE)
-      if (raw.trim()) {
-        const parsed: unknown = JSON.parse(raw)
-        currentOrder = Array.isArray(parsed)
-          ? parsed.filter((item): item is string => typeof item === 'string')
-          : []
-      }
-    } catch { /* order.json missing or malformed */ }
-
-    const seen = new Set<string>()
-    const validOrder = currentOrder.filter((name) => {
-      const key = name.toLocaleLowerCase()
-      if (!charNames.includes(name) || seen.has(key)) return false
-      seen.add(key)
-      return true
+    const { order: stableOrder, upgraded } = await loadCharacterOrder(projectId, catalog.records)
+    const namesById = new Map(catalog.records.map((record) => [record.id, record.fileName.replace(/\.md$/i, '')]))
+    const orderedNames = stableOrder.characterIds.flatMap((id) => {
+      const name = namesById.get(id)
+      return name && charNames.includes(name) ? [name] : []
     })
-    const newChars = charNames.filter((n) => !currentOrder.includes(n))
-    const mergedOrder = [...validOrder, ...newChars]
-
-    // Persist if order changed (new/deleted chars)
-    if (mergedOrder.length !== currentOrder.length || validOrder.length !== currentOrder.length) {
-      await writeProjectFile(projectId, CHARACTER_SUBDIR, ORDER_FILE, JSON.stringify(mergedOrder, null, 2))
+    const mergedOrder = [...orderedNames, ...charNames.filter((name) => !orderedNames.includes(name))]
+    if (upgraded || orderedNames.length !== stableOrder.characterIds.length || mergedOrder.length !== orderedNames.length) {
+      const ids = mergedOrder.flatMap((name) => catalog.records.find((record) => record.fileName === `${name}.md`)?.id ?? [])
+      await saveCharacterOrder(projectId, { schemaVersion: 2, characterIds: ids })
     }
 
     setOrder(mergedOrder)
     setFiles(mergedOrder)
-    if (initialCharacter && mergedOrder.includes(initialCharacter)) {
-      setActiveFile(initialCharacter)
+    if (initialCharacter) {
+      const target = catalog.records.find((record) => record.id === initialCharacter || record.name === initialCharacter || record.aliases.includes(initialCharacter))
+      const targetFile = target?.fileName.replace(/\.md$/i, '')
+      if (targetFile && mergedOrder.includes(targetFile)) {
+        setActiveFile(targetFile)
+        onInitialCharacterConsumed?.()
+      }
     }
-  }, [initialCharacter, projectId])
+  }, [initialCharacter, onInitialCharacterConsumed, projectId])
 
   useEffect(() => {
     refresh().catch((e: unknown) => { setError(e instanceof Error ? e.message : String(e)) })
@@ -217,14 +255,25 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
     if (!activeFile) return
     const requestId = ++loadRequestRef.current
     setLoading(true)
-    void readProjectFile(projectId, CHARACTER_SUBDIR, `${activeFile}.md`)
-      .then((nextContent) => {
+    const loadActiveCharacter = async () => {
+      const config = await loadCharacterModuleConfig(projectId)
+      const [nextContent, { catalog }] = await Promise.all([
+        readProjectFile(projectId, CHARACTER_SUBDIR, `${activeFile}.md`),
+        loadCharacterCatalog(projectId, config),
+      ])
+      const record = catalog.records.find((item) => item.fileName === `${activeFile}.md`)
+      return { nextContent, nextAffiliations: cloneAffiliations(record?.affiliations ?? []) }
+    }
+    void loadActiveCharacter()
+      .then(({ nextContent, nextAffiliations }) => {
         if (requestId !== loadRequestRef.current) return
         const shouldEdit = editAfterLoadRef.current === activeFile
         if (shouldEdit) editAfterLoadRef.current = null
         const normalizedContent = setCharacterGender(nextContent, parseCharacterGender(nextContent))
         setContent(normalizedContent)
         setSavedContent(normalizedContent)
+        setAffiliations(nextAffiliations)
+        setSavedAffiliations(cloneAffiliations(nextAffiliations))
         setEditing(shouldEdit)
       })
       .catch((e: unknown) => {
@@ -250,8 +299,44 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
     setSaving(true)
     setError(null)
     try {
-      await writeProjectFile(projectId, CHARACTER_SUBDIR, `${activeFile}.md`, content)
+      const config = await loadCharacterModuleConfig(projectId)
+      const diagnostics = diagnoseCharacterMarkdown(content, config, organizations)
+      if (diagnostics.duplicateFields.length > 0) {
+        setError(`存在重复标准字段：${diagnostics.duplicateFields.join('、')}。请在正文中只保留一处后再保存。`)
+        return false
+      }
+      if (diagnostics.invalidStance || diagnostics.invalidStatus) {
+        const issues = [
+          diagnostics.invalidStance ? `立场“${diagnostics.invalidStance}”` : '',
+          diagnostics.invalidStatus ? `角色状态“${diagnostics.invalidStatus}”` : '',
+        ].filter(Boolean)
+        setError(`${issues.join('、')}不在当前项目预设中，请使用结构化资料里的可选值。`)
+        return false
+      }
+      if (diagnostics.unknownOrganizations.length > 0) {
+        setOrganizationCandidates(diagnostics.unknownOrganizations)
+        setSelectedOrganizationCandidates(diagnostics.unknownOrganizations)
+        setError('角色卡包含未确认的组织。请先确认要创建的组织，再次保存角色卡。')
+        return false
+      }
+      const { catalog } = await loadCharacterCatalog(projectId, config)
+      const sequence = buildChapterSequence(chapters)
+      const chapterPosition = (reference: { volume: string; chapterId: string }) => sequence.chapters.findIndex((chapter) => chapter.volume === reference.volume && chapter.id === reference.chapterId) + 1 || undefined
+      validateCharacterAffiliations(affiliations, new Set(organizations.map((organization) => organization.id)), chapterPosition)
+      const catalogWithAffiliations = {
+        ...catalog,
+        records: catalog.records.map((record) => record.fileName === `${activeFile}.md`
+          ? { ...record, affiliations: cloneAffiliations(affiliations) }
+          : record),
+      }
+      const nextCatalog = await syncCharacterCatalogRecord(catalogWithAffiliations, `${activeFile}.md`, content, config, organizations)
+      const savedRecord = nextCatalog.records.find((record) => record.fileName === `${activeFile}.md`)
+      if (savedRecord) validateCharacterAffiliations(savedRecord.affiliations, new Set(organizations.map((organization) => organization.id)), chapterPosition)
+      await saveCharacterBundle(projectId, `${activeFile}.md`, content, JSON.stringify(nextCatalog, null, 2), await hashText(savedContent))
       setSavedContent(content)
+      const nextAffiliations = cloneAffiliations(savedRecord?.affiliations ?? affiliations)
+      setAffiliations(nextAffiliations)
+      setSavedAffiliations(cloneAffiliations(nextAffiliations))
       setEditing(false)
       setNotice('角色卡已保存')
       return true
@@ -261,13 +346,14 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
     } finally {
       setSaving(false)
     }
-  }, [activeFile, content, projectId])
+  }, [activeFile, affiliations, chapters, content, organizations, projectId, savedContent])
 
   const discardChanges = useCallback(() => {
     setContent(savedContent)
+    setAffiliations(cloneAffiliations(savedAffiliations))
     setEditing(false)
     setHasSelection(false)
-  }, [savedContent])
+  }, [savedAffiliations, savedContent])
 
   useImperativeHandle(ref, () => ({
     hasUnsavedChanges: () => dirty,
@@ -299,7 +385,97 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
     setShowUnsavedChanges(false)
     if (!action) return
     if (action.type === 'select') selectFile(action.name)
-    else setDeleteTarget(action.name)
+    else if (action.type === 'delete') setDeleteTarget(action.name)
+    else void openRename(action.name)
+  }
+
+  async function openRename(name: string) {
+    setError(null)
+    try {
+      const config = await loadCharacterModuleConfig(projectId)
+      const { catalog } = await loadCharacterCatalog(projectId, config)
+      const record = catalog.records.find((item) => item.fileName === `${name}.md`)
+      if (!record) throw new Error('角色目录中找不到该角色，请刷新后重试。')
+      const [relationships, foreshadows] = await Promise.all([
+        loadCharacterRelationships(projectId),
+        loadForeshadows(projectId).catch(() => null),
+      ])
+      setRenameTarget({
+        name,
+        nextName: name,
+        relationshipCount: relationships.relationships.filter((item) => item.characterAId === record.id || item.characterBId === record.id).length,
+        affiliationCount: record.affiliations.length,
+        foreshadowCount: foreshadows?.entries.filter((item) => item.relatedCharacterIds.includes(record.id) || item.relatedCharacters.includes(record.name)).length ?? 0,
+      })
+    } catch (renameError) {
+      setError(renameError instanceof Error ? renameError.message : String(renameError))
+    }
+  }
+
+  const requestRename = (name: string) => {
+    if (name === activeFile && dirty) {
+      setPendingAction({ type: 'rename', name })
+      setShowUnsavedChanges(true)
+      return
+    }
+    void openRename(name)
+  }
+
+  const handleRename = async () => {
+    if (!renameTarget) return
+    const nextName = normalizeCharacterName(renameTarget.nextName)
+    const validationError = validateCharacterName(nextName)
+    if (validationError) { setError(validationError); return }
+    if (hasDuplicateCharacterName(files, nextName, renameTarget.name)) { setError('该角色名或别名已存在'); return }
+    if (nextName === renameTarget.name) { setRenameTarget(null); return }
+    setRenaming(true)
+    setError(null)
+    try {
+      const oldFilename = `${renameTarget.name}.md`
+      const newFilename = `${nextName}.md`
+      const [config, card] = await Promise.all([
+        loadCharacterModuleConfig(projectId),
+        readProjectFile(projectId, CHARACTER_SUBDIR, oldFilename),
+      ])
+      const { catalog } = await loadCharacterCatalog(projectId, config)
+      const record = catalog.records.find((item) => item.fileName === oldFilename)
+      if (!record) throw new Error('角色目录中找不到该角色，请刷新后重试。')
+      const relationships = await loadCharacterRelationships(projectId)
+      const { order } = await loadCharacterOrder(projectId, catalog.records)
+      const renamedCard = updateCharacterMarkdownField(card, '角色', nextName)
+      const renamedBase = {
+        ...catalog,
+        records: catalog.records.map((item) => item.id === record.id ? {
+          ...item,
+          name: nextName,
+          fileName: newFilename,
+          aliases: [...new Set([...item.aliases, record.name])],
+        } : item),
+      }
+      const nextCatalog = await syncCharacterCatalogRecord(renamedBase, newFilename, renamedCard, config)
+      await renameCharacter(
+        projectId,
+        oldFilename,
+        newFilename,
+        renamedCard,
+        JSON.stringify(nextCatalog, null, 2),
+        JSON.stringify(relationships, null, 2),
+        JSON.stringify(order, null, 2),
+        await hashText(card),
+      )
+      if (activeFile === renameTarget.name) {
+        setActiveFile(nextName)
+        setContent(renamedCard)
+        setSavedContent(renamedCard)
+      }
+      setRenameTarget(null)
+      await refresh()
+      setNotice(`已将角色「${renameTarget.name}」重命名为「${nextName}」；正文自由文本未批量替换`)
+    } catch (renameError) {
+      setError(renameError instanceof Error ? renameError.message : String(renameError))
+    } finally {
+      setRenaming(false)
+    }
   }
 
   const handleCreate = async () => {
@@ -311,7 +487,10 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
     setError(null)
     try {
       const initialContent = `角色：${name}\n性别：${newGender}\n`
-      await writeProjectFile(projectId, CHARACTER_SUBDIR, `${name}.md`, initialContent)
+      const config = await loadCharacterModuleConfig(projectId)
+      const { catalog } = await loadCharacterCatalog(projectId, config)
+      const nextCatalog = await syncCharacterCatalogRecord(catalog, `${name}.md`, initialContent, config)
+      await saveCharacterBundle(projectId, `${name}.md`, initialContent, JSON.stringify(nextCatalog, null, 2), await hashText(''))
       await refresh()
       setNewName('')
       editAfterLoadRef.current = name
@@ -342,11 +521,42 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
     setDeletingName(name)
     setError(null)
     try {
-      await deleteProjectFile(projectId, CHARACTER_SUBDIR, `${name}.md`)
+      const [config, card] = await Promise.all([
+        loadCharacterModuleConfig(projectId),
+        readProjectFile(projectId, CHARACTER_SUBDIR, `${name}.md`),
+      ])
+      const { catalog } = await loadCharacterCatalog(projectId, config)
+      const record = catalog.records.find((item) => item.fileName === `${name}.md`)
+      if (!record) throw new Error('角色目录中找不到该角色，请刷新后重试。')
+      const relationships = await loadCharacterRelationships(projectId)
+      const { order } = await loadCharacterOrder(projectId, catalog.records)
+      const nextCatalog = {
+        ...catalog,
+        records: catalog.records.filter((item) => item.id !== record.id),
+        revision: catalog.revision + 1,
+        updatedAt: new Date().toISOString(),
+      }
+      const nextRelationships = {
+        ...relationships,
+        relationships: relationships.relationships.filter((item) => item.characterAId !== record.id && item.characterBId !== record.id),
+        revision: relationships.revision + 1,
+        updatedAt: new Date().toISOString(),
+      }
+      const nextOrder = { ...order, characterIds: order.characterIds.filter((id) => id !== record.id) }
+      await deleteCharacter(
+        projectId,
+        `${name}.md`,
+        JSON.stringify(nextCatalog, null, 2),
+        JSON.stringify(nextRelationships, null, 2),
+        JSON.stringify(nextOrder, null, 2),
+        await hashText(card),
+      )
       if (activeFile === name) {
         setActiveFile(null)
         setContent('')
         setSavedContent('')
+        setAffiliations([])
+        setSavedAffiliations([])
         setEditing(false)
       }
       await refresh()
@@ -464,7 +674,10 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
     setCreating(true)
     setError(null)
     try {
-      await writeProjectFile(projectId, CHARACTER_SUBDIR, `${aiDraft.name}.md`, aiDraft.content)
+      const config = await loadCharacterModuleConfig(projectId)
+      const { catalog } = await loadCharacterCatalog(projectId, config)
+      const nextCatalog = await syncCharacterCatalogRecord(catalog, `${aiDraft.name}.md`, aiDraft.content, config)
+      await saveCharacterBundle(projectId, `${aiDraft.name}.md`, aiDraft.content, JSON.stringify(nextCatalog, null, 2), await hashText(''))
       await refresh()
       setNewName('')
       setActiveFile(aiDraft.name)
@@ -481,7 +694,28 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
   }
 
   const isNameDuplicate = newName.trim().length > 0 && hasDuplicateCharacterName(files, newName)
-  const visibleFiles = genderFilter === '全部' ? files : files.filter((name) => genderByFile[name] === genderFilter)
+  const recordByFile = new Map(characterRecords.map((record) => [record.fileName.replace(/\.md$/i, ''), record]))
+  const normalizedSearch = searchQuery.trim().normalize('NFC').toLocaleLowerCase()
+  const visibleFiles = files.filter((name) => {
+    const record = recordByFile.get(name)
+    if (genderFilter !== '全部' && genderByFile[name] !== genderFilter) return false
+    if (!record) return !normalizedSearch || name.normalize('NFC').toLocaleLowerCase().includes(normalizedSearch)
+    if (normalizedSearch && ![record.name, ...record.aliases, record.identity, ...record.tags]
+      .some((value) => value.normalize('NFC').toLocaleLowerCase().includes(normalizedSearch))) return false
+    if (stanceFilter && record.stanceId !== stanceFilter) return false
+    if (tagFilters.length > 0 && !tagFilters.every((tag) => record.tags.includes(tag))) return false
+    if (organizationFilter && !record.affiliations.some((affiliation) => affiliation.organizationId === organizationFilter)) return false
+    return true
+  })
+  const availableTags = [...new Set(characterRecords.flatMap((record) => record.tags))].sort((left, right) => left.localeCompare(right, 'zh-CN'))
+  const hasActiveFilters = Boolean(normalizedSearch || genderFilter !== '全部' || stanceFilter || tagFilters.length > 0 || organizationFilter)
+  const clearFilters = () => {
+    setSearchQuery('')
+    setGenderFilter('全部')
+    setStanceFilter('')
+    setTagFilters([])
+    setOrganizationFilter('')
+  }
   const genderCounts = files.reduce<Record<CharacterGender, number>>((counts, name) => {
     counts[genderByFile[name] ?? '未知']++
     return counts
@@ -562,6 +796,61 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
     { label: '✨ AI 润色', onClick: () => handleRewriteMode('polish') },
   ] : []
 
+  const handleOrganizationToggle = (organization: OrganizationRecord, selected: boolean) => {
+    const projection = parseCharacterMarkdown(content)
+    const organizationNames = new Set([organization.name, ...organization.aliases].map((name) => name.normalize('NFC').toLocaleLowerCase()))
+    const nextNames = selected
+      ? [...projection.organizations.filter((name) => !organizationNames.has(name.normalize('NFC').toLocaleLowerCase())), organization.name]
+      : projection.organizations.filter((name) => !organizationNames.has(name.normalize('NFC').toLocaleLowerCase()))
+    setContent((previous) => updateCharacterMarkdownField(previous, '所属组织', nextNames))
+    setAffiliations((previous) => {
+      const next = cloneAffiliations(previous)
+      const existing = next.find((item) => item.organizationId === organization.id)
+      if (selected) {
+        if (existing) {
+          if (!existing.periods.some((period) => !period.endChapter && period.status !== 'former')) {
+            existing.periods.push({ id: crypto.randomUUID(), role: '', status: 'active', notes: '' })
+          }
+        } else {
+          next.push({ organizationId: organization.id, periods: [{ id: crypto.randomUUID(), role: '', status: 'active', notes: '' }] })
+        }
+      } else if (existing) {
+        existing.periods = existing.periods.map((period) => !period.endChapter && period.status !== 'former'
+          ? { ...period, status: 'former' }
+          : period)
+      }
+      return next
+    })
+  }
+
+  const confirmOrganizationCandidates = async () => {
+    setSavingOrganizationCandidates(true)
+    setError(null)
+    try {
+      const store = await loadOrganizations(projectId)
+      const timestamp = new Date().toISOString()
+      const additions = selectedOrganizationCandidates.map((name) => ({
+        id: crypto.randomUUID(),
+        name,
+        aliases: [],
+        kindId: moduleConfig.organizationKinds[0]?.id ?? 'faction',
+        description: '',
+        status: 'active' as const,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }))
+      const saved = additions.length > 0 ? await saveOrganizations(projectId, { ...store, organizations: [...store.organizations, ...additions] }, store.revision) : store
+      setOrganizations(saved.organizations)
+      setOrganizationCandidates([])
+      setSelectedOrganizationCandidates([])
+      setNotice(additions.length > 0 ? `已确认 ${additions.length} 个组织候选` : '已忽略组织候选')
+    } catch (candidateError) {
+      setError(candidateError instanceof Error ? candidateError.message : String(candidateError))
+    } finally {
+      setSavingOrganizationCandidates(false)
+    }
+  }
+
   return (
     <div className="panel-layout">
       <CharacterSidebar
@@ -569,7 +858,22 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
         genderByFile={genderByFile}
         genderCounts={genderCounts}
         genderFilter={genderFilter}
+        searchQuery={searchQuery}
+        stanceFilter={stanceFilter}
+        tagFilters={tagFilters}
+        organizationFilter={organizationFilter}
+        stances={moduleConfig.stances}
+        organizations={organizations}
+        availableTags={availableTags}
+        hasActiveFilters={hasActiveFilters}
+        totalFiles={files.length}
         onGenderFilterChange={setGenderFilter}
+        onSearchQueryChange={setSearchQuery}
+        onStanceFilterChange={setStanceFilter}
+        onTagFiltersChange={setTagFilters}
+        onOrganizationFilterChange={setOrganizationFilter}
+        onClearFilters={clearFilters}
+        onOpenConfig={() => setShowConfig(true)}
         activeFile={activeFile}
         newName={newName}
         creating={creating}
@@ -585,10 +889,13 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
         onAICreate={() => { void handleAICreate() }}
         onSelect={requestSelect}
         onDelete={requestDelete}
+        onRename={requestRename}
         onDragStart={(event, index) => { if (genderFilter === '全部') handleMouseDown(event, index) }}
       />
       <CharacterEditor
+        projectId={projectId}
         activeFile={activeFile}
+        characterId={activeFile ? recordByFile.get(activeFile)?.id : undefined}
         content={content}
         gender={parseCharacterGender(content)}
         editing={editing}
@@ -603,9 +910,26 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
         savingPrompt={savingPrompt}
         showExample={showExample}
         example={CHAR_EXAMPLE}
+        config={moduleConfig}
+        organizations={organizations}
+        affiliations={affiliations}
+        chapters={chapters}
         textareaRef={rewriteTextareaRef}
         onContentChange={setContent}
         onGenderChange={(gender) => setContent((previous) => setCharacterGender(previous, gender))}
+        onStructuredFieldChange={(field, value) => setContent((previous) => updateCharacterMarkdownField(previous, field, value))}
+        onOrganizationToggle={handleOrganizationToggle}
+        onAffiliationsChange={setAffiliations}
+        onOrganizationsChange={setOrganizations}
+        onOrganizationCreated={(organization) => handleOrganizationToggle(organization, true)}
+        onNavigateToCharacter={(characterId) => {
+          const target = characterRecords.find((record) => record.id === characterId)?.fileName.replace(/\.md$/i, '')
+          if (target) requestSelect(target)
+          else onNavigateToCharacter?.(characterId)
+        }}
+        onNavigateToOrganization={onNavigateToOrganization}
+        onNavigateToChapter={onNavigateToChapter}
+        onNavigateToForeshadow={onNavigateToForeshadow}
         onEdit={() => { setEditing(true) }}
         onSave={() => { void handleSave() }}
         onAIComplete={() => { void handleAIComplete() }}
@@ -662,6 +986,15 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
           onClose={() => setContextMenu(null)}
         />
       )}
+      {showConfig && <CharacterConfigDialog projectId={projectId} onSaved={(config) => { setModuleConfig(config); void refresh() }} onClose={() => setShowConfig(false)} />}
+      {organizationCandidates.length > 0 && (
+        <Modal className="confirm-dialog" onRequestClose={savingOrganizationCandidates ? undefined : () => setOrganizationCandidates([])}>
+          <h3>确认角色卡中的组织候选</h3>
+          <p>以下名称来自明确的“所属组织 / 阵营 / 势力 / 组织”字段。只会创建你勾选的组织，不会改写角色正文；确认后请再次保存角色卡。</p>
+          <div className="character-organization-candidates">{organizationCandidates.map((name) => <label key={name}><input type="checkbox" checked={selectedOrganizationCandidates.includes(name)} onChange={(event) => setSelectedOrganizationCandidates(event.target.checked ? [...selectedOrganizationCandidates, name] : selectedOrganizationCandidates.filter((candidate) => candidate !== name))} />{name}</label>)}</div>
+          <div className="dialog-footer"><Button variant="text" size="sm" disabled={savingOrganizationCandidates} onClick={() => { setOrganizationCandidates([]); setSelectedOrganizationCandidates([]) }}>暂不处理</Button><Button variant="primary" size="sm" loading={savingOrganizationCandidates} onClick={() => { void confirmOrganizationCandidates() }}>确认候选</Button></div>
+        </Modal>
+      )}
       {showUnsavedChanges && (
         <CharacterUnsavedChangesDialog
           saving={saving}
@@ -679,6 +1012,30 @@ const CharacterPanel = forwardRef<CharacterPanelHandle, Props>(({ projectId, ini
           <div className="dialog-footer">
             <Button variant="secondary" size="md" disabled={deletingName !== null} onClick={() => setDeleteTarget(null)}>取消</Button>
             <Button variant="danger" size="md" loading={deletingName !== null} disabled={deletingName !== null} onClick={() => { void handleDelete() }}>删除角色</Button>
+          </div>
+        </Modal>
+      )}
+      {renameTarget && (
+        <Modal className="confirm-dialog" onRequestClose={renaming ? undefined : () => setRenameTarget(null)}>
+          <h2>重命名角色</h2>
+          <label className="sub-field-label" htmlFor="character-rename-input">新角色名</label>
+          <input
+            id="character-rename-input"
+            className="notes-input"
+            value={renameTarget.nextName}
+            disabled={renaming}
+            autoFocus
+            onChange={(event) => setRenameTarget((current) => current ? { ...current, nextName: event.target.value } : current)}
+          />
+          <p style={{ margin: '12px 0', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
+            将同步更新文件名、标准角色字段和结构化目录。旧名称会保留为别名；正文自由文本不会批量替换。
+          </p>
+          <p style={{ margin: '12px 0', color: 'var(--text-muted)' }}>
+            影响：手动关系 {renameTarget.relationshipCount} 条，组织归属 {renameTarget.affiliationCount} 项，伏笔引用 {renameTarget.foreshadowCount} 条。
+          </p>
+          <div className="dialog-footer">
+            <Button variant="secondary" size="md" disabled={renaming} onClick={() => setRenameTarget(null)}>取消</Button>
+            <Button variant="primary" size="md" loading={renaming} disabled={renaming || !renameTarget.nextName.trim()} onClick={() => { void handleRename() }}>确认重命名</Button>
           </div>
         </Modal>
       )}

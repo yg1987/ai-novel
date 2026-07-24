@@ -1,24 +1,21 @@
-// src/services/relationshipStore.ts
 import Graph from 'graphology'
 import louvain from 'graphology-communities-louvain'
 import { listChapters, listProjectFiles, readProjectFile } from '../api/tauri'
 import { characterNodeId, chapterNodeId, eventNodeId, foreshadowingNodeId, itemNodeId, locationNodeId, organizationNodeId } from '../lib/graph-id'
 import { computeGraphInsights } from '../lib/graph-insights'
+import { loadCharacterCatalog, resolveCharacterName } from './characterCatalog'
+import { loadCharacterModuleConfig } from './characterConfig'
+import { currentRelationshipPeriod, loadCharacterRelationships, validateRelationshipStore } from './characterRelations'
 import { loadForeshadows } from './foreshadowStorage'
+import { loadOrganizations } from './organizationStore'
+import { buildChapterSequence } from './chapterCatalog'
 import { RELATION_META } from '../types/novel'
+import type { ChapterRef } from '../types/chapter'
+import type { CharacterModuleConfig, CharacterRelationship, RelationshipPeriod } from '../types/character'
 import type { ChapterSnapshot, GraphNode, GraphNodeType, RelationType, RelationshipGraph, RelationshipLink } from '../types/novel'
 
 const SNAPSHOT_DIR = 'memory/snapshots'
-const CHARACTER_DIR = 'characters'
-const WORLDVIEW_DIR = 'worldview'
 const RELATION_PATTERN = /^\s*(.+?)\s*→\s*(.+?)\s*→\s*(.+?)\s*$/
-
-interface ParsedCharacterCard {
-  name: string
-  group: 'protagonist' | 'supporter' | 'antagonist' | 'neutral'
-  tags: string[]
-  organizations: string[]
-}
 
 function createNode(id: string, label: string, type: GraphNodeType, group: string = type): GraphNode {
   return { id, label, type, group, community: -1, linkCount: 0, firstAppearance: 0, lastAppearance: 0, appearanceCount: 0, tags: [] }
@@ -33,9 +30,9 @@ function ensureNode(nodeMap: Map<string, GraphNode>, id: string, label: string, 
 }
 
 function parseRelationshipChange(raw: string): { charA: string; type: string; charB: string } | null {
-  const m = RELATION_PATTERN.exec(raw)
-  if (!m) return null
-  return { charA: m[1]!.trim(), type: m[2]!.trim(), charB: m[3]!.trim() }
+  const match = RELATION_PATTERN.exec(raw)
+  if (!match) return null
+  return { charA: match[1]!.trim(), type: match[2]!.trim(), charB: match[3]!.trim() }
 }
 
 function mapRelationType(type: string): RelationType {
@@ -50,47 +47,12 @@ function mapRelationType(type: string): RelationType {
   return 'ambiguous'
 }
 
-function splitList(value: string): string[] {
-  return value.split(/[,，、;；\s]+/).map((s) => s.trim()).filter(Boolean)
+function relationMeta(type: string): { tier: 1 | 2 | 3; weight: number } {
+  return RELATION_META[type as RelationType] ?? RELATION_META.ambiguous
 }
 
-function parseCharacterCard(name: string, content: string): ParsedCharacterCard {
-  let group: ParsedCharacterCard['group'] = 'neutral'
-  const tags = new Set<string>()
-  const organizations = new Set<string>()
-
-  for (const rawLine of content.split('\n')) {
-    const field = rawLine.trim().match(/^[-*\s]*([^：:]+)[：:]\s*(.+)$/)
-    if (!field) continue
-    const key = field[1]!.trim()
-    const value = field[2]!.trim()
-    if (key.includes('身份')) {
-      if (/主角|主线|核心/.test(value)) group = 'protagonist'
-      else if (/反派|敌/.test(value)) group = 'antagonist'
-      else if (/配角|同伴|伙伴|盟友/.test(value)) group = 'supporter'
-    }
-    if (key.includes('标签')) splitList(value).forEach((tag) => tags.add(tag))
-    if (key.includes('阵营') || key.includes('势力') || key.includes('组织')) splitList(value).forEach((org) => organizations.add(org))
-  }
-
-  return { name, group, tags: Array.from(tags), organizations: Array.from(organizations) }
-}
-
-function extractWorldviewOrganizations(filename: string, content: string): string[] {
-  const names = new Set<string>()
-  const stem = filename.replace(/\.md$/i, '').trim()
-  if (stem) names.add(stem)
-  const title = content.match(/^#\s+(.+)$/m)?.[1]?.trim()
-  if (title) names.add(title)
-  for (const rawLine of content.split('\n')) {
-    const match = rawLine.trim().match(/^(?:组织|势力)[：:]\s*(.+)$/)
-    if (match) splitList(match[1]!).forEach((name) => names.add(name))
-  }
-  return Array.from(names).filter(Boolean)
-}
-
-function relationLink(source: string, target: string, type: RelationType, chapter: number, options: Partial<RelationshipLink> = {}): RelationshipLink {
-  const meta = RELATION_META[type]
+function relationLink(source: string, target: string, type: string, chapter: number, options: Partial<RelationshipLink> = {}): RelationshipLink {
+  const meta = relationMeta(type)
   return {
     source,
     target,
@@ -103,11 +65,30 @@ function relationLink(source: string, target: string, type: RelationType, chapte
     mentions: options.mentions ?? 1,
     description: options.description,
     structural: options.structural,
+    kind: options.kind ?? 'relationship',
+    sourceKind: options.sourceKind,
+    recordId: options.recordId,
+    periodId: options.periodId,
+    temporalStatus: options.temporalStatus,
+    relationshipStatus: options.relationshipStatus,
+    startChapter: options.startChapter,
+    endChapter: options.endChapter,
+    direction: options.direction ?? 'undirected',
+    evidence: options.evidence,
+    label: options.label,
+    color: options.color,
   }
 }
 
-function edgeKey(source: string, target: string): string {
-  return [source, target].sort().join('::')
+function edgeKey(link: Pick<RelationshipLink, 'source' | 'target' | 'kind' | 'direction'>): string {
+  const endpoints = link.direction === 'undirected' ? [link.source, link.target].sort() : [link.source, link.target]
+  return `${link.kind ?? 'relationship'}::${link.direction ?? 'undirected'}::${endpoints.join('::')}`
+}
+
+function relationshipEdgeKey(link: RelationshipLink): string {
+  const base = edgeKey(link)
+  if (link.temporalStatus !== 'historical') return base
+  return `${base}::history::${link.recordId ?? 'relationship'}::${link.periodId ?? 'period'}`
 }
 
 function mergeDescription(existing: string | undefined, next: string | undefined): string | undefined {
@@ -116,25 +97,90 @@ function mergeDescription(existing: string | undefined, next: string | undefined
   return `${existing}；${next}`
 }
 
-function mergeEdge(linkMap: Map<string, RelationshipLink>, nodes: Map<string, GraphNode>, next: RelationshipLink): void {
-  if (!nodes.has(next.source) || !nodes.has(next.target) || next.source === next.target) return
-  const key = edgeKey(next.source, next.target)
-  const existing = linkMap.get(key)
-  if (!existing) {
-    linkMap.set(key, next)
-    return
-  }
+function mergeLinkMetadata(existing: RelationshipLink, next: RelationshipLink): void {
   existing.mentions += next.mentions
   existing.firstMentioned = Math.min(existing.firstMentioned, next.firstMentioned)
   existing.lastMentioned = Math.max(existing.lastMentioned, next.lastMentioned)
   existing.weight += next.weight
   existing.strength = Math.min(1, existing.strength + next.strength)
-  if (existing.type === 'ambiguous' && next.type !== 'ambiguous') {
-    existing.type = next.type
-    existing.tier = next.tier
-  }
   existing.description = mergeDescription(existing.description, next.description)
+  existing.evidence = [...new Set([...(existing.evidence ?? []), ...(next.evidence ?? [])])]
   existing.structural = Boolean(existing.structural && next.structural)
+}
+
+function sameUnorderedEndpoints(left: RelationshipLink, right: RelationshipLink): boolean {
+  return (left.source === right.source && left.target === right.target) || (left.source === right.target && left.target === right.source)
+}
+
+export function appendEvidenceToCurrentManualRelationship(links: Iterable<RelationshipLink>, evidence: RelationshipLink): boolean {
+  for (const link of links) {
+    if (link.kind !== 'relationship' || link.sourceKind !== 'manual' || link.temporalStatus !== 'current') continue
+    if (!sameUnorderedEndpoints(link, evidence)) continue
+    mergeLinkMetadata(link, evidence)
+    return true
+  }
+  return false
+}
+
+/** A merge key includes kind and stable endpoints, so analysis can never overwrite a manual relationship. */
+function mergeEdge(linkMap: Map<string, RelationshipLink>, nodes: Map<string, GraphNode>, next: RelationshipLink): void {
+  if (!nodes.has(next.source) || !nodes.has(next.target) || next.source === next.target) return
+  const key = relationshipEdgeKey(next)
+  const existing = linkMap.get(key)
+  if (!existing) {
+    linkMap.set(key, next)
+    return
+  }
+  mergeLinkMetadata(existing, next)
+}
+
+function relationshipEndpoints(record: CharacterRelationship): { source: string; target: string; direction: RelationshipLink['direction'] } {
+  let source = characterNodeId(record.characterAId)
+  let target = characterNodeId(record.characterBId)
+  if (record.direction === 'b-to-a') [source, target] = [target, source]
+  return { source, target, direction: record.direction === 'undirected' ? 'undirected' : 'a-to-b' }
+}
+
+function manualPeriodLink(
+  record: CharacterRelationship,
+  period: RelationshipPeriod,
+  temporalStatus: NonNullable<RelationshipLink['temporalStatus']>,
+  config: CharacterModuleConfig,
+): RelationshipLink {
+  const { source, target, direction } = relationshipEndpoints(record)
+  const definition = config.relationshipTypes.find((candidate) => candidate.id === period.typeId)
+  return relationLink(source, target, period.typeId, 0, {
+    kind: 'relationship',
+    sourceKind: 'manual',
+    recordId: record.id,
+    periodId: period.id,
+    temporalStatus,
+    relationshipStatus: period.status,
+    startChapter: period.startChapter,
+    endChapter: period.endChapter,
+    direction,
+    description: period.description || record.notes,
+    evidence: [temporalStatus === 'current' ? '作者确认' : '作者确认 · 历史阶段'],
+    tier: definition?.tier,
+    weight: definition?.weight,
+    label: definition?.label,
+    color: definition?.color,
+  })
+}
+
+export function buildManualRelationshipLinks(
+  records: CharacterRelationship[],
+  config: CharacterModuleConfig,
+): RelationshipLink[] {
+  const links: RelationshipLink[] = []
+  for (const record of records) {
+    const current = currentRelationshipPeriod(record)
+    if (current) links.push(manualPeriodLink(record, current, 'current', config))
+    for (const period of record.periods) {
+      if (period !== current) links.push(manualPeriodLink(record, period, 'historical', config))
+    }
+  }
+  return links
 }
 
 function commonNeighborScore(graph: Graph, source: string, target: string): number {
@@ -154,219 +200,205 @@ function applyFiveSignalWeights(linkMap: Map<string, RelationshipLink>, nodeMap:
     const source = nodeMap.get(link.source)
     const target = nodeMap.get(link.target)
     if (!source || !target || !graph.hasEdge(key)) continue
-
     const description = link.description ?? ''
-    const hasCoOccurrence = description.includes('共同出场')
-    const hasExplicitRelation = description.includes('→') || (!description.startsWith('共同出场') && description.length > 0)
-    const directSignal = hasExplicitRelation && !link.structural ? 1 : 0
-    const coOccurrenceSignal = hasCoOccurrence ? Math.min(2, Math.log1p(link.mentions)) : 0
+    const manualSignal = link.sourceKind === 'manual' ? 1 : 0
+    const explicitSignal = link.sourceKind === 'snapshot' && link.kind === 'relationship' ? 1 : 0
+    const coOccurrenceSignal = link.sourceKind === 'co-occurrence' ? Math.min(2, Math.log1p(link.mentions)) : 0
     const commonNeighborSignal = Math.min(2, commonNeighborScore(graph, link.source, link.target))
     const typeAffinitySignal = source.type === target.type ? 0.4 : 1
-    const relationStrengthSignal = RELATION_META[link.type].weight / 1.5
-
-    const weighted =
-      directSignal * 3.0 +
-      coOccurrenceSignal * 4.0 +
-      commonNeighborSignal * 1.5 +
-      typeAffinitySignal * 1.0 +
-      relationStrengthSignal * 1.5
-
+    const relationStrengthSignal = link.weight / 1.5
+    const weighted = manualSignal * 5 + explicitSignal * 3 + coOccurrenceSignal * 4 + commonNeighborSignal * 1.5 + typeAffinitySignal + relationStrengthSignal * 1.5
     const structuralFactor = link.structural ? 0.45 : 1
     link.weight = Math.max(0.2, Number((weighted * structuralFactor).toFixed(2)))
     link.strength = Math.max(0.05, Math.min(1, Number((link.weight / 10).toFixed(2))))
+    if (description) graph.setEdgeAttribute(key, 'description', description)
     graph.setEdgeAttribute(key, 'weight', link.weight)
     graph.setEdgeAttribute(key, 'strength', link.strength)
   }
 }
 
-async function loadSnapshots(projectId: string): Promise<ChapterSnapshot[]> {
+export async function loadChapterSnapshots(projectId: string): Promise<ChapterSnapshot[]> {
   const snapshotFiles = await listProjectFiles(projectId, SNAPSHOT_DIR).catch(() => [])
   const snapshots: ChapterSnapshot[] = []
-  for (const f of snapshotFiles) {
-    if (!f.name.endsWith('.snapshot.json')) continue
-    try {
-      const raw = await readProjectFile(projectId, SNAPSHOT_DIR, f.name)
-      snapshots.push(JSON.parse(raw) as ChapterSnapshot)
-    } catch { /* skip malformed */ }
+  for (const file of snapshotFiles) {
+    if (!file.name.endsWith('.snapshot.json')) continue
+    try { snapshots.push(JSON.parse(await readProjectFile(projectId, SNAPSHOT_DIR, file.name)) as ChapterSnapshot) } catch { /* malformed evidence is ignored */ }
   }
-  return snapshots.sort((a, b) => a.chapterNumber - b.chapterNumber)
+  return snapshots.sort((left, right) => left.chapterNumber - right.chapterNumber)
 }
 
 export async function loadRelationshipGraph(projectId: string): Promise<RelationshipGraph> {
   const nodeMap = new Map<string, GraphNode>()
   const linkMap = new Map<string, RelationshipLink>()
-  const chapters = await listChapters(projectId).catch(() => [])
-  const snapshots = await loadSnapshots(projectId)
-
-  const characterFiles = await listProjectFiles(projectId, CHARACTER_DIR).catch(() => [])
-  for (const file of characterFiles) {
-    if (!file.name.endsWith('.md')) continue
-    const name = file.name.replace(/\.md$/i, '')
-    let parsed: ParsedCharacterCard = { name, group: 'neutral', tags: [], organizations: [] }
-    try {
-      parsed = parseCharacterCard(name, await readProjectFile(projectId, CHARACTER_DIR, file.name))
-    } catch { /* keep defaults */ }
-    const node = ensureNode(nodeMap, characterNodeId(name), name, 'character', parsed.group)
-    node.tags = parsed.tags
-    for (const org of parsed.organizations) {
-      const orgId = organizationNodeId(org)
-      ensureNode(nodeMap, orgId, org, 'organization', 'organization')
-      mergeEdge(linkMap, nodeMap, relationLink(node.id, orgId, 'ambiguous', 0, { weight: 1, strength: 0.25, structural: true, description: `角色阵营：${org}` }))
-    }
-  }
-
-  const chapterByNumber = new Map<number, string>()
-  for (const chapter of chapters.slice().sort((a, b) => a.order - b.order)) {
-    const id = chapterNodeId(chapter.id)
-    chapterByNumber.set(chapter.order, id)
-    const node = ensureNode(nodeMap, id, `第${chapter.order}章 ${chapter.title}`, 'chapter', 'chapter')
-    node.firstAppearance = chapter.order
-    node.lastAppearance = chapter.order
-    node.appearanceCount = 1
-  }
-
-  for (const file of await listProjectFiles(projectId, WORLDVIEW_DIR).catch(() => [])) {
-    if (!file.name.endsWith('.md')) continue
-    try {
-      const content = await readProjectFile(projectId, WORLDVIEW_DIR, file.name)
-      for (const org of extractWorldviewOrganizations(file.name, content)) ensureNode(nodeMap, organizationNodeId(org), org, 'organization', 'organization')
-    } catch { /* skip unreadable worldview files */ }
-  }
-
-  const coOccurrences = new Map<string, { source: string; target: string; count: number; first: number; last: number }>()
-
-  for (const snap of snapshots) {
-    const chapterNode = chapterByNumber.get(snap.chapterNumber)
-    const fallbackChapterId = `ch${String(snap.chapterNumber).padStart(3, '0')}`
-    const seenCharacters = new Set<string>()
-
-    for (const charName of snap.characters) {
-      const charId = characterNodeId(charName)
-      const node = nodeMap.get(charId)
-      if (!node) continue
-      seenCharacters.add(charId)
-      node.firstAppearance = node.firstAppearance === 0 ? snap.chapterNumber : Math.min(node.firstAppearance, snap.chapterNumber)
-      node.lastAppearance = Math.max(node.lastAppearance, snap.chapterNumber)
-      node.appearanceCount++
-      if (chapterNode) mergeEdge(linkMap, nodeMap, relationLink(chapterNode, charId, 'ambiguous', snap.chapterNumber, { weight: 0.7, strength: 0.15, structural: true, description: '章节出场' }))
-    }
-
-    for (const location of snap.locations) {
-      const locationId = locationNodeId(location)
-      const node = ensureNode(nodeMap, locationId, location, 'location', 'location')
-      node.firstAppearance = node.firstAppearance === 0 ? snap.chapterNumber : Math.min(node.firstAppearance, snap.chapterNumber)
-      node.lastAppearance = Math.max(node.lastAppearance, snap.chapterNumber)
-      node.appearanceCount++
-      if (chapterNode) mergeEdge(linkMap, nodeMap, relationLink(chapterNode, locationId, 'ambiguous', snap.chapterNumber, { weight: 0.6, strength: 0.12, structural: true, description: '章节地点' }))
-    }
-
-    for (const item of snap.items) {
-      const itemId = itemNodeId(item)
-      const node = ensureNode(nodeMap, itemId, item, 'item', 'item')
-      node.firstAppearance = node.firstAppearance === 0 ? snap.chapterNumber : Math.min(node.firstAppearance, snap.chapterNumber)
-      node.lastAppearance = Math.max(node.lastAppearance, snap.chapterNumber)
-      node.appearanceCount++
-      if (chapterNode) mergeEdge(linkMap, nodeMap, relationLink(chapterNode, itemId, 'ambiguous', snap.chapterNumber, { weight: 0.6, strength: 0.12, structural: true, description: '章节物品' }))
-    }
-
-    snap.timelineEvents.forEach((event, index) => {
-      const eventId = eventNodeId(chapterNode?.replace(/^chapter:/, '') ?? fallbackChapterId, index)
-      const node = ensureNode(nodeMap, eventId, event, 'event', 'event')
-      node.firstAppearance = snap.chapterNumber
-      node.lastAppearance = snap.chapterNumber
-      node.appearanceCount = 1
-      if (chapterNode) mergeEdge(linkMap, nodeMap, relationLink(chapterNode, eventId, 'ambiguous', snap.chapterNumber, { weight: 1.2, strength: 0.25, structural: true, description: '章节事件' }))
-      for (const charId of seenCharacters) mergeEdge(linkMap, nodeMap, relationLink(charId, eventId, 'ambiguous', snap.chapterNumber, { weight: 0.5, strength: 0.1, description: '角色参与事件' }))
+  const [chapters, snapshots, config, organizations] = await Promise.all([
+    listChapters(projectId).catch(() => []),
+    loadChapterSnapshots(projectId),
+    loadCharacterModuleConfig(projectId),
+    loadOrganizations(projectId),
+  ])
+  const { catalog } = await loadCharacterCatalog(projectId, config)
+  const relationships = await loadCharacterRelationships(projectId)
+  validateRelationshipStore(relationships, new Set(catalog.records.map((record) => record.id)))
+  const makeLink = (source: string, target: string, type: string, chapter: number, options: Partial<RelationshipLink> = {}) => {
+    const definition = config.relationshipTypes.find((candidate) => candidate.id === type)
+    return relationLink(source, target, type, chapter, {
+      ...options,
+      tier: options.tier ?? definition?.tier,
+      weight: options.weight ?? definition?.weight,
+      label: options.label ?? definition?.label,
+      color: options.color ?? definition?.color,
     })
+  }
 
-    for (const raw of snap.relationshipChanges) {
-      const parsed = parseRelationshipChange(raw)
-      if (!parsed) continue
-      const type = mapRelationType(parsed.type)
-      mergeEdge(linkMap, nodeMap, relationLink(characterNodeId(parsed.charA), characterNodeId(parsed.charB), type, snap.chapterNumber, {
-        weight: RELATION_META[type].weight * 3,
-        strength: 0.35,
-        description: raw,
+  // 1. Stable directory nodes and author-maintained organization hierarchy.
+  const organizationById = new Map(organizations.organizations.map((organization) => [organization.id, organization]))
+  for (const organization of organizations.organizations) {
+    const id = organizationNodeId(organization.id)
+    ensureNode(nodeMap, id, organization.name, 'organization', organization.status)
+    if (organization.parentId && organizationById.has(organization.parentId)) {
+      mergeEdge(linkMap, nodeMap, makeLink(organizationNodeId(organization.parentId), id, 'ambiguous', 0, {
+        kind: 'organizationHierarchy', sourceKind: 'catalog', structural: true, description: '组织层级', direction: 'a-to-b',
       }))
     }
+  }
+  for (const record of catalog.records) {
+    const node = ensureNode(nodeMap, characterNodeId(record.id), record.name, 'character', record.stanceId)
+    node.tags = record.tags
+    for (const affiliation of record.affiliations) {
+      const organization = organizationById.get(affiliation.organizationId)
+      const current = affiliation.periods.find((period) => !period.endChapter && period.status !== 'former')
+      if (!organization || !current) continue
+      mergeEdge(linkMap, nodeMap, makeLink(node.id, organizationNodeId(organization.id), 'ambiguous', 0, {
+        kind: 'affiliation', sourceKind: 'catalog', structural: true, description: current.role ? `组织归属：${current.role}` : '组织归属', recordId: affiliation.organizationId,
+      }))
+    }
+  }
 
-    const chars = Array.from(seenCharacters)
-    for (let i = 0; i < chars.length; i++) {
-      for (let j = i + 1; j < chars.length; j++) {
-        const source = chars[i]!
-        const target = chars[j]!
-        const key = [source, target].sort().join('::')
+  // 2. Author-confirmed relationships are distinct from every evidence edge.
+  for (const link of buildManualRelationshipLinks(relationships.relationships, config)) mergeEdge(linkMap, nodeMap, link)
+
+  const chapterByNumber = new Map<number, string>()
+  const orderedChapters = buildChapterSequence(chapters).chapters
+  orderedChapters.forEach((chapter, index) => {
+    const chapterNumber = index + 1
+    const id = chapterNodeId({ volume: chapter.volume, chapterId: chapter.id })
+    chapterByNumber.set(chapterNumber, id)
+    const node = ensureNode(nodeMap, id, `${chapter.volume} · ${chapter.title || chapter.id}`, 'chapter', 'chapter')
+    node.firstAppearance = chapterNumber
+    node.lastAppearance = chapterNumber
+    node.appearanceCount = 1
+  })
+
+  // 3. Snapshots contribute evidence only; unresolved names are intentionally not materialized as ghost nodes.
+  const coOccurrences = new Map<string, { source: string; target: string; count: number; first: number; last: number }>()
+  for (const snapshot of snapshots) {
+    const chapterNode = chapterByNumber.get(snapshot.chapterNumber)
+    const fallbackChapterId = `ch${String(snapshot.chapterNumber).padStart(3, '0')}`
+    const seenCharacters = new Set<string>()
+    for (const name of snapshot.characters) {
+      const resolved = resolveCharacterName(catalog.records, name).characterId
+      if (!resolved) continue
+      const characterId = characterNodeId(resolved)
+      const node = nodeMap.get(characterId)
+      if (!node) continue
+      seenCharacters.add(characterId)
+      node.firstAppearance = node.firstAppearance === 0 ? snapshot.chapterNumber : Math.min(node.firstAppearance, snapshot.chapterNumber)
+      node.lastAppearance = Math.max(node.lastAppearance, snapshot.chapterNumber)
+      node.appearanceCount++
+      if (chapterNode) mergeEdge(linkMap, nodeMap, makeLink(chapterNode, characterId, 'ambiguous', snapshot.chapterNumber, { kind: 'participation', sourceKind: 'snapshot', structural: true, description: '章节出场' }))
+    }
+    for (const location of snapshot.locations) {
+      const id = locationNodeId(location)
+      const node = ensureNode(nodeMap, id, location, 'location', 'location')
+      node.firstAppearance = node.firstAppearance === 0 ? snapshot.chapterNumber : Math.min(node.firstAppearance, snapshot.chapterNumber)
+      node.lastAppearance = Math.max(node.lastAppearance, snapshot.chapterNumber)
+      node.appearanceCount++
+      if (chapterNode) mergeEdge(linkMap, nodeMap, makeLink(chapterNode, id, 'ambiguous', snapshot.chapterNumber, { kind: 'participation', sourceKind: 'snapshot', structural: true, description: '章节地点' }))
+    }
+    for (const item of snapshot.items) {
+      const id = itemNodeId(item)
+      const node = ensureNode(nodeMap, id, item, 'item', 'item')
+      node.firstAppearance = node.firstAppearance === 0 ? snapshot.chapterNumber : Math.min(node.firstAppearance, snapshot.chapterNumber)
+      node.lastAppearance = Math.max(node.lastAppearance, snapshot.chapterNumber)
+      node.appearanceCount++
+      if (chapterNode) mergeEdge(linkMap, nodeMap, makeLink(chapterNode, id, 'ambiguous', snapshot.chapterNumber, { kind: 'participation', sourceKind: 'snapshot', structural: true, description: '章节物品' }))
+    }
+    snapshot.timelineEvents.forEach((event, index) => {
+      const id = eventNodeId(chapterNode?.replace(/^chapter:/, '') ?? fallbackChapterId, index)
+      const node = ensureNode(nodeMap, id, event, 'event', 'event')
+      node.firstAppearance = snapshot.chapterNumber
+      node.lastAppearance = snapshot.chapterNumber
+      node.appearanceCount = 1
+      if (chapterNode) mergeEdge(linkMap, nodeMap, makeLink(chapterNode, id, 'ambiguous', snapshot.chapterNumber, { kind: 'participation', sourceKind: 'snapshot', structural: true, description: '章节事件' }))
+      for (const characterId of seenCharacters) mergeEdge(linkMap, nodeMap, makeLink(characterId, id, 'ambiguous', snapshot.chapterNumber, { kind: 'participation', sourceKind: 'snapshot', description: '角色参与事件' }))
+    })
+    for (const raw of snapshot.relationshipChanges) {
+      const parsed = parseRelationshipChange(raw)
+      if (!parsed) continue
+      const left = resolveCharacterName(catalog.records, parsed.charA).characterId
+      const right = resolveCharacterName(catalog.records, parsed.charB).characterId
+      if (!left || !right) continue
+      const type = mapRelationType(parsed.type)
+      const evidence = makeLink(characterNodeId(left), characterNodeId(right), type, snapshot.chapterNumber, { kind: 'relationship', sourceKind: 'snapshot', description: raw, evidence: [`第${snapshot.chapterNumber}章`] })
+      if (!appendEvidenceToCurrentManualRelationship(linkMap.values(), evidence)) mergeEdge(linkMap, nodeMap, evidence)
+    }
+    const characters = Array.from(seenCharacters)
+    for (let index = 0; index < characters.length; index++) {
+      for (let next = index + 1; next < characters.length; next++) {
+        const source = characters[index]!
+        const target = characters[next]!
+        const key = `${source}::${target}`
         const existing = coOccurrences.get(key)
-        if (existing) {
-          existing.count++
-          existing.last = snap.chapterNumber
-        } else {
-          coOccurrences.set(key, { source, target, count: 1, first: snap.chapterNumber, last: snap.chapterNumber })
-        }
+        if (existing) { existing.count++; existing.last = snapshot.chapterNumber }
+        else coOccurrences.set(key, { source, target, count: 1, first: snapshot.chapterNumber, last: snapshot.chapterNumber })
       }
     }
   }
-
-  for (const co of coOccurrences.values()) {
-    const key = edgeKey(co.source, co.target)
-    if (!linkMap.has(key) && co.count < 2) continue
-    mergeEdge(linkMap, nodeMap, relationLink(co.source, co.target, 'ambiguous', co.first, {
-      firstMentioned: co.first,
-      lastMentioned: co.last,
-      mentions: co.count,
-      weight: Math.min(4, co.count * 0.8),
-      strength: Math.min(0.7, co.count * 0.12),
-      description: `共同出场 ${co.count} 次`,
+  for (const occurrence of coOccurrences.values()) {
+    if (occurrence.count < 2) continue
+    mergeEdge(linkMap, nodeMap, makeLink(occurrence.source, occurrence.target, 'ambiguous', occurrence.first, {
+      kind: 'appearance', sourceKind: 'co-occurrence', firstMentioned: occurrence.first, lastMentioned: occurrence.last, mentions: occurrence.count,
+      description: `共同出场 ${occurrence.count} 次`, evidence: [`第${occurrence.first}–${occurrence.last}章`],
     }))
   }
 
+  // 4. Foreshadow links use stable IDs when available and otherwise resolve old display names through aliases.
   try {
     const store = await loadForeshadows(projectId)
     for (const entry of store.entries) {
       if (entry.status === 'abandoned') continue
       const fsId = foreshadowingNodeId(entry.id)
-      const fsNode = ensureNode(nodeMap, fsId, entry.name, 'foreshadowing', entry.status)
-      fsNode.tags = [entry.category, entry.status]
-      const chapterIds = [
-        entry.plantedChapter.chapterId,
-        ...entry.progress.map((progress) => progress.chapter.chapterId),
-        entry.recordedResolutionChapter?.chapterId,
-      ].filter(Boolean) as string[]
-      for (const chapterId of chapterIds) {
-        const chId = chapterNodeId(chapterId)
-        if (nodeMap.has(chId)) mergeEdge(linkMap, nodeMap, relationLink(fsId, chId, 'ambiguous', 0, { weight: 1.4, strength: 0.3, structural: true, description: '伏笔章节关联' }))
+      const node = ensureNode(nodeMap, fsId, entry.name, 'foreshadowing', entry.status)
+      node.tags = [entry.category, entry.status]
+      const chapterRefs = [entry.plantedChapter, ...entry.progress.map((progress) => progress.chapter), entry.recordedResolutionChapter].filter((reference): reference is ChapterRef => Boolean(reference))
+      for (const chapterRef of chapterRefs) {
+        const id = chapterNodeId(chapterRef)
+        if (nodeMap.has(id)) mergeEdge(linkMap, nodeMap, makeLink(fsId, id, 'ambiguous', 0, { kind: 'foreshadowing', sourceKind: 'foreshadowing', structural: true, description: '伏笔章节关联' }))
       }
-      for (const charName of entry.relatedCharacters) {
-        const charId = characterNodeId(charName)
-        if (nodeMap.has(charId)) mergeEdge(linkMap, nodeMap, relationLink(fsId, charId, 'ambiguous', 0, { weight: 1.2, strength: 0.25, description: '伏笔角色关联' }))
+      const characterIds = entry.relatedCharacterIds ?? entry.relatedCharacters.flatMap((name) => resolveCharacterName(catalog.records, name).characterId ?? [])
+      for (const characterId of characterIds) {
+        const id = characterNodeId(characterId)
+        if (nodeMap.has(id)) mergeEdge(linkMap, nodeMap, makeLink(fsId, id, 'ambiguous', 0, { kind: 'foreshadowing', sourceKind: 'foreshadowing', description: '伏笔角色关联' }))
       }
     }
-  } catch { /* no foreshadow store */ }
+  } catch { /* no readable foreshadow store */ }
 
-  const graph = new Graph({ type: 'undirected', multi: false })
+  const graph = new Graph({ type: 'undirected', multi: true })
   for (const node of nodeMap.values()) graph.addNode(node.id, { ...node })
   for (const [key, link] of linkMap) {
     if (graph.hasNode(link.source) && graph.hasNode(link.target) && link.source !== link.target) graph.addEdgeWithKey(key, link.source, link.target, { ...link })
   }
-
   applyFiveSignalWeights(linkMap, nodeMap, graph)
-
   try {
     const communities = louvain(graph)
     for (const [nodeId, community] of Object.entries(communities)) {
       const node = nodeMap.get(nodeId)
       if (node) node.community = community
     }
-  } catch { /* keep default community */ }
-
+  } catch { /* isolated or sparse graphs retain the default community */ }
   graph.forEachNode((nodeId) => {
     const node = nodeMap.get(nodeId)
     if (node) node.linkCount = graph.degree(nodeId)
   })
-
-  return {
-    nodes: Array.from(nodeMap.values()),
-    links: Array.from(linkMap.values()),
-    insights: computeGraphInsights(graph),
-  }
+  return { nodes: Array.from(nodeMap.values()), links: Array.from(linkMap.values()), insights: computeGraphInsights(graph) }
 }

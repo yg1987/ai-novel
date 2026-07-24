@@ -1,4 +1,5 @@
 import type { NoteEntry } from '../../services/notesStorage'
+import type { ChapterRef } from '../../types/chapter'
 import NoteItem from './NoteItem'
 
 type GroupedItem =
@@ -16,7 +17,7 @@ interface Props {
   editingId: string | null
   resolveChapterName: (chapterRef: string) => string
   onToggleGroup: (key: string) => void
-  onNavigateToChapter?: (chapterRef: string) => void
+  onNavigateToChapter?: (chapterRef: ChapterRef) => void
   onStartEdit: (note: NoteEntry) => void
   onEditContentChange: (content: string) => void
   onSaveEdit: () => void

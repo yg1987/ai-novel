@@ -40,11 +40,11 @@ function nodeColor(node: GraphNode): string {
 function edgeColor(edge: RelationshipLink): string {
   if (edge.structural) return '#cbd5e1'
   const colors: Record<string, string> = { ally: '#2ecc71', rival: '#e67e22', family: '#1abc9c', mentor: '#f39c12', enemy: '#e74c3c', friend: '#3498db', love: '#e91e63', ambiguous: '#94a3b8' }
-  return colors[edge.type] ?? '#94a3b8'
+  return edge.color ?? colors[edge.type] ?? '#94a3b8'
 }
 
 function createSigmaGraph(nodes: GraphNode[], edges: RelationshipLink[], positionCache: Map<string, { x: number; y: number }>): SigmaGraph {
-  const graph = new Graph<SigmaNodeAttributes, SigmaEdgeAttributes, Record<string, unknown>>({ type: 'undirected', multi: false })
+  const graph = new Graph<SigmaNodeAttributes, SigmaEdgeAttributes, Record<string, unknown>>({ type: 'undirected', multi: true })
   const maxLinks = Math.max(0, ...nodes.map((node) => node.linkCount))
   nodes.forEach((node, index) => {
     const position = positionCache.get(node.id) ?? initialGraphPosition(node, index, nodes.length)
@@ -52,7 +52,7 @@ function createSigmaGraph(nodes: GraphNode[], edges: RelationshipLink[], positio
   })
   edges.forEach((edge, index) => {
     if (!graph.hasNode(edge.source) || !graph.hasNode(edge.target) || edge.source === edge.target) return
-    graph.addEdgeWithKey(`${edge.source}::${edge.target}::${index}`, edge.source, edge.target, { ...edge, relationType: edge.type, type: 'line', size: Math.max(1, Math.min(6, edge.weight)), color: edgeColor(edge), label: RELATION_LABELS[edge.type] })
+    graph.addEdgeWithKey(`${edge.source}::${edge.target}::${index}`, edge.source, edge.target, { ...edge, relationType: edge.type, type: 'line', size: Math.max(1, Math.min(6, edge.weight)), color: edgeColor(edge), label: edge.label ?? RELATION_LABELS[edge.type] ?? `未知关系（${edge.type}）` })
   })
   try {
     forceAtlas2.assign(graph, { iterations: Math.min(120, Math.max(30, nodes.length * 2)), settings: { gravity: 1, scalingRatio: 8, slowDown: 2, barnesHutOptimize: nodes.length > 80 }, getEdgeWeight: 'weight' })

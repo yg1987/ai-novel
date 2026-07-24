@@ -26,6 +26,7 @@ import {
 import WorldviewBanner from './worldview-panel/WorldviewBanner'
 import WorldviewSidebar from './worldview-panel/WorldviewSidebar'
 import WorldviewEditor from './worldview-panel/WorldviewEditor'
+import OrganizationManager from './OrganizationManager'
 import WorldviewDialogs from './worldview-panel/WorldviewDialogs'
 import WorldviewDraftRecoveryDialog from './worldview-panel/WorldviewDraftRecoveryDialog'
 import WorldviewUnsavedChangesDialog from './worldview-panel/WorldviewUnsavedChangesDialog'
@@ -68,6 +69,8 @@ import {
 
 interface Props {
   projectId: string
+  initialOrganizationId?: string | null
+  onInitialOrganizationConsumed?: () => void
 }
 
 interface ProposalReviewState extends WorldviewProposalParseResult {
@@ -86,7 +89,7 @@ export interface WorldviewPanelHandle {
   discardChanges: () => void
 }
 
-const WorldviewPanel = forwardRef<WorldviewPanelHandle, Props>(({ projectId }, ref) => {
+const WorldviewPanel = forwardRef<WorldviewPanelHandle, Props>(({ projectId, initialOrganizationId, onInitialOrganizationConsumed }, ref) => {
   const [sections, setSections] = useState<SectionDef[]>([])
   const [activeSection, setActiveSection] = useState<SectionDef | null>(null)
   const [content, setContent] = useState('')
@@ -150,11 +153,15 @@ const WorldviewPanel = forwardRef<WorldviewPanelHandle, Props>(({ projectId }, r
   const [ruleReferences, setRuleReferences] = useState<WorldviewRuleReference[]>([])
   const [referencesLoading, setReferencesLoading] = useState(false)
   const [referencesError, setReferencesError] = useState<string | null>(null)
+  const [forcesView, setForcesView] = useState<'directory' | 'narrative'>('directory')
+  const [organizationTargetId] = useState(initialOrganizationId ?? undefined)
 
   const rewriteTextareaRef = useRef<HTMLTextAreaElement>(null)
   const subFieldEndRef = useRef<HTMLDivElement>(null)
   const sectionsRef = useRef(sections)
   const draftPayloadRef = useRef<WorldviewDraft | null>(null)
+  const initialOrganizationRef = useRef(initialOrganizationId)
+  const consumeInitialOrganizationRef = useRef(onInitialOrganizationConsumed)
 
   useEffect(() => {
     sectionsRef.current = sections
@@ -205,7 +212,15 @@ const WorldviewPanel = forwardRef<WorldviewPanelHandle, Props>(({ projectId }, r
       setSavedGenre(await loadSectionsGenre(projectId))
 
       if (loadedSections.length > 0) {
-        setActiveSection(loadedSections[0]!)
+        const initialOrganization = initialOrganizationRef.current
+        const initialSection = initialOrganization
+          ? loadedSections.find((section) => section.key === 'forces') ?? loadedSections[0]!
+          : loadedSections[0]!
+        setActiveSection(initialSection)
+        if (initialOrganization) {
+          setForcesView('directory')
+          consumeInitialOrganizationRef.current?.()
+        }
       }
       setConfigLoaded(true)
     }
@@ -1122,7 +1137,17 @@ const WorldviewPanel = forwardRef<WorldviewPanelHandle, Props>(({ projectId }, r
           }}
           onOpenResetConfirm={() => setShowResetConfirm(true)}
         />
-        <WorldviewEditor
+        <div className="worldview-editor-shell">
+          {activeSection.key === 'forces' && (
+            <div className="worldview-forces-switch" role="group" aria-label="势力组织视图">
+              <Button variant={forcesView === 'directory' ? 'secondary' : 'text'} size="sm" onClick={() => setForcesView('directory')}>组织目录</Button>
+              <Button variant={forcesView === 'narrative' ? 'secondary' : 'text'} size="sm" onClick={() => setForcesView('narrative')}>叙述正文</Button>
+            </div>
+          )}
+          {activeSection.key === 'forces' && forcesView === 'directory' ? (
+            <OrganizationManager projectId={projectId} initialOrganizationId={organizationTargetId} />
+          ) : (
+            <WorldviewEditor
           activeSection={activeSection}
           previewContent={previewContent}
           content={content}
@@ -1179,7 +1204,9 @@ const WorldviewPanel = forwardRef<WorldviewPanelHandle, Props>(({ projectId }, r
           onRewriteAccept={handleRewriteAccept}
           onRewriteReject={() => setRewriteState(null)}
           onContextMenuClose={() => setContextMenu(null)}
-        />
+            />
+          )}
+        </div>
       </div>
       <WorldviewDialogs
         showResetConfirm={showResetConfirm}

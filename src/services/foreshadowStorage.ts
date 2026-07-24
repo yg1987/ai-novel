@@ -15,6 +15,8 @@ import type {
 } from '../types/novel'
 import { DEFAULT_FORESHADOW_CONFIG } from '../types/novel'
 import { asNumber, isRecord } from '../utils/unknown'
+import { defaultCharacterModuleConfig, loadCharacterModuleConfig } from './characterConfig'
+import { loadCharacterCatalog, resolveCharacterName } from './characterCatalog'
 
 const DIR = 'memory'
 const STORE_FILE = 'foreshadows.json'
@@ -49,7 +51,7 @@ function isCategory(value: unknown): value is ForeshadowCategory {
     || value === 'relationship' || value === 'event' || value === 'ability' || value === 'power'
 }
 
-function isEntry(value: unknown): value is ForeshadowEntry {
+function isEntry(value: unknown, requireStableIds: boolean): value is ForeshadowEntry {
   if (!isRecord(value)
     || typeof value.id !== 'string' || typeof value.name !== 'string' || typeof value.description !== 'string'
     || !isStatus(value.status) || !isCategory(value.category) || typeof value.importance !== 'number'
@@ -59,6 +61,7 @@ function isEntry(value: unknown): value is ForeshadowEntry {
       && typeof progress.description === 'string'
       && typeof progress.recordedAt === 'string')
     || !Array.isArray(value.relatedCharacters) || !value.relatedCharacters.every((name) => typeof name === 'string')
+    || (requireStableIds && (!Array.isArray(value.relatedCharacterIds) || !value.relatedCharacterIds.every((id) => typeof id === 'string')))
     || typeof value.notes !== 'string' || typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') {
     return false
   }
@@ -67,16 +70,24 @@ function isEntry(value: unknown): value is ForeshadowEntry {
     && (value.resolutionPlan === undefined || typeof value.resolutionPlan === 'string')
 }
 
-function isStore(value: unknown): value is ForeshadowStore {
+function isStoreV2(value: unknown): value is ForeshadowStore {
+  return isRecord(value)
+    && value.schemaVersion === 2
+    && Array.isArray(value.entries)
+    && value.entries.every((entry) => isEntry(entry, true))
+    && typeof value.updatedAt === 'string'
+}
+
+function isStoreV1(value: unknown): value is { schemaVersion: 1; entries: Array<Omit<ForeshadowEntry, 'relatedCharacterIds'> & { relatedCharacterIds?: string[] }>; updatedAt: string } {
   return isRecord(value)
     && value.schemaVersion === 1
     && Array.isArray(value.entries)
-    && value.entries.every(isEntry)
+    && value.entries.every((entry) => isEntry(entry, false))
     && typeof value.updatedAt === 'string'
 }
 
 function emptyStore(): ForeshadowStore {
-  return { schemaVersion: 1, entries: [], updatedAt: '' }
+  return { schemaVersion: 2, entries: [], updatedAt: '' }
 }
 
 function utcFileTimestamp(): string {
@@ -126,13 +137,38 @@ export async function loadForeshadows(projectId: string): Promise<ForeshadowStor
   if (!isRecord(parsed) || !('schemaVersion' in parsed)) {
     throw new ForeshadowStoreError('legacy-schema', '检测到旧版伏笔数据。请确认备份后初始化新伏笔数据。')
   }
-  if (parsed.schemaVersion !== 1) {
+  if (parsed.schemaVersion === 1) {
+    if (!isStoreV1(parsed)) throw new ForeshadowStoreError('invalid-schema', '旧版伏笔数据字段不完整或格式错误，原文件已保留。')
+    let records: Awaited<ReturnType<typeof loadCharacterCatalog>>['catalog']['records'] = []
+    try {
+      const config = await loadCharacterModuleConfig(projectId).catch(() => defaultCharacterModuleConfig())
+      records = (await loadCharacterCatalog(projectId, config)).catalog.records
+    } catch {
+      // Migration preview remains usable even when the character catalog needs repair.
+    }
+    const unresolvedNames = new Set<string>()
+    const entries = parsed.entries.map((entry) => {
+      const resolvedIds = entry.relatedCharacterIds ?? entry.relatedCharacters.flatMap((name) => {
+        const resolved = resolveCharacterName(records, name)
+        if (!resolved.characterId) unresolvedNames.add(name)
+        return resolved.characterId ? [resolved.characterId] : []
+      })
+      return { ...entry, relatedCharacterIds: [...new Set(resolvedIds)] }
+    })
+    return {
+      schemaVersion: 2,
+      entries,
+      updatedAt: parsed.updatedAt,
+      migration: { sourceSchemaVersion: 1, unresolvedNames: [...unresolvedNames] },
+    }
+  }
+  if (parsed.schemaVersion !== 2) {
     const code: ForeshadowStoreErrorCode = typeof parsed.schemaVersion === 'number' && parsed.schemaVersion > 1
       ? 'unsupported-schema'
       : 'legacy-schema'
     throw new ForeshadowStoreError(code, `不支持的伏笔数据版本：${String(parsed.schemaVersion)}。请确认备份后初始化新伏笔数据。`)
   }
-  if (!isStore(parsed)) {
+  if (!isStoreV2(parsed)) {
     throw new ForeshadowStoreError('invalid-schema', '伏笔数据字段不完整或格式错误。请确认备份后初始化新伏笔数据。')
   }
   return parsed
@@ -155,11 +191,23 @@ export async function initializeNewForeshadows(projectId: string): Promise<void>
 }
 
 export async function saveForeshadows(projectId: string, store: ForeshadowStore): Promise<void> {
+  const source = await readProjectFile(projectId, DIR, STORE_FILE)
+  if (source.trim()) {
+    try {
+      const parsed = JSON.parse(source) as unknown
+      if (isRecord(parsed) && parsed.schemaVersion === 1) {
+        await backupAndVerify(projectId, `foreshadows-v1-${utcFileTimestamp()}.json`, source)
+      }
+    } catch {
+      throw new ForeshadowStoreError('corrupt', '保存前发现原伏笔文件无法解析，未执行覆盖。')
+    }
+  }
   const next: ForeshadowStore = {
-    ...store,
-    schemaVersion: 1,
+    schemaVersion: 2,
+    entries: store.entries.map((entry) => ({ ...entry, relatedCharacterIds: [...entry.relatedCharacterIds] })),
     updatedAt: new Date().toISOString(),
   }
+  if (!isStoreV2(next)) throw new ForeshadowStoreError('invalid-schema', '伏笔 v2 数据字段不完整，未执行保存。')
   await atomicWriteProjectFile(projectId, DIR, STORE_FILE, JSON.stringify(next, null, 2))
 }
 

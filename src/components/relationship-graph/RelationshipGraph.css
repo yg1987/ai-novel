@@ -51,6 +51,22 @@
   align-items: center;
 }
 
+.relationship-graph .graph-visibility-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+}
+
+.relationship-graph .graph-visibility-filters > span {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
 .relationship-graph .graph-toolbar-row {
   display: flex;
   gap: 6px;
@@ -174,8 +190,25 @@
 }
 
 .relationship-graph .graph-document-node small {
-  margin-left: auto;
   color: var(--text-muted);
+}
+
+.relationship-graph .graph-document-node-content {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.relationship-graph .graph-document-node-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.relationship-graph .graph-document-node-heading small {
+  flex-shrink: 0;
 }
 
 .relationship-graph .graph-node-type-dot,
@@ -284,6 +317,8 @@
 
 .relationship-graph .graph-related-link {
   display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 6px;
   font-size: 0.78rem;
   color: var(--text-secondary);
@@ -524,4 +559,152 @@
   color: inherit;
   opacity: 0.85;
   line-height: 1.4;
+}
+
+.relationship-graph .graph-related-item {
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.relationship-graph .graph-related-main {
+  color: var(--text);
+}
+
+.relationship-graph .graph-related-meta,
+.relationship-graph .graph-related-description {
+  margin: 2px 0;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.relationship-editor-dialog {
+  width: min(920px, 100%);
+  height: min(760px, 84vh);
+}
+
+.relationship-editor-header {
+  flex-shrink: 0;
+  margin-bottom: 12px;
+}
+
+.relationship-editor-header h3 {
+  margin: 0;
+}
+
+.relationship-editor-header span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.relationship-editor-error {
+  flex-shrink: 0;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  color: var(--danger);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+
+.relationship-editor-body {
+  padding-right: 4px;
+}
+
+.relationship-editor-grid,
+.relationship-period-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.relationship-editor-grid label,
+.relationship-period-row label,
+.relationship-notes {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+.relationship-editor-wide,
+.relationship-period-description,
+.relationship-notes {
+  grid-column: 1 / -1;
+}
+
+.relationship-period-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.relationship-period-row {
+  grid-template-columns: repeat(4, minmax(120px, 1fr)) 30px;
+  align-items: end;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.relationship-period-description {
+  grid-column: 1 / -2;
+}
+
+.relationship-notes {
+  margin-top: 16px;
+}
+
+.relationship-delete-area,
+.relationship-editor-footer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.relationship-delete-area {
+  margin-top: 18px;
+  padding-top: 12px;
+  color: var(--danger);
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.relationship-editor-footer {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.graph-related-link-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.graph-evidence-list {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+@media (max-width: 760px) {
+  .relationship-period-row,
+  .relationship-editor-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .relationship-editor-wide,
+  .relationship-period-description,
+  .relationship-notes {
+    grid-column: auto;
+  }
 }

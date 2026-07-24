@@ -41,6 +41,12 @@ export function chapterRefKey(chapter: ChapterRef | Pick<ChapterMeta, 'volume' |
   return `${chapter.volume}:${chapterId}` as ChapterKey
 }
 
+export function parseChapterRefKey(value: string): ChapterRef | null {
+  const separator = value.lastIndexOf(':')
+  if (separator <= 0 || separator === value.length - 1) return null
+  return { volume: value.slice(0, separator), chapterId: value.slice(separator + 1) }
+}
+
 export function compareChapters(left: ChapterMeta, right: ChapterMeta): number {
   const volumeOrder = collator.compare(left.volume, right.volume)
   return volumeOrder !== 0 ? volumeOrder : left.order - right.order || left.id.localeCompare(right.id, 'zh-CN')

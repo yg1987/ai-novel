@@ -20,7 +20,7 @@ interface Props {
   entries: ChapterFlowEntry[]
   analysisStatus: ChapterAnalysisStatus
   onClose: () => void
-  onNavigateToChapter: (ref: string) => void
+  onNavigateToChapter: (ref: ChapterRef) => void
   onNavigateToForeshadow: (id: string) => void
 }
 
@@ -81,7 +81,7 @@ export default function ChapterFlowDetailDrawer({
                 <article key={finding.id} className="chapter-flow-finding">
                   <strong>{finding.summary}</strong><span>置信度 {Math.round(finding.confidence * 100)}%</span>
                   {finding.evidence.map((evidence) => <blockquote key={`${chapterRefKey(evidence.chapter)}:${evidence.quote}`}>{evidence.quote}</blockquote>)}
-                  {finding.target && <Button variant="text" size="sm" onClick={() => onNavigateToChapter(chapterRefKey(finding.target!))}>打开关联章节</Button>}
+                  {finding.target && <Button variant="text" size="sm" onClick={() => onNavigateToChapter(finding.target!)}>打开关联章节</Button>}
                 </article>
               ))}
             </>
@@ -103,7 +103,7 @@ export default function ChapterFlowDetailDrawer({
       </div>
       <div className="chapter-flow-detail-footer">
         {exists
-          ? <Button variant="primary" size="sm" onClick={() => onNavigateToChapter(chapterRefKey(chapter))}>打开章节</Button>
+          ? <Button variant="primary" size="sm" onClick={() => onNavigateToChapter(chapter)}>打开章节</Button>
           : <span>请先在写作模块创建该章。</span>}
       </div>
       </div>

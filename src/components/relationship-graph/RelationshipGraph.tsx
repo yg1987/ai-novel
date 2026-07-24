@@ -11,8 +11,8 @@ import {
 import { applyGraphFilters } from '../../lib/graph-filters'
 import { GRAPH_MODE_PRESETS, type GraphDisplayMode, type GraphMode } from '../../lib/graph-mode'
 import { buildGraphDocument } from '../../lib/graph-readable'
-import { parseGraphNodeId } from '../../lib/graph-id'
-import type { ChapterMeta } from '../../types/chapter'
+import { parseChapterNodeRaw, parseGraphNodeId } from '../../lib/graph-id'
+import type { ChapterMeta, ChapterRef } from '../../types/chapter'
 import type { GraphNode, GraphNodeType, InsightItem, RelationshipGraph as RelationshipGraphData, RelationshipLink } from '../../types/novel'
 import ForceGraphView, { type ContextMenuState } from './ForceGraphView'
 import DocumentGraphView from './DocumentGraphView'
@@ -24,15 +24,18 @@ import GraphToolbar from './GraphToolbar'
 import GraphLegend from './GraphLegend'
 import NodeDetail from './NodeDetail'
 import InsightsPanel from './InsightsPanel'
+import RelationshipEditorDialog from './RelationshipEditorDialog'
 
 interface Props {
   projectId: string
-  onNavigateToCharacter?: (name: string) => void
-  onNavigateToChapter?: (chapterRef: string) => void
+  onNavigateToCharacter?: (characterId: string) => void
+  onNavigateToOrganization?: (organizationId: string) => void
+  onNavigateToChapter?: (chapterRef: ChapterRef) => void
   onNavigateToForeshadow?: (id: string) => void
 }
 
 type GraphSidebarTab = 'detail' | 'insights'
+type RelationshipEditorState = { sourceCharacterId: string; relationshipId?: string; initialTargetId?: string }
 
 function NodeContextMenu({
   menu,
@@ -45,6 +48,7 @@ function NodeContextMenu({
   onHideNodes,
   onNavigateOrSelect,
   canNavigateCharacter,
+  canNavigateOrganization,
   canNavigateChapter,
   canNavigateForeshadow,
 }: {
@@ -58,6 +62,7 @@ function NodeContextMenu({
   onHideNodes: (nodeIds: ReadonlySet<string>) => void
   onNavigateOrSelect: (node: GraphNode) => void
   canNavigateCharacter: boolean
+  canNavigateOrganization: boolean
   canNavigateChapter: boolean
   canNavigateForeshadow: boolean
 }) {
@@ -78,19 +83,22 @@ function NodeContextMenu({
       <button onClick={showNeighbors}>只显示邻居</button>
       <button onClick={() => { void navigator.clipboard?.writeText(node.label); onClose() }}>复制节点名称</button>
       {node.type === 'character' && canNavigateCharacter && <button onClick={() => onNavigateOrSelect(node)}>跳转角色卡</button>}
+      {node.type === 'organization' && canNavigateOrganization && <button onClick={() => onNavigateOrSelect(node)}>打开组织目录</button>}
       {node.type === 'chapter' && canNavigateChapter && <button onClick={() => onNavigateOrSelect(node)}>跳转章节</button>}
       {node.type === 'foreshadowing' && canNavigateForeshadow && <button onClick={() => onNavigateOrSelect(node)}>跳转伏笔</button>}
     </div>
   )
 }
 
-export default function RelationshipGraph({ projectId, onNavigateToCharacter, onNavigateToChapter, onNavigateToForeshadow }: Props) {
+export default function RelationshipGraph({ projectId, onNavigateToCharacter, onNavigateToOrganization, onNavigateToChapter, onNavigateToForeshadow }: Props) {
   const [graph, setGraph] = useState<RelationshipGraphData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mode, setMode] = useState<GraphMode>('overview')
   const [displayMode, setDisplayMode] = useState<GraphDisplayMode>('graph')
   const [showResolvedForeshadows, setShowResolvedForeshadows] = useState(false)
+  const [showHistoricalRelationships, setShowHistoricalRelationships] = useState(false)
+  const [showInferredEvidence, setShowInferredEvidence] = useState(false)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [hiddenTypes, setHiddenTypes] = useState<ReadonlySet<GraphNodeType>>(new Set())
   const [hiddenNodeIds, setHiddenNodeIds] = useState<ReadonlySet<string>>(new Set())
@@ -103,6 +111,7 @@ export default function RelationshipGraph({ projectId, onNavigateToCharacter, on
   const [chapters, setChapters] = useState<ChapterMeta[]>([])
   const [chaptersLoading, setChaptersLoading] = useState(false)
   const [sidebarTab, setSidebarTab] = useState<GraphSidebarTab>('detail')
+  const [relationshipEditor, setRelationshipEditor] = useState<RelationshipEditorState | null>(null)
 
   const reloadGraph = useCallback(async (preserveOnError = false) => {
     setLoading(true)
@@ -132,11 +141,14 @@ export default function RelationshipGraph({ projectId, onNavigateToCharacter, on
     hideStructural: preset.hideStructural,
     hideIsolated: preset.hideIsolated,
     hideResolvedForeshadowing: mode === 'foreshadowing' && !showResolvedForeshadows,
+    showHistoricalRelationships,
+    showInferredEvidence,
     minimumEdgeWeight: preset.minimumEdgeWeight,
     allowedNodeTypes: preset.allowedNodeTypes,
-  }) : { nodes: [], edges: [] }, [graph, hiddenNodeIds, hiddenTypes, mode, preset, showResolvedForeshadows])
+  }) : { nodes: [], edges: [] }, [graph, hiddenNodeIds, hiddenTypes, mode, preset, showHistoricalRelationships, showInferredEvidence, showResolvedForeshadows])
   const selectedNode = filtered.nodes.find((node) => node.id === selectedNodeId) ?? graph?.nodes.find((node) => node.id === selectedNodeId) ?? null
   const selectedLinks = selectedNode ? filtered.edges.filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id) : []
+  const selectedCharacterId = selectedNode?.type === 'character' ? parseGraphNodeId(selectedNode.id)?.raw : undefined
 
   const navigateOrSelect = (node: GraphNode) => {
     setSelectedNodeId(node.id)
@@ -144,7 +156,11 @@ export default function RelationshipGraph({ projectId, onNavigateToCharacter, on
     const parsed = parseGraphNodeId(node.id)
     if (!parsed) return
     if (parsed.type === 'character') onNavigateToCharacter?.(parsed.raw)
-    else if (parsed.type === 'chapter') onNavigateToChapter?.(parsed.raw)
+    else if (parsed.type === 'organization') onNavigateToOrganization?.(parsed.raw)
+    else if (parsed.type === 'chapter') {
+      const reference = parseChapterNodeRaw(parsed.raw)
+      if (reference) onNavigateToChapter?.(reference)
+    }
     else if (parsed.type === 'foreshadowing') onNavigateToForeshadow?.(parsed.raw)
   }
 
@@ -167,6 +183,8 @@ export default function RelationshipGraph({ projectId, onNavigateToCharacter, on
     setHiddenTypes(new Set())
     setHiddenNodeIds(new Set())
     setFocusedNodeId(null)
+    setShowHistoricalRelationships(false)
+    setShowInferredEvidence(false)
   }
 
   const graphDocument = useMemo(() => buildGraphDocument(filtered.nodes, filtered.edges), [filtered.edges, filtered.nodes])
@@ -232,11 +250,11 @@ export default function RelationshipGraph({ projectId, onNavigateToCharacter, on
         )}
         {contextMenu && (() => {
           const menuNode = graph.nodes.find((node) => node.id === contextMenu.nodeId)
-          return menuNode ? <NodeContextMenu menu={contextMenu} node={menuNode} filteredNodes={filtered.nodes} filteredEdges={filtered.edges} hiddenNodeIds={hiddenNodeIds} onClose={() => setContextMenu(null)} onFocus={setFocusedNodeId} onHideNodes={setHiddenNodeIds} onNavigateOrSelect={navigateOrSelect} canNavigateCharacter={Boolean(onNavigateToCharacter)} canNavigateChapter={Boolean(onNavigateToChapter)} canNavigateForeshadow={Boolean(onNavigateToForeshadow)} /> : null
+          return menuNode ? <NodeContextMenu menu={contextMenu} node={menuNode} filteredNodes={filtered.nodes} filteredEdges={filtered.edges} hiddenNodeIds={hiddenNodeIds} onClose={() => setContextMenu(null)} onFocus={setFocusedNodeId} onHideNodes={setHiddenNodeIds} onNavigateOrSelect={navigateOrSelect} canNavigateCharacter={Boolean(onNavigateToCharacter)} canNavigateOrganization={Boolean(onNavigateToOrganization)} canNavigateChapter={Boolean(onNavigateToChapter)} canNavigateForeshadow={Boolean(onNavigateToForeshadow)} /> : null
         })()}
       </div>
       <aside className="graph-sidebar panel-sidebar">
-        <GraphToolbar mode={mode} displayMode={displayMode} showResolvedForeshadows={showResolvedForeshadows} refreshing={loading && Boolean(graph)} regenerating={regenerating} lastReport={lastRegenerationReport} onModeChange={setMode} onDisplayModeChange={setDisplayMode} onShowResolvedChange={setShowResolvedForeshadows} onRefreshGraph={handleRefreshGraph} onOpenRebuildDialog={openRebuildDialog} onCopyDocument={handleCopyDocument} onExportDocument={handleExportDocument} />
+        <GraphToolbar mode={mode} displayMode={displayMode} showResolvedForeshadows={showResolvedForeshadows} showHistoricalRelationships={showHistoricalRelationships} showInferredEvidence={showInferredEvidence} refreshing={loading && Boolean(graph)} regenerating={regenerating} lastReport={lastRegenerationReport} onModeChange={setMode} onDisplayModeChange={setDisplayMode} onShowResolvedChange={setShowResolvedForeshadows} onShowHistoricalRelationshipsChange={setShowHistoricalRelationships} onShowInferredEvidenceChange={setShowInferredEvidence} onRefreshGraph={handleRefreshGraph} onOpenRebuildDialog={openRebuildDialog} onCopyDocument={handleCopyDocument} onExportDocument={handleExportDocument} />
         <div className="graph-sidebar-tabs">
           <button className={sidebarTab === 'detail' ? 'active' : ''} onClick={() => setSidebarTab('detail')}>详情</button>
           <button className={sidebarTab === 'insights' ? 'active' : ''} onClick={() => setSidebarTab('insights')}>洞察 {graph.insights.length}</button>
@@ -244,13 +262,33 @@ export default function RelationshipGraph({ projectId, onNavigateToCharacter, on
         {sidebarTab === 'detail' ? (
           <>
             <GraphLegend hiddenTypes={hiddenTypes} allNodes={graph.nodes} visibleNodes={filtered.nodes} onReset={resetFilters} onToggleType={toggleHiddenType} />
-            <NodeDetail node={selectedNode} links={selectedLinks} allNodes={graph.nodes} />
+            <NodeDetail
+              node={selectedNode}
+              links={selectedLinks}
+              allNodes={graph.nodes}
+              onAddRelationship={selectedCharacterId ? () => setRelationshipEditor({ sourceCharacterId: selectedCharacterId }) : undefined}
+              onEditRelationship={selectedCharacterId ? (relationshipId) => setRelationshipEditor({ sourceCharacterId: selectedCharacterId, relationshipId }) : undefined}
+              onConfirmRelationship={selectedCharacterId ? (_edge, otherNodeId) => {
+                const targetId = parseGraphNodeId(otherNodeId)
+                if (targetId?.type === 'character') setRelationshipEditor({ sourceCharacterId: selectedCharacterId, initialTargetId: targetId.raw })
+              } : undefined}
+            />
           </>
         ) : (
           <InsightsPanel insights={graph.insights} onFocusInsight={focusInsight} />
         )}
       </aside>
       {showRebuildDialog && <SnapshotRebuildDialog chapters={chapters} loadingChapters={chaptersLoading} regenerating={regenerating} progress={regenerationProgress} lastReport={lastRegenerationReport} onClose={() => setShowRebuildDialog(false)} onStart={(scope) => { void handleRebuildSnapshots(scope) }} />}
+      {relationshipEditor && (
+        <RelationshipEditorDialog
+          projectId={projectId}
+          sourceCharacterId={relationshipEditor.sourceCharacterId}
+          relationshipId={relationshipEditor.relationshipId}
+          initialTargetId={relationshipEditor.initialTargetId}
+          onSaved={() => { void reloadGraph(true) }}
+          onClose={() => setRelationshipEditor(null)}
+        />
+      )}
     </div>
   )
 }

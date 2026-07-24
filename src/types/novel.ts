@@ -43,15 +43,22 @@ export interface ForeshadowEntry {
   resolutionPlan?: string
   progress: ForeshadowProgress[]
   relatedCharacters: string[]
+  /** Stable character references introduced by foreshadow schema v2. Old names stay for display compatibility. */
+  relatedCharacterIds: string[]
   notes: string
   createdAt: string
   updatedAt: string
 }
 
 export interface ForeshadowStore {
-  schemaVersion: 1
+  schemaVersion: 2
   entries: ForeshadowEntry[]
   updatedAt: string
+  /** In-memory migration preview. This field is never persisted. */
+  migration?: {
+    sourceSchemaVersion: 1
+    unresolvedNames: string[]
+  }
 }
 
 // ─── Foreshadow Config ─────────────────────────
@@ -206,7 +213,8 @@ export interface GraphNode {
 export interface RelationshipLink {
   source: string
   target: string
-  type: RelationType
+  /** Configuration ID. The built-in RelationType union remains the legacy compatibility set. */
+  type: string
   tier: RelationTier
   weight: number
   strength: number
@@ -215,6 +223,18 @@ export interface RelationshipLink {
   mentions: number
   description?: string
   structural?: boolean
+  kind?: 'relationship' | 'affiliation' | 'appearance' | 'participation' | 'foreshadowing' | 'organizationHierarchy'
+  sourceKind?: 'manual' | 'snapshot' | 'co-occurrence' | 'catalog' | 'foreshadowing'
+  recordId?: string
+  periodId?: string
+  temporalStatus?: 'current' | 'historical'
+  relationshipStatus?: 'active' | 'ended' | 'uncertain'
+  startChapter?: ChapterRef
+  endChapter?: ChapterRef
+  direction?: 'undirected' | 'a-to-b' | 'b-to-a'
+  evidence?: string[]
+  label?: string
+  color?: string
 }
 
 export interface RelationshipGraph {

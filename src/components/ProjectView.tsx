@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useRef, useState } from 'react'
 import type { ProjectMeta } from '../types/project'
 import type { ChapterRef } from '../types/chapter'
 import type { CurrentChapterRef, MaterialContextSelection } from '../types/material'
@@ -41,10 +41,11 @@ export default function ProjectView({ project, onBack }: Props) {
   const [showExport, setShowExport] = useState(false)
   const [showArchive, setShowArchive] = useState(false)
   const [reviewChapterRef, setReviewChapterRef] = useState<ChapterRef | null>(null)
-  const [navigateChapterRef, setNavigateChapterRef] = useState<string | null>(null)
+  const [navigateChapterRef, setNavigateChapterRef] = useState<ChapterRef | null>(null)
   const [currentChapter, setCurrentChapter] = useState<CurrentChapterRef | null>(null)
   const [materialContextSelections, setMaterialContextSelections] = useState<MaterialContextSelection[]>([])
   const [navigateCharacter, setNavigateCharacter] = useState<string | null>(null)
+  const [navigateOrganizationId, setNavigateOrganizationId] = useState<string | null>(null)
   const [navigateForeshadowId, setNavigateForeshadowId] = useState<string | null>(null)
   const [navigateNotesChapterRef, setNavigateNotesChapterRef] = useState<string | null>(null)
   const [navigateNotesFilter, setNavigateNotesFilter] = useState<string | null>(null)
@@ -56,13 +57,20 @@ export default function ProjectView({ project, onBack }: Props) {
   const [pendingUnsavedPanel, setPendingUnsavedPanel] = useState<UnsavedPanel | null>(null)
   const characterRef = useRef<CharacterPanelHandle>(null)
   const worldviewRef = useRef<WorldviewPanelHandle>(null)
+  const pendingNavigationActionRef = useRef<(() => void) | null>(null)
+  const consumeCharacterNavigation = useCallback(() => setNavigateCharacter(null), [])
+  const consumeOrganizationNavigation = useCallback(() => setNavigateOrganizationId(null), [])
 
   const completeNavigation = (navigation: PendingNavigation) => {
+    const action = pendingNavigationActionRef.current
+    pendingNavigationActionRef.current = null
+    action?.()
     if (navigation.type === 'back') onBack()
     else setTab(navigation.tab)
   }
 
   const requestNavigation = (navigation: PendingNavigation) => {
+    pendingNavigationActionRef.current = null
     const unsavedPanel: UnsavedPanel | null = tab === 'worldview' && worldviewRef.current?.hasUnsavedChanges()
       ? 'worldview'
       : tab === 'characters' && characterRef.current?.hasUnsavedChanges()
@@ -73,6 +81,22 @@ export default function ProjectView({ project, onBack }: Props) {
       setPendingUnsavedPanel(unsavedPanel)
       return
     }
+    completeNavigation(navigation)
+  }
+
+  const requestNavigationWithAction = (navigation: PendingNavigation, action: () => void) => {
+    const unsavedPanel: UnsavedPanel | null = tab === 'worldview' && worldviewRef.current?.hasUnsavedChanges()
+      ? 'worldview'
+      : tab === 'characters' && characterRef.current?.hasUnsavedChanges()
+        ? 'characters'
+        : null
+    if (unsavedPanel) {
+      pendingNavigationActionRef.current = action
+      setPendingNavigation(navigation)
+      setPendingUnsavedPanel(unsavedPanel)
+      return
+    }
+    pendingNavigationActionRef.current = action
     completeNavigation(navigation)
   }
 
@@ -104,7 +128,7 @@ export default function ProjectView({ project, onBack }: Props) {
     setTab('review')
   }
 
-  const handleNavigateToChapter = (chapterRef: string) => {
+  const handleNavigateToChapter = (chapterRef: ChapterRef) => {
     setNavigateChapterRef(chapterRef)
     setTab('writing')
   }
@@ -158,6 +182,11 @@ export default function ProjectView({ project, onBack }: Props) {
     setTab(targetTab)
   }
 
+  const handleNavigateToOrganization = (organizationId: string) => {
+    setNavigateOrganizationId(organizationId)
+    setTab('worldview')
+  }
+
   const handleChapterSelect = (chapter: CurrentChapterRef) => {
     setCurrentChapter(chapter)
     setMaterialContextSelections([])
@@ -168,9 +197,9 @@ export default function ProjectView({ project, onBack }: Props) {
       case 'writing':
         return <ChapterManager projectId={project.id} projectName={project.name} segmentSize={chapterSegmentSize} onSegmentSizeChange={setChapterSegmentSize} onNavigateToReview={handleNavigateToReview} onNavigateToNotes={handleNavigateToNotes} initialChapterRef={navigateChapterRef} onChapterSelect={handleChapterSelect} currentChapter={currentChapter} materialContextSelections={materialContextSelections} onMaterialContextChange={setMaterialContextSelections} onOpenMaterial={(materialId) => { setNavigateMaterialId(materialId); setTab('resource') }} />
       case 'characters':
-        return <CharacterPanel ref={characterRef} projectId={project.id} initialCharacter={navigateCharacter} />
+        return <CharacterPanel ref={characterRef} projectId={project.id} initialCharacter={navigateCharacter} onInitialCharacterConsumed={consumeCharacterNavigation} onNavigateToOrganization={(organizationId) => requestNavigationWithAction({ type: 'tab', tab: 'worldview' }, () => setNavigateOrganizationId(organizationId))} onNavigateToChapter={(reference) => requestNavigationWithAction({ type: 'tab', tab: 'writing' }, () => setNavigateChapterRef(reference))} onNavigateToForeshadow={(id) => requestNavigationWithAction({ type: 'tab', tab: 'foreshadow' }, () => setNavigateForeshadowId(id))} />
       case 'worldview':
-        return <WorldviewPanel ref={worldviewRef} projectId={project.id} />
+        return <WorldviewPanel ref={worldviewRef} projectId={project.id} initialOrganizationId={navigateOrganizationId} onInitialOrganizationConsumed={consumeOrganizationNavigation} />
       case 'outline':
         return <OutlinePanel projectId={project.id} segmentSize={chapterSegmentSize} onSegmentSizeChange={setChapterSegmentSize} onNavigateToWriting={(ref) => { setNavigateChapterRef(ref); setTab('writing') }} />
       case 'notes':
@@ -192,6 +221,7 @@ export default function ProjectView({ project, onBack }: Props) {
           <RelationshipGraph
             projectId={project.id}
             onNavigateToCharacter={handleNavigateToCharacter}
+            onNavigateToOrganization={handleNavigateToOrganization}
             onNavigateToChapter={handleNavigateToChapter}
             onNavigateToForeshadow={handleNavigateToForeshadow}
           />
@@ -259,7 +289,7 @@ export default function ProjectView({ project, onBack }: Props) {
           saving={savingNavigation}
           onSave={() => { void handleSaveAndNavigate() }}
           onDiscard={handleDiscardAndNavigate}
-          onCancel={() => { setPendingNavigation(null); setPendingUnsavedPanel(null) }}
+          onCancel={() => { pendingNavigationActionRef.current = null; setPendingNavigation(null); setPendingUnsavedPanel(null) }}
         />
       )}
       {pendingNavigation && pendingUnsavedPanel === 'characters' && (
@@ -267,7 +297,7 @@ export default function ProjectView({ project, onBack }: Props) {
           saving={savingNavigation}
           onSave={() => { void handleSaveAndNavigate() }}
           onDiscard={handleDiscardAndNavigate}
-          onCancel={() => { setPendingNavigation(null); setPendingUnsavedPanel(null) }}
+          onCancel={() => { pendingNavigationActionRef.current = null; setPendingNavigation(null); setPendingUnsavedPanel(null) }}
         />
       )}
     </div>

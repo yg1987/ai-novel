@@ -43,7 +43,7 @@ interface Props {
   onSegmentSizeChange: (value: ChapterSegmentSize) => void
   onNavigateToReview?: (ref: ChapterRef) => void
   onNavigateToNotes?: (chapterRef: string, filter: string) => void
-  initialChapterRef?: string | null
+  initialChapterRef?: ChapterRef | null
   onChapterSelect?: (chapter: CurrentChapterRef) => void
   currentChapter: CurrentChapterRef | null
   materialContextSelections: MaterialContextSelection[]
@@ -144,8 +144,7 @@ export default function ChapterManager({
 
   useEffect(() => {
     if (!initialChapterRef) return
-    const [volume, chapterId] = initialChapterRef.split(':')
-    const target = chapters.find((chapter) => chapter.volume === volume && chapter.id === chapterId)
+    const target = chapters.find((chapter) => chapter.volume === initialChapterRef.volume && chapter.id === initialChapterRef.chapterId)
     if (!target) return
     const timer = window.setTimeout(() => {
       setActiveChapterKey(chapterRefKey(target))

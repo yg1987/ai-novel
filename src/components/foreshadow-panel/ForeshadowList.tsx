@@ -97,7 +97,8 @@ interface Props {
   onPageChange: (page: number) => void
   onPageSizeChange: (pageSize: number) => void
   onAdoptSuggestion: (index: number, prefill: ForeshadowSuggestionPrefill) => void
-  onNavigateToCharacter?: (name: string) => void
+  onNavigateToCharacter?: (characterId: string) => void
+  resolveCharacterId: (name: string) => string | undefined
   onStatusChange: (entry: ForeshadowEntry, status: ForeshadowStatus) => void | Promise<void>
   onEdit: (entry: ForeshadowEntry) => void
   onDelete: (entry: ForeshadowEntry) => void
@@ -118,6 +119,7 @@ export default function ForeshadowList({
   onPageSizeChange,
   onAdoptSuggestion,
   onNavigateToCharacter,
+  resolveCharacterId,
   onStatusChange,
   onEdit,
   onDelete,
@@ -187,7 +189,7 @@ export default function ForeshadowList({
                     <span
                       key={name}
                       className="foreshadow-char-chip"
-                      onClick={() => onNavigateToCharacter?.(name)}
+                      onClick={() => { const characterId = resolveCharacterId(name); if (characterId) onNavigateToCharacter?.(characterId) }}
                       title={`查看角色「${name}」`}
                     >
                       {name}

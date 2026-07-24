@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { ForeshadowEntry, ForeshadowInspiration, ForeshadowStatus } from '../types/novel'
+import type { CharacterRecord } from '../types/character'
 import { DEFAULT_FORESHADOW_CONFIG } from '../types/novel'
 import type { ChapterMeta, ChapterRef } from '../types/chapter'
 import { chapterRefKey } from '../services/chapterDisplay'
 import { buildChapterSequence, formatChapterId } from '../services/chapterCatalog'
 import type { BrainstormForeshadowDraft } from '../types/brainstorm'
-import { listChapters, listProjectFiles } from '../api/tauri'
+import { listChapters } from '../api/tauri'
+import { loadCharacterCatalog, resolveCharacterName } from '../services/characterCatalog'
+import { loadCharacterModuleConfig } from '../services/characterConfig'
 import {
   loadForeshadows,
   addForeshadow,
@@ -41,7 +44,7 @@ import './foreshadow-panel/ForeshadowPanel.css'
 interface Props {
   projectId: string
   currentChapter: ChapterRef | null
-  onNavigateToCharacter?: (name: string) => void
+  onNavigateToCharacter?: (characterId: string) => void
   highlightId?: string | null
   onHighlightComplete?: () => void
   initialDraft?: BrainstormForeshadowDraft | null
@@ -53,6 +56,8 @@ export default function ForeshadowPanel({ projectId, currentChapter, onNavigateT
   const [chapters, setChapters] = useState<ChapterMeta[]>([])
   const [formError, setFormError] = useState<string | null>(null)
   const [characterNames, setCharacterNames] = useState<string[]>([])
+  const [characterRecords, setCharacterRecords] = useState<CharacterRecord[]>([])
+  const [migrationPreview, setMigrationPreview] = useState<{ unresolvedNames: string[] } | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [showForm, setShowForm] = useState(() => Boolean(initialDraft))
@@ -83,20 +88,19 @@ export default function ForeshadowPanel({ projectId, currentChapter, onNavigateT
 
   const refresh = useCallback(async () => {
     try {
-      const [store, chapterList, characterFiles, config] = await Promise.all([
+      const moduleConfig = await loadCharacterModuleConfig(projectId)
+      const [store, chapterList, catalogResult, config] = await Promise.all([
         loadForeshadows(projectId),
         listChapters(projectId),
-        listProjectFiles(projectId, 'characters').catch(() => []),
+        loadCharacterCatalog(projectId, moduleConfig),
         loadForeshadowConfig(projectId),
       ])
       setEntries(store.entries)
       setChapters(chapterList)
       setForeshadowConfig(config)
-      setCharacterNames(
-        characterFiles
-          .filter((file) => file.name.endsWith('.md'))
-          .map((file) => file.name.replace(/\.md$/, '')),
-      )
+      setCharacterRecords(catalogResult.catalog.records)
+      setCharacterNames(catalogResult.catalog.records.map((record) => record.name))
+      setMigrationPreview(store.migration ? { unresolvedNames: store.migration.unresolvedNames } : null)
       setStorageError(null)
     } catch (error) {
       setStorageError(error instanceof Error ? error.message : String(error))
@@ -248,6 +252,7 @@ export default function ForeshadowPanel({ projectId, currentChapter, onNavigateT
       }
     }
     const now = new Date().toISOString().slice(0, 16)
+    const relatedCharacterIds = form.relatedCharacters.flatMap((name) => resolveCharacterName(characterRecords, name).characterId ?? [])
     if (editingId) {
       await updateForeshadow(projectId, editingId, {
         name: form.name,
@@ -258,6 +263,7 @@ export default function ForeshadowPanel({ projectId, currentChapter, onNavigateT
         plannedResolutionChapter,
         progress: form.progress,
         relatedCharacters: form.relatedCharacters,
+        relatedCharacterIds,
         notes: form.notes,
         resolutionPlan: form.resolutionPlan || undefined,
         updatedAt: now,
@@ -274,6 +280,7 @@ export default function ForeshadowPanel({ projectId, currentChapter, onNavigateT
         plannedResolutionChapter,
         progress: form.progress,
         relatedCharacters: form.relatedCharacters,
+        relatedCharacterIds,
         notes: form.notes,
         resolutionPlan: form.resolutionPlan || undefined,
         createdAt: now,
@@ -380,6 +387,13 @@ export default function ForeshadowPanel({ projectId, currentChapter, onNavigateT
 
   return (
     <div className="foreshadow-panel">
+      {migrationPreview && (
+        <div className="foreshadow-migration-banner">
+          <strong>旧版伏笔数据待迁移</strong>
+          <span>当前仅在内存中预览稳定角色引用；下次保存时会先备份并校验原文件，再写入 v2。</span>
+          {migrationPreview.unresolvedNames.length > 0 && <span>未解析角色：{migrationPreview.unresolvedNames.join('、')}</span>}
+        </div>
+      )}
       <ForeshadowStatsBar
         counts={counts}
         onAdd={openAdd}
@@ -428,6 +442,7 @@ export default function ForeshadowPanel({ projectId, currentChapter, onNavigateT
         onPageSizeChange={handlePageSizeChange}
         onAdoptSuggestion={handleAdoptSuggestion}
         onNavigateToCharacter={onNavigateToCharacter}
+        resolveCharacterId={(name) => resolveCharacterName(characterRecords, name).characterId}
         onStatusChange={handleStatusChange}
         onEdit={openEdit}
         onDelete={setDeleteTarget}

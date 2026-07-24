@@ -421,3 +421,18 @@
   margin-top: 12px;
 }
 
+.foreshadow-migration-banner {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 16px;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+}
+
+.foreshadow-migration-banner strong {
+  color: var(--accent);
+}

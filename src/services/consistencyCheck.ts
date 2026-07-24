@@ -228,7 +228,7 @@ export async function runConsistencyChecks(
   const currentOrder = getOrder(currentChapter, chapters)
 
   const [foreshadowStore, cognitionJson, timelineJson] = await Promise.all([
-    loadForeshadows(projectId).catch(() => ({ schemaVersion: 1 as const, entries: [], updatedAt: '' })),
+    loadForeshadows(projectId).catch(() => ({ schemaVersion: 2 as const, entries: [], updatedAt: '' })),
     readProjectFile(projectId, 'memory', 'character-states.json').catch(() => null),
     readProjectFile(projectId, 'memory', 'timeline.json').catch(() => null),
   ])

@@ -1,4 +1,6 @@
 import type { NoteEntry } from '../../services/notesStorage'
+import { parseChapterRefKey } from '../../services/chapterDisplay'
+import type { ChapterRef } from '../../types/chapter'
 import Button from '../Button'
 
 interface Props {
@@ -6,7 +8,7 @@ interface Props {
   chapterLabel?: string
   editing: boolean
   editContent: string
-  onNavigateToChapter?: (chapterRef: string) => void
+  onNavigateToChapter?: (chapterRef: ChapterRef) => void
   onStartEdit: (note: NoteEntry) => void
   onEditContentChange: (content: string) => void
   onSaveEdit: () => void
@@ -51,7 +53,7 @@ export default function NoteItem({
       <div className="note-item-header">
         <span className="note-type-badge">{typeIcon(note)}</span>
         {note.chapterRef && (
-          <span className="note-chapter-tag" onClick={(e) => { e.stopPropagation(); onNavigateToChapter?.(note.chapterRef) }} title="点击跳转到该章节">
+          <span className="note-chapter-tag" onClick={(e) => { e.stopPropagation(); const reference = parseChapterRefKey(note.chapterRef!); if (reference) onNavigateToChapter?.(reference) }} title="点击跳转到该章节">
             📖 {chapterLabel ?? note.chapterRef}
           </span>
         )}

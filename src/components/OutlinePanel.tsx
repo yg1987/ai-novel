@@ -35,7 +35,7 @@ interface Props {
   projectId: string
   segmentSize: ChapterSegmentSize
   onSegmentSizeChange: (value: ChapterSegmentSize) => void
-  onNavigateToWriting: (chapterRef: string) => void
+  onNavigateToWriting: (chapterRef: ChapterRef) => void
 }
 
 type OutlineSelection =
@@ -211,7 +211,7 @@ export default function OutlinePanel({ projectId, segmentSize, onSegmentSizeChan
     setActionError(null)
     try {
       await startWritingFromOutline(projectId, startTarget, { volumeName, chapterName })
-      onNavigateToWriting(`${startTarget.volume}:${startTarget.chapterId}`)
+      onNavigateToWriting(startTarget)
       setStartTarget(null)
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error))

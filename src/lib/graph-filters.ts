@@ -6,6 +6,8 @@ export interface GraphFilterState {
   hideStructural: boolean
   hideIsolated: boolean
   hideResolvedForeshadowing?: boolean
+  showHistoricalRelationships?: boolean
+  showInferredEvidence?: boolean
   minimumEdgeWeight?: number
   allowedNodeTypes?: ReadonlySet<GraphNodeType>
 }
@@ -41,6 +43,14 @@ export function applyGraphFilters(
   }
 
   let filteredEdges = trimDanglingEdges(filteredNodes, edges)
+
+  if (!filters.showHistoricalRelationships) {
+    filteredEdges = filteredEdges.filter((edge) => edge.temporalStatus !== 'historical')
+  }
+
+  if (!filters.showInferredEvidence) {
+    filteredEdges = filteredEdges.filter((edge) => edge.sourceKind !== 'co-occurrence')
+  }
 
   if (filters.hideStructural) {
     filteredEdges = filteredEdges.filter((edge) => !edge.structural)

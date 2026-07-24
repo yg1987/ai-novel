@@ -137,7 +137,7 @@ export async function getForeshadowHealthMetrics(
   projectId: string,
 ): Promise<ForeshadowHealthMetrics> {
   const [store, chapters] = await Promise.all([
-    loadForeshadows(projectId).catch(() => ({ schemaVersion: 1 as const, entries: [], updatedAt: '' })),
+    loadForeshadows(projectId).catch(() => ({ schemaVersion: 2 as const, entries: [], updatedAt: '' })),
     listChapters(projectId).catch(() => [] as ChapterMeta[]),
   ])
 
